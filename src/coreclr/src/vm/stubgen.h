@@ -782,6 +782,7 @@ public:
     void EmitSTOBJ      (int token);
     void EmitSTSFLD     (int token);
     void EmitSUB        ();
+    void EmitTAIL       ();
     void EmitTHROW      ();
     void EmitUNALIGNED  (BYTE alignment);
 

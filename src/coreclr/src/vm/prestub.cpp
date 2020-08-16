@@ -22,6 +22,7 @@
 #include "compile.h"
 #include "ecall.h"
 #include "virtualcallstub.h"
+#include "opinfo.h"
 
 #ifdef FEATURE_PREJIT
 #include "compile.h"
@@ -1453,6 +1454,27 @@ void CreateInstantiatingILStubTargetSig(MethodDesc *pBaseMD,
 #endif // TARGET_X86
 }
 
+bool ILHasTailPrefix(MethodDesc* pMD)
+{
+    if (!pMD->IsIL())
+        return false;
+
+    COR_ILMETHOD_DECODER decoder(pMD->GetILHeader());
+    const BYTE* code = decoder.Code;
+    const BYTE* end = code + decoder.GetCodeSize();
+
+    while (code < end)
+    {
+        OpArgsVal arg;
+        OpInfo op;
+        code = op.fetch(code, &arg);
+        if (op.getOpcode() == CEE_TAILCALL)
+            return true;
+    }
+
+    return false;
+}
+
 Stub * CreateUnboxingILStubForSharedGenericValueTypeMethods(MethodDesc* pTargetMD)
 {
 
@@ -1522,6 +1544,13 @@ Stub * CreateUnboxingILStubForSharedGenericValueTypeMethods(MethodDesc* pTargetM
     pCode->EmitLDC((TADDR)pTargetMD->GetMultiCallableAddrOfCode(CORINFO_ACCESS_ANY));
 
     // 2.6 Do the calli
+    if (ILHasTailPrefix(pTargetMD))
+    {
+        // If the target method requires explicit tailcalls out of it we must
+        // maintain this wish by also tailcalling into it.
+        pCode->EmitTAIL();
+    }
+
     pCode->EmitCALLI(TOKEN_ILSTUB_TARGET_SIG, msig.NumFixedArgs() + 1, msig.IsReturnTypeVoid() ? 0 : 1);
     pCode->EmitRET();
 
@@ -1624,6 +1653,13 @@ Stub * CreateInstantiatingILStub(MethodDesc* pTargetMD, void* pHiddenArg)
     pCode->EmitLDC((TADDR)pTargetMD->GetMultiCallableAddrOfCode(CORINFO_ACCESS_ANY));
 
     // 2.6 Do the calli
+    if (ILHasTailPrefix(pTargetMD))
+    {
+        // If the target method requires explicit tailcalls out of it we must
+        // maintain this wish by also tailcalling into it.
+        pCode->EmitTAIL();
+    }
+
     pCode->EmitCALLI(TOKEN_ILSTUB_TARGET_SIG, msig.NumFixedArgs() + 1, msig.IsReturnTypeVoid() ? 0 : 1);
     pCode->EmitRET();
 
