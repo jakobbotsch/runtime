@@ -164,31 +164,6 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             s_logger.PrintOutput(output);
         }
 
-        struct InstructionPointerRange : IComparable<InstructionPointerRange>
-        {
-            public InstructionPointerRange(ulong startAddress, int size)
-            {
-                StartAddress = startAddress;
-                EndAddress = startAddress + (ulong)size;
-            }
-
-            public ulong StartAddress;
-            public ulong EndAddress;
-
-            public int CompareTo(InstructionPointerRange other)
-            {
-                if (StartAddress < other.StartAddress)
-                {
-                    return -1;
-                }
-                if (StartAddress > other.StartAddress)
-                {
-                    return 1;
-                }
-                return (int)((long)EndAddress - (long)other.EndAddress);
-            }
-        }
-
         internal static void UnZipIfNecessary(ref string inputFileName, TextWriter log)
         {
             if (inputFileName.EndsWith(".trace.zip", StringComparison.OrdinalIgnoreCase))
@@ -425,33 +400,30 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 return -8;
             }
 
-            if (commandLineOptions.OutputFileName != null)
+            if (!commandLineOptions.FileType.HasValue)
             {
-                if (!commandLineOptions.FileType.HasValue)
+                PrintUsage(commandLineOptions, $"--pgo-file-type must be specified");
+                return -9;
+            }
+            if ((commandLineOptions.FileType.Value != PgoFileType.jittrace) && (commandLineOptions.FileType != PgoFileType.mibc))
+            {
+                PrintUsage(commandLineOptions, $"Invalid output pgo type {commandLineOptions.FileType} specified.");
+                return -9;
+            }
+            if (commandLineOptions.FileType == PgoFileType.jittrace)
+            {
+                if (!commandLineOptions.OutputFileName.Name.EndsWith(".jittrace"))
                 {
-                    PrintUsage(commandLineOptions, $"--pgo-file-type must be specified");
+                    PrintUsage(commandLineOptions, $"jittrace output file name must end with .jittrace");
                     return -9;
                 }
-                if ((commandLineOptions.FileType.Value != PgoFileType.jittrace) && (commandLineOptions.FileType != PgoFileType.mibc))
+            }
+            if (commandLineOptions.FileType == PgoFileType.mibc)
+            {
+                if (!commandLineOptions.OutputFileName.Name.EndsWith(".mibc"))
                 {
-                    PrintUsage(commandLineOptions, $"Invalid output pgo type {commandLineOptions.FileType} specified.");
+                    PrintUsage(commandLineOptions, $"mibc output file name must end with .mibc");
                     return -9;
-                }
-                if (commandLineOptions.FileType == PgoFileType.jittrace)
-                {
-                    if (!commandLineOptions.OutputFileName.Name.EndsWith(".jittrace"))
-                    {
-                        PrintUsage(commandLineOptions, $"jittrace output file name must end with .jittrace");
-                        return -9;
-                    }
-                }
-                if (commandLineOptions.FileType == PgoFileType.mibc)
-                {
-                    if (!commandLineOptions.OutputFileName.Name.EndsWith(".mibc"))
-                    {
-                        PrintUsage(commandLineOptions, $"mibc output file name must end with .mibc");
-                        return -9;
-                    }
                 }
             }
 
@@ -720,6 +692,21 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                     }
                 }
 
+                MethodMemoryMap methodMemMap = null;
+                MethodMemoryMap GetMethodMemMap()
+                {
+                    if (methodMemMap == null)
+                    {
+                        methodMemMap = new MethodMemoryMap(
+                            p,
+                            tsc,
+                            idParser,
+                            clrInstanceId.Value);
+                    }
+
+                    return methodMemMap;
+                }
+
                 Dictionary<MethodDesc, Dictionary<MethodDesc, int>> callGraph = null;
                 Dictionary<MethodDesc, int> exclusiveSamples = null;
                 if (commandLineOptions.GenerateCallGraph)
@@ -732,93 +719,8 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 
                     callGraph = new Dictionary<MethodDesc, Dictionary<MethodDesc, int>>();
                     exclusiveSamples = new Dictionary<MethodDesc, int>();
-                    // Capture the addresses of jitted code
-                    List<ValueTuple<InstructionPointerRange, MethodDesc>> codeLocations = new List<(InstructionPointerRange, MethodDesc)>();
-                    foreach (var e in p.EventsInProcess.ByEventType<MethodLoadUnloadTraceData>())
-                    {
-                        if (e.ClrInstanceID != clrInstanceId.Value)
-                        {
-                            continue;
-                        }
 
-                        MethodDesc method = null;
-                        try
-                        {
-                            method = idParser.ResolveMethodID(e.MethodID, commandLineOptions.VerboseWarnings);
-                        }
-                        catch (Exception)
-                        {
-                        }
-
-                        if (method != null)
-                        {
-                            codeLocations.Add((new InstructionPointerRange(e.MethodStartAddress, e.MethodSize), method));
-                        }
-                    }
-                    foreach (var e in p.EventsInProcess.ByEventType<MethodLoadUnloadVerboseTraceData>())
-                    {
-                        if (e.ClrInstanceID != clrInstanceId.Value)
-                        {
-                            continue;
-                        }
-
-                        MethodDesc method = null;
-                        try
-                        {
-                            method = idParser.ResolveMethodID(e.MethodID, commandLineOptions.VerboseWarnings);
-                        }
-                        catch (Exception)
-                        {
-                        }
-
-                        if (method != null)
-                        {
-                            codeLocations.Add((new InstructionPointerRange(e.MethodStartAddress, e.MethodSize), method));
-                        }
-                    }
-
-                    var sigProvider = new R2RSignatureTypeProvider(tsc);
-                    foreach (var module in p.LoadedModules)
-                    {
-                        if (module.FilePath == "")
-                            continue;
-
-                        if (!File.Exists(module.FilePath))
-                            continue;
-
-                        try
-                        {
-                            byte[] image = File.ReadAllBytes(module.FilePath);
-                            using (FileStream fstream = new FileStream(module.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                            {
-                                var r2rCheckPEReader = new System.Reflection.PortableExecutable.PEReader(fstream, System.Reflection.PortableExecutable.PEStreamOptions.LeaveOpen);
-
-                                if (!ILCompiler.Reflection.ReadyToRun.ReadyToRunReader.IsReadyToRunImage(r2rCheckPEReader))
-                                    continue;
-                            }
-
-                            var reader = new ILCompiler.Reflection.ReadyToRun.ReadyToRunReader(tsc, module.FilePath);
-                            foreach (var methodEntry in reader.GetCustomMethodToRuntimeFunctionMapping<TypeDesc, MethodDesc, R2RSigProviderContext>(sigProvider))
-                            {
-                                foreach (var runtimeFunction in methodEntry.Value.RuntimeFunctions)
-                                {
-                                    codeLocations.Add((new InstructionPointerRange(module.ImageBase + (ulong)runtimeFunction.StartAddress, runtimeFunction.Size), methodEntry.Key));
-                                }
-                            }
-                        }
-                        catch { }
-                    }
-
-                    InstructionPointerRange[] instructionPointerRanges = new InstructionPointerRange[codeLocations.Count];
-                    MethodDesc[] methods = new MethodDesc[codeLocations.Count];
-                    for (int i = 0; i < codeLocations.Count; i++)
-                    {
-                        instructionPointerRanges[i] = codeLocations[i].Item1;
-                        methods[i] = codeLocations[i].Item2;
-                    }
-
-                    Array.Sort(instructionPointerRanges, methods);
-
+                    MethodMemoryMap mmap = GetMethodMemMap();
                     foreach (var e in p.EventsInProcess.ByEventType<SampledProfileTraceData>())
                     {
                         var callstack = e.CallStack();
@@ -826,12 +728,12 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                             continue;
 
                         ulong address1 = callstack.CodeAddress.Address;
-                        MethodDesc topOfStackMethod = LookupMethodByAddress(address1);
+                        MethodDesc topOfStackMethod = mmap.ResolveIP(address1);
                         MethodDesc nextMethod = null;
                         if (callstack.Caller != null)
                         {
                             ulong address2 = callstack.Caller.CodeAddress.Address;
-                            nextMethod = LookupMethodByAddress(address2);
+                            nextMethod = mmap.ResolveIP(address2);
                         }
 
                         if (topOfStackMethod != null)
@@ -873,45 +775,6 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                             {
                                 innerDictionary[topOfStackMethod] = 1;
                             }
-                        }
-                    }
-
-                    MethodDesc LookupMethodByAddress(ulong address)
-                    {
-                        int index = Array.BinarySearch(instructionPointerRanges, new InstructionPointerRange(address, 1));
-
-                        if (index >= 0)
-                        {
-                            return methods[index];
-                        }
-                        else
-                        {
-                            index = ~index;
-                            if (index >= instructionPointerRanges.Length)
-                                return null;
-
-                            if (instructionPointerRanges[index].StartAddress < address)
-                            {
-                                if (instructionPointerRanges[index].EndAddress > address)
-                                {
-                                    return methods[index];
-                                }
-                            }
-
-                            if (index == 0)
-                                return null;
-
-                            index--;
-
-                            if (instructionPointerRanges[index].StartAddress < address)
-                            {
-                                if (instructionPointerRanges[index].EndAddress > address)
-                                {
-                                    return methods[index];
-                                }
-                            }
-
-                            return null;
                         }
                     }
                 }
@@ -965,6 +828,21 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                     }
                 }
 
+                Dictionary<MethodDesc, SampledProfile> edgeProfiles = new Dictionary<MethodDesc, SampledProfile>();
+                if (commandLineOptions.GenerateEdgeProfiles)
+                {
+                    MethodMemoryMap mmap = GetMethodMemMap();
+                    var samples =
+                        p.EventsInProcess.ByEventType<SampledProfileTraceData>()
+                        .Select(e => (Method: mmap.ResolveIP(e.InstructionPointer), Offset: traceLog.CodeAddresses.ILOffset(e.IntructionPointerCodeAddressIndex())))
+                        .Where(t => t.Method != null && t.Offset != -1)
+                        .ToList();
+                    foreach (var g in samples.GroupBy(t => t.Method))
+                    {
+                        var ep = SampledProfile.Create((EcmaMethod)g.Key, g.Select(t => t.Offset));
+                        edgeProfiles.Add(g.Key, ep);
+                    }
+                }
 
                 if (commandLineOptions.DisplayProcessedEvents)
                 {

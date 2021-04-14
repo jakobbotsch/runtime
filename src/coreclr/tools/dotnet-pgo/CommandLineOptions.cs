@@ -28,6 +28,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
         public bool DisplayProcessedEvents;
         public bool ValidateOutputFile;
         public bool GenerateCallGraph;
+        public bool GenerateEdgeProfiles;
         public bool VerboseWarnings;
         public jittraceoptions JitTraceOptions;
         public double ExcludeEventsBefore;
@@ -180,6 +181,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 HelpArgs = new string[] { "create-mibc", "--help", "--trace", "trace", "--output", "output" };
                 FileType = PgoFileType.mibc;
                 GenerateCallGraph = true;
+                GenerateEdgeProfiles = true;
                 ProcessJitEvents = true;
                 ProcessR2REvents = true;
 #if DEBUG
