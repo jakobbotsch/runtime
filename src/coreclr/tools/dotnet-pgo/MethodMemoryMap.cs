@@ -34,6 +34,9 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                     continue;
                 }
 
+                //if (e.OptimizationTier != OptimizationTier.QuickJitted)
+                //    continue;
+
                 MethodDesc method = null;
                 try
                 {
@@ -55,6 +58,9 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 {
                     continue;
                 }
+
+                //if (e.OptimizationTier != OptimizationTier.QuickJitted)
+                //    continue;
 
                 MethodDesc method = null;
                 try

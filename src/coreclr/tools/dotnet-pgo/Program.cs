@@ -31,6 +31,7 @@ using ILCompiler;
 using System.Runtime.Serialization.Json;
 using System.Text.Json;
 using System.Text.Encodings.Web;
+using Microsoft.Diagnostics.Tools.Pgo.SamplePGO;
 
 namespace Microsoft.Diagnostics.Tools.Pgo
 {
@@ -828,8 +829,8 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                     }
                 }
 
-                Dictionary<MethodDesc, SampledProfile> edgeProfiles = new Dictionary<MethodDesc, SampledProfile>();
-                if (commandLineOptions.GenerateEdgeProfiles)
+                Dictionary<MethodDesc, SampleProfile> sampleProfiles = new Dictionary<MethodDesc, SampleProfile>();
+                if (commandLineOptions.GenerateSampleProfile)
                 {
                     MethodMemoryMap mmap = GetMethodMemMap();
                     var samples =
@@ -839,9 +840,71 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         .ToList();
                     foreach (var g in samples.GroupBy(t => t.Method))
                     {
-                        var ep = SampledProfile.Create((EcmaMethod)g.Key, g.Select(t => t.Offset));
-                        edgeProfiles.Add(g.Key, ep);
+                        MethodIL il = g.Key switch
+                        {
+                            EcmaMethod em => EcmaMethodIL.Create(em),
+                            var m => new InstantiatedMethodIL(m, EcmaMethodIL.Create((EcmaMethod)m.GetTypicalMethodDefinition())),
+                        };
+
+                        var ep = SampleProfile.Create(il, g.Select(t => t.Offset));
+                        sampleProfiles.Add(g.Key, ep);
                     }
+
+                    List<InstrumentedPgoProfile> profile;
+                    using (var sr = new StreamReader(File.OpenRead(@"D:\dev\dotnet\pgobench\bin\Release\net6.0\pgo.txt")))
+                        profile = InstrumentedPgoProfile.Parse(sr);
+
+                    var entries = new List<(string Method, int ilSize, int numBbs, long numSamples, double rawOverlap, double smoothedOverlap)>();
+
+                    foreach ((MethodDesc meth, SampleProfile sp) in sampleProfiles)
+                    {
+                        MethodSignature sig = meth.Signature;
+                        string name;
+                        if (meth.OwningType is DefType dt)
+                        {
+                            if (string.IsNullOrEmpty(dt.Namespace))
+                                name = $"{dt.Name}.{meth.Name}";
+                            else
+                                name = $"{dt.Namespace}.{dt.Name}.{meth.Name}";
+                        }
+                        else
+                            continue;
+
+                        List<InstrumentedPgoProfile> pgoList = profile.Where(p => p.MethodName == name && p.ILSize == sp.MethodIL.GetILBytes().Length).ToList();
+                        if (pgoList.Count != 1)
+                            continue;
+
+                        InstrumentedPgoProfile pgo = pgoList[0];
+
+                        var basicBlockSchema = pgo.Schema.Where(e => e.InstrumentationKind == PgoInstrumentationKind.BasicBlockIntCount).ToList();
+                        bool flowGraphRight = basicBlockSchema.All(e => sp.BasicBlocks.Any(bb => bb.Start == e.ILOffset));
+                        Trace.Assert(flowGraphRight);
+
+                        long numSamples = sp.Samples.Sum(kvp => kvp.Value);
+                        if (numSamples < 50)
+                            continue;
+
+                        long totalInstrumentedCount = basicBlockSchema.Sum(s => s.DataLong);
+                        long totalSmoothedSamplesCount = sp.SmoothedSamples.Sum(kvp => kvp.Value);
+                        double rawOverlap = 0;
+                        double smoothedOverlap = 0;
+                        foreach (PgoSchemaElem elem in basicBlockSchema)
+                        {
+                            rawOverlap += Math.Min(elem.DataLong / (double)totalInstrumentedCount, sp.Samples.Single(kvp => kvp.Key.Start == elem.ILOffset).Value / (double)numSamples);
+                            smoothedOverlap += Math.Min(elem.DataLong / (double)totalInstrumentedCount, sp.SmoothedSamples.Single(kvp => kvp.Key.Start == elem.ILOffset).Value / (double)totalSmoothedSamplesCount);
+                        }
+
+                        entries.Add((name, sp.MethodIL.GetILBytes().Length, sp.BasicBlocks.Count, numSamples, rawOverlap, smoothedOverlap));
+                    }
+
+                    Console.WriteLine("Method | IL size | # BBs | # Samples | Raw overlap | Smoothed overlap");
+                    Console.WriteLine("--- | --- | --- | --- | --- | ---");
+                    foreach (var (name, ilSize, numBBs, numSamples, rawOverlap, smoothedOverlap) in entries.OrderBy(e => e.Method))
+                    {
+                        Console.WriteLine(FormattableString.Invariant($"{name} | {ilSize} | {numBBs} | {numSamples} | {rawOverlap * 100:F2}% | {smoothedOverlap * 100:F2}%"));
+                    }
+
+                    Console.WriteLine("{{{0}}}", string.Join(", ", entries.Select(e => string.Format(CultureInfo.InvariantCulture, "{0:R}", e.smoothedOverlap))));
                 }
 
                 if (commandLineOptions.DisplayProcessedEvents)

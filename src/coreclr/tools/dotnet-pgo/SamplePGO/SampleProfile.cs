@@ -14,20 +14,34 @@ using Internal.TypeSystem.Ecma;
 
 namespace Microsoft.Diagnostics.Tools.Pgo
 {
-    internal class SampledProfile
+    internal class SampleProfile
     {
+        public SampleProfile(
+            MethodIL methodIL,
+            List<BasicBlock> basicBlocks,
+            Dictionary<BasicBlock, long> samples,
+            Dictionary<BasicBlock, long> smoothedSamples,
+            Dictionary<(BasicBlock, BasicBlock), long> smoothedEdgeSamples)
+        {
+            MethodIL = methodIL;
+            BasicBlocks = basicBlocks;
+            Samples = samples;
+            SmoothedSamples = smoothedSamples;
+            SmoothedEdgeSamples = smoothedEdgeSamples;
+        }
+
+        public MethodIL MethodIL { get; }
         public List<BasicBlock> BasicBlocks { get; }
+        public Dictionary<BasicBlock, long> Samples { get; }
         public Dictionary<BasicBlock, long> SmoothedSamples { get; }
         public Dictionary<(BasicBlock, BasicBlock), long> SmoothedEdgeSamples { get; }
-        public Dictionary<BasicBlock, >
 
         /// <summary>
         /// Given some IL offset samples into a method, construct a profile of edge probabilities.
         /// </summary>
-        public static SampledProfile Create(EcmaMethod method, IEnumerable<int> ilOffsetSamples)
+        public static SampleProfile Create(MethodIL il, IEnumerable<int> ilOffsetSamples)
         {
             // Start out by reconstructing the IL flow graph.
-            EcmaMethodIL il = EcmaMethodIL.Create(method);
             HashSet<int> bbStarts = GetBasicBlockStarts(il);
 
             List<BasicBlock> bbs = new List<BasicBlock>();
@@ -108,13 +122,13 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             // Now associate raw IL-offset samples with basic blocks.
             Dictionary<BasicBlock, long> bbSamples = bbs.ToDictionary(bb => bb, bb => 0L);
             foreach (int ofs in ilOffsetSamples.Where(o => o != -1))
-                CollectionsMarshal.GetValueRefOrNullRef(bbSamples, LookupBasicBlock(ofs))++;
+                bbSamples[LookupBasicBlock(ofs)]++;
 
             // Smooth the graph to produce something that satisfies flow conservation.
             FlowSmoothing<BasicBlock> flowSmooth = new FlowSmoothing<BasicBlock>(bbSamples, LookupBasicBlock(0), bb => bb.Targets, (bb, isForward) => bb.Count * (isForward ? 1 : 50) + 2);
             flowSmooth.Perform();
 
-            return null;
+            return new SampleProfile(il, bbs, bbSamples, flowSmooth.NodeResults, flowSmooth.EdgeResults);
         }
 
         private static string DumpGraph(List<BasicBlock> bbs, Dictionary<BasicBlock, long> numSamples, FlowSmoothing<BasicBlock> smoothed)
@@ -166,7 +180,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
         /// <summary>
         /// Find IL offsets at which basic blocks begin.
         /// </summary>
-        private static HashSet<int> GetBasicBlockStarts(EcmaMethodIL il)
+        private static HashSet<int> GetBasicBlockStarts(MethodIL il)
         {
             ILReader reader = new ILReader(il.GetILBytes());
             HashSet<int> bbStarts = new HashSet<int>();
@@ -213,27 +227,27 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 
             return bbStarts;
         }
+    }
 
-        private class BasicBlock : IEquatable<BasicBlock>
-        {
-            public BasicBlock(int start, int count)
-                => (Start, Count) = (start, count);
+    internal class BasicBlock : IEquatable<BasicBlock>
+    {
+        public BasicBlock(int start, int count)
+            => (Start, Count) = (start, count);
 
-            // First IL offset
-            public int Start { get; }
-            // Number of IL bytes in this basic block
-            public int Count { get; }
+        // First IL offset
+        public int Start { get; }
+        // Number of IL bytes in this basic block
+        public int Count { get; }
 
-            public HashSet<BasicBlock> Targets { get; } = new HashSet<BasicBlock>();
+        public HashSet<BasicBlock> Targets { get; } = new HashSet<BasicBlock>();
 
-            public override string ToString() => $"Start={Start}, Count={Count}";
+        public override string ToString() => $"Start={Start}, Count={Count}";
 
-            public override bool Equals(object obj) => Equals(obj as BasicBlock);
-            public bool Equals(BasicBlock other) => other != null && Start == other.Start;
-            public override int GetHashCode() => HashCode.Combine(Start);
+        public override bool Equals(object obj) => Equals(obj as BasicBlock);
+        public bool Equals(BasicBlock other) => other != null && Start == other.Start;
+        public override int GetHashCode() => HashCode.Combine(Start);
 
-            public static bool operator ==(BasicBlock left, BasicBlock right) => EqualityComparer<BasicBlock>.Default.Equals(left, right);
-            public static bool operator !=(BasicBlock left, BasicBlock right) => !(left == right);
-        }
+        public static bool operator ==(BasicBlock left, BasicBlock right) => EqualityComparer<BasicBlock>.Default.Equals(left, right);
+        public static bool operator !=(BasicBlock left, BasicBlock right) => !(left == right);
     }
 }
