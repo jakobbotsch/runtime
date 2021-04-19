@@ -3095,6 +3095,11 @@ void Compiler::compInitOptions(JitFlags* jitFlags)
         {
             opts.disasmWithGC = true;
         }
+        if (opts.disAsm && JitConfig.JitDisasmWithIL())
+        {
+            opts.dspInstrs = true;
+        }
+
 
 #ifdef LATE_DISASM
         if (JitConfig.JitLateDisasm().contains(info.compMethodName, info.compClassName, &info.compMethodInfo->args))

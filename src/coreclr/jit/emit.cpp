@@ -3634,6 +3634,7 @@ void emitter::emitDispIG(insGroup* ig, insGroup* igPrev, bool verbose)
             UNATIVE_OFFSET ofs = ig->igOffs;
             unsigned       cnt = ig->igInsCnt;
 
+            int curInsIdx = 0;
             if (cnt)
             {
                 printf("\n");
@@ -3642,10 +3643,39 @@ void emitter::emitDispIG(insGroup* ig, insGroup* igPrev, bool verbose)
                 {
                     instrDesc* id = (instrDesc*)ins;
 
+                    Compiler::IPmappingDsc* firstDsc = nullptr;
+                    for (Compiler::IPmappingDsc* mapping = emitComp->genIPmappingList; mapping; mapping = mapping->ipmdNext)
+                    {
+                        IL_OFFSET firstOffs = jitGetILoffsAny(mapping->ipmdILoffsx);
+                        if ((int)firstOffs < 0)
+                            continue;
+
+                        if (mapping->ipmdNativeLoc.GetIG() != ig || mapping->ipmdNativeLoc.GetInsNum() != curInsIdx)
+                            continue;
+
+                        Compiler::IPmappingDsc* next = mapping->ipmdNext;
+                        while (next != nullptr && (int)jitGetILoffsAny(next->ipmdILoffsx) < 0)
+                            next = next->ipmdNext;
+
+                        if (next != nullptr)
+                        {
+                            IL_OFFSET end = jitGetILoffsAny(next->ipmdILoffsx);
+                            for (IL_OFFSET offs = firstOffs; offs < end;)
+                            {
+                                char prefix[100];
+                                sprintf_s(prefix, "IL_%04x ", offs);
+                                offs += dumpSingleInstr(emitComp->info.compCode, offs, prefix);
+                            }
+                        }
+
+                        break;
+                    }
+
                     emitDispIns(id, false, true, false, ofs, nullptr, 0, ig);
 
                     ins += emitSizeOfInsDsc(id);
                     ofs += id->idCodeSize();
+                    curInsIdx++;
                 } while (--cnt);
 
                 printf("\n");

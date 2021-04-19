@@ -104,6 +104,11 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         break;
                     }
 
+                    if (opc == ILOpcode.ret)
+                    {
+                        break;
+                    }
+
                     reader.Skip(opc);
                     // Check fall through
                     if (reader.HasNext)
@@ -131,45 +136,46 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             return new SampleProfile(il, bbs, bbSamples, flowSmooth.NodeResults, flowSmooth.EdgeResults);
         }
 
-        private static string DumpGraph(List<BasicBlock> bbs, Dictionary<BasicBlock, long> numSamples, FlowSmoothing<BasicBlock> smoothed)
+        internal string DumpGraph(Func<BasicBlock, string> getNodeAnnot, Func<(BasicBlock, BasicBlock), string> getEdgeAnnot)
         {
             var sb = new StringBuilder();
             sb.AppendLine("digraph G {");
             sb.AppendLine("  forcelabels=true;");
             sb.AppendLine();
-            Dictionary<BasicBlock, int> bbToIndex = new Dictionary<BasicBlock, int>();
-            for (int i = 0; i < bbs.Count; i++)
-                bbToIndex.Add(bbs[i], i);
+            Dictionary<long, int> bbToIndex = new Dictionary<long, int>();
+            for (int i = 0; i < BasicBlocks.Count; i++)
+                bbToIndex.Add(BasicBlocks[i].Start, i);
 
-            foreach (BasicBlock bb in bbs)
+            foreach (BasicBlock bb in BasicBlocks)
             {
                 //string label = $"Samples: {(numSamples.TryGetValue(bb, out long ns) ? ns : 0)}\\nSmoothed samples: {smoothed.NodeResults[bb]}";
-                string label = smoothed.NodeResults[bb].ToString();
+                string label = $"[{bb.Start:x}..{bb.Start + bb.Count:x})\\n{getNodeAnnot(bb)}";
                 //if (numSamples == null)
                 //    label = $"#{ilToIndex[bb.Start]} @ {bb.Start} -> {bb.Start + bb.Count}";
                 //else
                 //    label = (numSamples.TryGetValue(bb, out int ns) ? ns : 0).ToString();
 
-                sb.AppendLine($"  BB{bbToIndex[bb]} [label=\"{label}\"];");
+                sb.AppendLine($"  BB{bbToIndex[bb.Start]} [label=\"{label}\"];");
             }
 
             sb.AppendLine();
 
-            foreach (BasicBlock bb in bbs)
+            foreach (BasicBlock bb in BasicBlocks)
             {
                 foreach (BasicBlock tar in bb.Targets)
                 {
-                    string label = smoothed.EdgeResults[(bb, tar)].ToString();
-                    sb.AppendLine($"  BB{bbToIndex[bb]} -> BB{bbToIndex[tar]} [label=\"{label}\"];");
+                    string label = getEdgeAnnot((bb, tar));
+                    string postfix = string.IsNullOrEmpty(label) ? "" : $" [label=\"{label}\"]";
+                    sb.AppendLine($"  BB{bbToIndex[bb.Start]} -> BB{bbToIndex[tar.Start]}{postfix};");
                 }
             }
 
             // Write ranks with BFS.
-            List<BasicBlock> curRank = new List<BasicBlock> { bbs.Single(bb => bb.Start == 0) };
+            List<BasicBlock> curRank = new List<BasicBlock> { BasicBlocks.Single(bb => bb.Start == 0) };
             HashSet<BasicBlock> seen = new HashSet<BasicBlock>(curRank);
             while (curRank.Count > 0)
             {
-                sb.AppendLine($"  {{rank = same; {string.Concat(curRank.Select(bb => $"BB{bbToIndex[bb]}; "))}}}");
+                sb.AppendLine($"  {{rank = same; {string.Concat(curRank.Select(bb => $"BB{bbToIndex[bb.Start]}; "))}}}");
                 curRank = curRank.SelectMany(bb => bb.Targets).Where(seen.Add).ToList();
             }
 
@@ -208,6 +214,10 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         int caseOfs = jmpBase + (int)reader.ReadILUInt32();
                         bbStarts.Add(caseOfs);
                     }
+                }
+                else if (opc == ILOpcode.ret)
+                {
+                    bbStarts.Add(reader.Offset);
                 }
                 else
                 {

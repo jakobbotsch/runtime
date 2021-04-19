@@ -449,7 +449,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 
             UnZipIfNecessary(ref etlFileName, commandLineOptions.BasicProgressMessages ? Console.Out : new StringWriter());
 
-            using (var traceLog = TraceLog.OpenOrConvert(etlFileName))
+            using (var traceLog = TraceLog.OpenOrConvert(etlFileName, new TraceLogOptions { KeepAllEvents = true }))
             {
                 if ((!commandLineOptions.Pid.HasValue && commandLineOptions.ProcessName == null) && traceLog.Processes.Count != 1)
                 {
@@ -833,11 +833,16 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 if (commandLineOptions.GenerateSampleProfile)
                 {
                     MethodMemoryMap mmap = GetMethodMemMap();
-                    var samples =
+                    var allSamples =
                         p.EventsInProcess.ByEventType<SampledProfileTraceData>()
-                        .Select(e => (Method: mmap.ResolveIP(e.InstructionPointer), Offset: traceLog.CodeAddresses.ILOffset(e.IntructionPointerCodeAddressIndex())))
+                        .Select(e => (Method: mmap.ResolveIP(e.InstructionPointer), IP: e.InstructionPointer, Offset: traceLog.CodeAddresses.ILOffset(e.IntructionPointerCodeAddressIndex())))
+                        .ToList();
+
+                    var samples =
+                        allSamples
                         .Where(t => t.Method != null && t.Offset != -1)
                         .ToList();
+
                     foreach (var g in samples.GroupBy(t => t.Method))
                     {
                         MethodIL il = g.Key switch
@@ -850,11 +855,31 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         sampleProfiles.Add(g.Key, ep);
                     }
 
+                    foreach (var m in allSamples.Select(m => m.Method).Distinct())
+                    {
+                        if (m != null && m.Name.Contains("countEnding"))
+                        {
+                            var byIP = allSamples.Where(a => a.Method == m)
+                                .GroupBy(a => a.IP)
+                                .Select(g => (IP: g.Key, IL: g.First().Offset, Count: g.Count()))
+                                .OrderByDescending(t => t.Count)
+                                .ToList();
+
+                            var byIL = allSamples.Where(a => a.Method == m)
+                                .GroupBy(a => a.Offset)
+                                .Select(g => (Offset: g.Key, IPs: g.Select(t => t.IP).Distinct().ToList(), Count: g.Count()))
+                                .OrderByDescending(t => t.Count)
+                                .ToList();
+                        }
+                    }
+
                     List<InstrumentedPgoProfile> profile;
                     using (var sr = new StreamReader(File.OpenRead(@"D:\dev\dotnet\pgobench\bin\Release\net6.0\pgo.txt")))
                         profile = InstrumentedPgoProfile.Parse(sr);
 
-                    var entries = new List<(string Method, int ilSize, int numBbs, long numSamples, double rawOverlap, double smoothedOverlap)>();
+                    var entries = new List<(string method, int ilSize, int numBbs, long numSamples, double rawOverlap, double smoothedOverlap, string instrGraph, string rawGraph, string smoothGraph)>();
+
+                    string outputPath = @"D:\dev\dotnet\spgo_data";
 
                     foreach ((MethodDesc meth, SampleProfile sp) in sampleProfiles)
                     {
@@ -877,7 +902,8 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         InstrumentedPgoProfile pgo = pgoList[0];
 
                         var basicBlockSchema = pgo.Schema.Where(e => e.InstrumentationKind == PgoInstrumentationKind.BasicBlockIntCount).ToList();
-                        bool flowGraphRight = basicBlockSchema.All(e => sp.BasicBlocks.Any(bb => bb.Start == e.ILOffset));
+                        bool flowGraphRight = basicBlockSchema.All(e => sp.BasicBlocks.Any(bb => bb.Start == e.ILOffset)) &&
+                                              sp.BasicBlocks.All(bb => basicBlockSchema.Any(e => e.ILOffset == bb.Start));
                         Trace.Assert(flowGraphRight);
 
                         long numSamples = sp.Samples.Sum(kvp => kvp.Value);
@@ -886,24 +912,68 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 
                         long totalInstrumentedCount = basicBlockSchema.Sum(s => s.DataLong);
                         long totalSmoothedSamplesCount = sp.SmoothedSamples.Sum(kvp => kvp.Value);
+                        var entrySchema = basicBlockSchema.Single(e => e.ILOffset == 0).DataLong;
+                        var entryRaw = sp.Samples.Single(kvp => kvp.Key.Start == 0).Value;
+                        var entrySmooth = sp.SmoothedSamples.Single(kvp => kvp.Key.Start == 0).Value;
+                        Dictionary<int, (double count, double samplesWeight)> instrumentedPw = basicBlockSchema.ToDictionary(e => e.ILOffset, e => (e.DataLong / (double)entrySchema, e.DataLong / (double)totalInstrumentedCount));
+                        Dictionary<int, (double count, double samplesWeight)> rawPw = sp.Samples.ToDictionary(kvp => kvp.Key.Start, kvp => (kvp.Value / (double)entryRaw, kvp.Value / (double)numSamples));
+                        Dictionary<int, (double count, double samplesWeight)> smoothedPw = sp.SmoothedSamples.ToDictionary(kvp => kvp.Key.Start, kvp => (kvp.Value / (double)entrySmooth, kvp.Value / (double)totalSmoothedSamplesCount));
+
+                        Directory.CreateDirectory(Path.Combine(outputPath, "graphs"));
+                        string GenGraph(Dictionary<int, (double normalizedBlockCount, double blockWeight)> annots, string postfix)
+                        {
+                            string GetAnnot(BasicBlock bb)
+                            {
+                                var (bc, bw) = annots[bb.Start];
+                                return FormattableString.Invariant($"Normalized Count: {bc:F2}\\nSamples weight: {bw:F2}");
+                            }
+
+                            string graph = sp.DumpGraph(GetAnnot, p => "");
+                            string path = Path.Combine(outputPath, "graphs", name + "_" + postfix + ".svg");
+                            var startInfo = new ProcessStartInfo("dot", $"-Tsvg -o \"{path}\"")
+                            {
+                                UseShellExecute = false,
+                                RedirectStandardInput = true,
+                                RedirectStandardOutput = true,
+                            };
+
+                            using (Process p = Process.Start(startInfo))
+                            {
+                                p.StandardInput.Write(graph);
+                                p.StandardInput.Flush();
+                                p.StandardInput.Close();
+                                p.StandardOutput.ReadToEnd();
+                                p.WaitForExit();
+                            }
+
+                            return path;
+                        }
+
+                        string instrGraph = GenGraph(instrumentedPw, "instrumented");
+                        string rawGraph = GenGraph(rawPw, "raw");
+                        string smoothedGraph = GenGraph(smoothedPw, "smoothed");
+
                         double rawOverlap = 0;
                         double smoothedOverlap = 0;
                         foreach (PgoSchemaElem elem in basicBlockSchema)
                         {
-                            rawOverlap += Math.Min(elem.DataLong / (double)totalInstrumentedCount, sp.Samples.Single(kvp => kvp.Key.Start == elem.ILOffset).Value / (double)numSamples);
-                            smoothedOverlap += Math.Min(elem.DataLong / (double)totalInstrumentedCount, sp.SmoothedSamples.Single(kvp => kvp.Key.Start == elem.ILOffset).Value / (double)totalSmoothedSamplesCount);
+                            rawOverlap += Math.Min(instrumentedPw[elem.ILOffset].samplesWeight, rawPw[elem.ILOffset].samplesWeight);
+                            smoothedOverlap += Math.Min(instrumentedPw[elem.ILOffset].samplesWeight, smoothedPw[elem.ILOffset].samplesWeight);
                         }
 
-                        entries.Add((name, sp.MethodIL.GetILBytes().Length, sp.BasicBlocks.Count, numSamples, rawOverlap, smoothedOverlap));
+                        entries.Add((name, sp.MethodIL.GetILBytes().Length, sp.BasicBlocks.Count, numSamples, rawOverlap, smoothedOverlap, instrGraph, rawGraph, smoothedGraph));
                     }
 
-                    Console.WriteLine("Method | IL size | # BBs | # Samples | Raw overlap | Smoothed overlap");
-                    Console.WriteLine("--- | --- | --- | --- | --- | ---");
-                    foreach (var (name, ilSize, numBBs, numSamples, rawOverlap, smoothedOverlap) in entries.OrderBy(e => e.Method))
+                    StringBuilder sb = new StringBuilder();
+                    sb.AppendLine("Method | IL size | # BBs | # Samples | Raw overlap | Smoothed overlap | Instrumented graph | Smoothed graph");
+                    sb.AppendLine("--- | --- | --- | --- | --- | --- | --- | ---");
+                    foreach (var (name, ilSize, numBBs, numSamples, rawOverlap, smoothedOverlap, instGraph, rawGraph, smoothedGraph) in entries.OrderBy(e => e.smoothedOverlap))
                     {
-                        Console.WriteLine(FormattableString.Invariant($"{name} | {ilSize} | {numBBs} | {numSamples} | {rawOverlap * 100:F2}% | {smoothedOverlap * 100:F2}%"));
+                        string Graph(string path) => $"<details><summary>Expand</summary>![](graphs/{Path.GetFileName(path)})</details>";
+                        sb.AppendLine(FormattableString.Invariant($"{name} | {ilSize} | {numBBs} | {numSamples} | {rawOverlap * 100:F2}% | {smoothedOverlap * 100:F2}% | {Graph(instGraph)} | {Graph(smoothedGraph)}"));
                     }
 
+                    File.WriteAllText(Path.Combine(outputPath, "README.md"), sb.ToString());
                     Console.WriteLine("{{{0}}}", string.Join(", ", entries.Select(e => string.Format(CultureInfo.InvariantCulture, "{0:R}", e.smoothedOverlap))));
                 }
 
