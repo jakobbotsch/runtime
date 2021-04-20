@@ -7911,7 +7911,7 @@ void emitter::emitDispFrameRef(int varx, int disp, int offs, bool asmfm)
  */
 void emitter::emitDispReloc(ssize_t value)
 {
-    if (emitComp->opts.disAsm)
+    if (emitComp->opts.disAsm && emitComp->opts.disDiffable)
     {
         printf("(reloc)");
     }

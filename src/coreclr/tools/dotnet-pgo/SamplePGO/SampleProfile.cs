@@ -66,6 +66,8 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             {
                 int index = Array.BinarySearch(bbKeys, ilOffset);
                 BasicBlock bb = bbs[index >= 0 ? index : (~index - 1)];
+                if (ilOffset < bb.Start || ilOffset >= bb.Start + bb.Count)
+                    return null;
                 Debug.Assert(ilOffset >= bb.Start && ilOffset < bb.Start + bb.Count);
                 return bb;
             }
@@ -126,7 +128,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 
             // Now associate raw IL-offset samples with basic blocks.
             Dictionary<BasicBlock, long> bbSamples = bbs.ToDictionary(bb => bb, bb => 0L);
-            foreach (int ofs in ilOffsetSamples.Where(o => o != -1))
+            foreach (int ofs in ilOffsetSamples.Where(o => o != -1 && LookupBasicBlock(o) != null))
                 bbSamples[LookupBasicBlock(ofs)]++;
 
             // Smooth the graph to produce something that satisfies flow conservation.

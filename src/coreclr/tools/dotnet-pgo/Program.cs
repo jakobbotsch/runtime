@@ -757,11 +757,11 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 
                         if (topOfStackMethod != null && nextMethod != null)
                         {
-                            if (!methodsListedToPrepare.Contains(nextMethod))
-                            {
-                                methodsListedToPrepare.Add(nextMethod);
-                                methodsToAttemptToPrepare.Add((int)e.EventIndex, new ProcessedMethodData(e.TimeStampRelativeMSec, nextMethod, "SampleMethodCaller"));
-                            }
+                            //if (!methodsListedToPrepare.Contains(nextMethod))
+                            //{
+                            //    methodsListedToPrepare.Add(nextMethod);
+                            //    methodsToAttemptToPrepare.Add((int)e.EventIndex, new ProcessedMethodData(e.TimeStampRelativeMSec, nextMethod, "SampleMethodCaller"));
+                            //}
 
                             if (!callGraph.TryGetValue(nextMethod, out var innerDictionary))
                             {
@@ -841,6 +841,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                     var samples =
                         allSamples
                         .Where(t => t.Method != null && t.Offset != -1)
+                        .Select(t => (t.Method, t.IP, Offset: t.Offset + 1)) // Needed because TraceEvent subtracts 1 for some reason
                         .ToList();
 
                     foreach (var g in samples.GroupBy(t => t.Method))
@@ -857,24 +858,25 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 
                     foreach (var m in allSamples.Select(m => m.Method).Distinct())
                     {
-                        if (m != null && m.Name.Contains("countEnding"))
+                        if (m != null && m.Name.Contains("GetHashCode"))
                         {
                             var byIP = allSamples.Where(a => a.Method == m)
                                 .GroupBy(a => a.IP)
                                 .Select(g => (IP: g.Key, IL: g.First().Offset, Count: g.Count()))
-                                .OrderByDescending(t => t.Count)
+                                .OrderBy(t => t.IP)
+                                //.OrderByDescending(t => t.Count)
                                 .ToList();
 
                             var byIL = allSamples.Where(a => a.Method == m)
                                 .GroupBy(a => a.Offset)
                                 .Select(g => (Offset: g.Key, IPs: g.Select(t => t.IP).Distinct().ToList(), Count: g.Count()))
-                                .OrderByDescending(t => t.Count)
+                                .OrderBy(t => t.Offset)
                                 .ToList();
                         }
                     }
 
                     List<InstrumentedPgoProfile> profile;
-                    using (var sr = new StreamReader(File.OpenRead(@"D:\dev\dotnet\pgobench\bin\Release\net6.0\pgo.txt")))
+                    using (var sr = new StreamReader(File.OpenRead(@"D:\dev\dotnet\pgobench\bin\Release\net6.0\pgo2.txt")))
                         profile = InstrumentedPgoProfile.Parse(sr);
 
                     var entries = new List<(string method, int ilSize, int numBbs, long numSamples, double rawOverlap, double smoothedOverlap, string instrGraph, string rawGraph, string smoothGraph)>();
@@ -899,6 +901,11 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         if (pgoList.Count != 1)
                             continue;
 
+                        if (name.Contains("GetHashCode"))
+                        {
+
+                        }
+
                         InstrumentedPgoProfile pgo = pgoList[0];
 
                         var basicBlockSchema = pgo.Schema.Where(e => e.InstrumentationKind == PgoInstrumentationKind.BasicBlockIntCount).ToList();
@@ -915,17 +922,17 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         var entrySchema = basicBlockSchema.Single(e => e.ILOffset == 0).DataLong;
                         var entryRaw = sp.Samples.Single(kvp => kvp.Key.Start == 0).Value;
                         var entrySmooth = sp.SmoothedSamples.Single(kvp => kvp.Key.Start == 0).Value;
-                        Dictionary<int, (double count, double samplesWeight)> instrumentedPw = basicBlockSchema.ToDictionary(e => e.ILOffset, e => (e.DataLong / (double)entrySchema, e.DataLong / (double)totalInstrumentedCount));
-                        Dictionary<int, (double count, double samplesWeight)> rawPw = sp.Samples.ToDictionary(kvp => kvp.Key.Start, kvp => (kvp.Value / (double)entryRaw, kvp.Value / (double)numSamples));
-                        Dictionary<int, (double count, double samplesWeight)> smoothedPw = sp.SmoothedSamples.ToDictionary(kvp => kvp.Key.Start, kvp => (kvp.Value / (double)entrySmooth, kvp.Value / (double)totalSmoothedSamplesCount));
+                        Dictionary<int, (long count, double normCount, double samplesWeight)> instrumentedPw = basicBlockSchema.ToDictionary(e => e.ILOffset, e => (e.DataLong, e.DataLong / (double)entrySchema, e.DataLong / (double)totalInstrumentedCount));
+                        Dictionary<int, (long count, double normCount, double samplesWeight)> rawPw = sp.Samples.ToDictionary(kvp => kvp.Key.Start, kvp => (kvp.Value, kvp.Value / (double)entryRaw, kvp.Value / (double)numSamples));
+                        Dictionary<int, (long count, double normCount, double samplesWeight)> smoothedPw = sp.SmoothedSamples.ToDictionary(kvp => kvp.Key.Start, kvp => (kvp.Value, kvp.Value / (double)entrySmooth, kvp.Value / (double)totalSmoothedSamplesCount));
 
                         Directory.CreateDirectory(Path.Combine(outputPath, "graphs"));
-                        string GenGraph(Dictionary<int, (double normalizedBlockCount, double blockWeight)> annots, string postfix)
+                        string GenGraph(Dictionary<int, (long count, double normalizedBlockCount, double blockWeight)> annots, string postfix)
                         {
                             string GetAnnot(BasicBlock bb)
                             {
-                                var (bc, bw) = annots[bb.Start];
-                                return FormattableString.Invariant($"Normalized Count: {bc:F2}\\nSamples weight: {bw:F2}");
+                                var (c, bc, bw) = annots[bb.Start];
+                                return FormattableString.Invariant($"Count: {c}\\nNormalized count: {bc:F2}\\nSamples weight: {bw:F2}");
                             }
 
                             string graph = sp.DumpGraph(GetAnnot, p => "");
