@@ -876,7 +876,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                     }
 
                     List<InstrumentedPgoProfile> profile;
-                    using (var sr = new StreamReader(File.OpenRead(@"D:\dev\dotnet\pgobench\bin\Release\net6.0\pgo2.txt")))
+                    using (var sr = new StreamReader(File.OpenRead(@"D:\dev\dotnet\spgo_data\pgo.txt")))
                         profile = InstrumentedPgoProfile.Parse(sr);
 
                     var entries = new List<(string method, int ilSize, int numBbs, long numSamples, double rawOverlap, double smoothedOverlap, string instrGraph, string rawGraph, string smoothGraph)>();

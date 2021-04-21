@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -37,7 +38,8 @@ namespace Microsoft.Diagnostics.Tools.Pgo.SamplePGO
         private static readonly Regex s_methodNameRegex = new Regex("^MethodName: (.*)$", RegexOptions.Compiled);
         private static readonly Regex s_methodSignatureRegex = new Regex("^Signature: (.*)$", RegexOptions.Compiled);
         private static readonly Regex s_schemaHeader = new Regex("^Schema InstrumentationKind ([0-9]+) ILOffset ([0-9]+) Count ([0-9]+) Other ([0-9]+)$", RegexOptions.Compiled);
-        private static readonly Regex s_schemaValue = new Regex("^[0-9]+$", RegexOptions.Compiled);
+        private static readonly Regex s_schemaFourByte = new Regex("^[0-9]+$", RegexOptions.Compiled);
+        private static readonly Regex s_schemaEightByte = new Regex("^([0-9]+) ([0-9]+)$", RegexOptions.Compiled);
         private static readonly Regex s_schemaTypeHandleValue = new Regex("^TypeHandle: (.*)$", RegexOptions.Compiled);
         private static readonly Regex s_endRegex = new Regex("^\\*\\*\\* END PGO Data \\*\\*\\*$", RegexOptions.Compiled);
 
@@ -75,20 +77,44 @@ namespace Microsoft.Diagnostics.Tools.Pgo.SamplePGO
                     uint other = uint.Parse(schemaHeader.Groups[4].Value);
                     long dataValue = 0;
                     Array dataObj = null;
-                    if (instrKind != PgoInstrumentationKind.TypeHandleHistogramTypeHandle)
+                    switch (instrKind & PgoInstrumentationKind.MarshalMask)
                     {
-                        Match valueMatch = Next(s_schemaValue);
-                        dataValue = long.Parse(valueMatch.Value);
-                    }
-                    else
-                    {
-                        string[] typeHandles = new string[count];
-                        for (uint k = 0; k < count; k++)
-                        {
-                            Match thMatch = Next(s_schemaTypeHandleValue);
-                            typeHandles[k] = thMatch.Groups[1].Value;
-                        }
-                        dataObj = typeHandles;
+                        case PgoInstrumentationKind.FourByte:
+                        case PgoInstrumentationKind.EightByte:
+                            Span<long> longs = count < 128 ? stackalloc long[checked((int)count)] : new long[count];
+                            for (int k = 0; k < longs.Length; k++)
+                            {
+                                if ((instrKind & PgoInstrumentationKind.MarshalMask) == PgoInstrumentationKind.FourByte)
+                                {
+                                    Match valueMatch = Next(s_schemaFourByte);
+                                    longs[k] = long.Parse(valueMatch.Value);
+                                }
+                                else
+                                {
+                                    Match valueMatch = Next(s_schemaEightByte);
+                                    uint lo = uint.Parse(valueMatch.Groups[1].Value);
+                                    uint hi = uint.Parse(valueMatch.Groups[2].Value);
+                                    longs[k] = ((long)hi << 32) | lo;
+                                }
+                            }
+
+                            if (count == 1)
+                                dataValue = longs[0];
+                            else
+                                dataObj = longs.ToArray();
+                            break;
+                        case PgoInstrumentationKind.TypeHandle:
+                            string[] ths = new string[count];
+                            for (int k = 0; k < ths.Length; k++)
+                            {
+                                Match thMatch = Next(s_schemaTypeHandleValue);
+                                ths[k] = thMatch.Groups[1].Value;
+                            }
+                            dataObj = ths;
+                            break;
+                        default:
+                            Trace.Fail("Invalid kind " + instrKind);
+                            break;
                     }
 
                     schema.Add(new PgoSchemaElem
