@@ -204,7 +204,7 @@ bool Compiler::fgGetProfileWeightForBasicBlock(IL_OFFSET offset, BasicBlock::wei
         if ((fgPgoSchema[i].InstrumentationKind == ICorJitInfo::PgoInstrumentationKind::BasicBlockIntCount) &&
             ((IL_OFFSET)fgPgoSchema[i].ILOffset == offset))
         {
-            *weightWB = (BasicBlock::weight_t) * (uint32_t*)(fgPgoData + fgPgoSchema[i].Offset);
+            *weightWB = (BasicBlock::weight_t) * (uint64_t*)(fgPgoData + fgPgoSchema[i].Offset);
             return true;
         }
     }
@@ -377,13 +377,13 @@ void BlockCountInstrumentor::Instrument(BasicBlock* block, Schema& schema, BYTE*
 
     // Read Basic-Block count value
     GenTree* valueNode =
-        m_comp->gtNewIndOfIconHandleNode(TYP_INT, addrOfCurrentExecutionCount, GTF_ICON_BBC_PTR, false);
+        m_comp->gtNewIndOfIconHandleNode(TYP_LONG, addrOfCurrentExecutionCount, GTF_ICON_BBC_PTR, false);
 
     // Increment value by 1
-    GenTree* rhsNode = m_comp->gtNewOperNode(GT_ADD, TYP_INT, valueNode, m_comp->gtNewIconNode(1));
+    GenTree* rhsNode = m_comp->gtNewOperNode(GT_ADD, TYP_LONG, valueNode, m_comp->gtNewIconNode(1));
 
     // Write new Basic-Block count value
-    GenTree* lhsNode = m_comp->gtNewIndOfIconHandleNode(TYP_INT, addrOfCurrentExecutionCount, GTF_ICON_BBC_PTR, false);
+    GenTree* lhsNode = m_comp->gtNewIndOfIconHandleNode(TYP_LONG, addrOfCurrentExecutionCount, GTF_ICON_BBC_PTR, false);
     GenTree* asgNode = m_comp->gtNewAssignNode(lhsNode, rhsNode);
 
     m_comp->fgNewStmtAtBeg(block, asgNode);
@@ -456,11 +456,11 @@ void BlockCountInstrumentor::InstrumentMethodEntry(Schema& schema, BYTE* profile
 
     // Read Basic-Block count value
     //
-    GenTree* valueNode = m_comp->gtNewIndOfIconHandleNode(TYP_INT, addrOfFirstExecutionCount, GTF_ICON_BBC_PTR, false);
+    GenTree* valueNode = m_comp->gtNewIndOfIconHandleNode(TYP_LONG, addrOfFirstExecutionCount, GTF_ICON_BBC_PTR, false);
 
     // Compare Basic-Block count value against zero
     //
-    GenTree*   relop = m_comp->gtNewOperNode(GT_NE, TYP_INT, valueNode, m_comp->gtNewIconNode(0, TYP_INT));
+    GenTree*   relop = m_comp->gtNewOperNode(GT_NE, TYP_LONG, valueNode, m_comp->gtNewIconNode(0, TYP_LONG));
     GenTree*   colon = new (m_comp, GT_COLON) GenTreeColon(TYP_VOID, m_comp->gtNewNothingNode(), call);
     GenTree*   cond  = m_comp->gtNewQmarkNode(TYP_VOID, relop, colon);
     Statement* stmt  = m_comp->gtNewStmt(cond);

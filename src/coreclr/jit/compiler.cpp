@@ -5877,7 +5877,7 @@ void Compiler::compCompileFinish()
         // mdMethodDef __stdcall CEEInfo::getMethodDefFromMethod(CORINFO_METHOD_HANDLE hMethod)
         mdMethodDef currentMethodToken = info.compCompHnd->getMethodDefFromMethod(info.compMethodHnd);
 
-        unsigned profCallCount = 0;
+        uint64_t profCallCount = 0;
         if (opts.jitFlags->IsSet(JitFlags::JIT_FLAG_BBOPT) && fgHaveProfileData())
         {
             bool foundEntrypointBasicBlockCount = false;
@@ -5888,7 +5888,7 @@ void Compiler::compCompileFinish()
                     (fgPgoSchema[iSchema].ILOffset == 0))
                 {
                     foundEntrypointBasicBlockCount = true;
-                    profCallCount                  = *(uint32_t*)(fgPgoData + fgPgoSchema[iSchema].Offset);
+                    profCallCount                  = *(uint64_t*)(fgPgoData + fgPgoSchema[iSchema].Offset);
                     break;
                 }
             }
@@ -5913,15 +5913,15 @@ void Compiler::compCompileFinish()
         {
             if (profCallCount <= 9999)
             {
-                printf("%4d | ", profCallCount);
+                printf("%4llu | ", profCallCount);
             }
             else if (profCallCount <= 999500)
             {
-                printf("%3dK | ", (profCallCount + 500) / 1000);
+                printf("%3lluK | ", (profCallCount + 500) / 1000);
             }
             else
             {
-                printf("%3dM | ", (profCallCount + 500000) / 1000000);
+                printf("%3lluM | ", (profCallCount + 500000) / 1000000);
             }
         }
         else
