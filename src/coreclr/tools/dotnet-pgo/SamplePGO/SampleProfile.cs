@@ -18,28 +18,70 @@ namespace Microsoft.Diagnostics.Tools.Pgo
     {
         public SampleProfile(
             MethodIL methodIL,
-            List<BasicBlock> basicBlocks,
+            FlowGraph fg,
             Dictionary<BasicBlock, long> samples,
             Dictionary<BasicBlock, long> smoothedSamples,
             Dictionary<(BasicBlock, BasicBlock), long> smoothedEdgeSamples)
         {
             MethodIL = methodIL;
-            BasicBlocks = basicBlocks;
+            FlowGraph = fg;
             Samples = samples;
             SmoothedSamples = smoothedSamples;
             SmoothedEdgeSamples = smoothedEdgeSamples;
         }
 
         public MethodIL MethodIL { get; }
-        public List<BasicBlock> BasicBlocks { get; }
+        public FlowGraph FlowGraph { get; }
         public Dictionary<BasicBlock, long> Samples { get; }
         public Dictionary<BasicBlock, long> SmoothedSamples { get; }
         public Dictionary<(BasicBlock, BasicBlock), long> SmoothedEdgeSamples { get; }
 
         /// <summary>
-        /// Given some IL offset samples into a method, construct a profile of edge probabilities.
+        /// Given pairs of runs (as relative IPs in this function), create a sample profile.
+        /// </summary>
+        public static SampleProfile CreateFromLbr(MethodIL il, NativeToILMap map, IEnumerable<(uint fromRva, uint toRva, long count)> runs)
+        {
+            FlowGraph fg = CreateFlowGraph(il);
+            Dictionary<BasicBlock, long> bbSamples = fg.BasicBlocks.ToDictionary(bb => bb, bb => 0L);
+            foreach ((uint from, uint to, long count) in runs)
+            {
+                foreach (BasicBlock bb in map.LookupRange(from, to).Select(fg.Lookup).Distinct())
+                {
+                    if (bb != null)
+                        bbSamples[bb] += count;
+                }
+            }
+
+            FlowSmoothing<BasicBlock> flowSmooth = new FlowSmoothing<BasicBlock>(bbSamples, fg.Lookup(0), bb => bb.Targets, (bb, isForward) => bb.Count * (isForward ? 1 : 50) + 2);
+            flowSmooth.Perform();
+
+            return new SampleProfile(il, fg, bbSamples, flowSmooth.NodeResults, flowSmooth.EdgeResults);
+        }
+
+        /// <summary>
+        /// Given some IL offset samples into a method, construct a profile.
         /// </summary>
         public static SampleProfile Create(MethodIL il, IEnumerable<int> ilOffsetSamples)
+        {
+            FlowGraph fg = CreateFlowGraph(il);
+
+            // Now associate raw IL-offset samples with basic blocks.
+            Dictionary<BasicBlock, long> bbSamples = fg.BasicBlocks.ToDictionary(bb => bb, bb => 0L);
+            foreach (int ofs in ilOffsetSamples.Where(o => o != -1 && fg.Lookup(o) != null))
+            {
+                BasicBlock bb = fg.Lookup(ofs);
+                if (bb != null)
+                    bbSamples[bb]++;
+            }
+
+            // Smooth the graph to produce something that satisfies flow conservation.
+            FlowSmoothing<BasicBlock> flowSmooth = new FlowSmoothing<BasicBlock>(bbSamples, fg.Lookup(0), bb => bb.Targets, (bb, isForward) => bb.Count * (isForward ? 1 : 50) + 2);
+            flowSmooth.Perform();
+
+            return new SampleProfile(il, fg, bbSamples, flowSmooth.NodeResults, flowSmooth.EdgeResults);
+        }
+
+        private static FlowGraph CreateFlowGraph(MethodIL il)
         {
             // Start out by reconstructing the IL flow graph.
             HashSet<int> bbStarts = GetBasicBlockStarts(il);
@@ -60,17 +102,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 
             AddBB(prevStart, il.GetILBytes().Length - prevStart);
 
-            int[] bbKeys = bbs.Select(bb => bb.Start).ToArray();
-
-            BasicBlock LookupBasicBlock(int ilOffset)
-            {
-                int index = Array.BinarySearch(bbKeys, ilOffset);
-                BasicBlock bb = bbs[index >= 0 ? index : (~index - 1)];
-                if (ilOffset < bb.Start || ilOffset >= bb.Start + bb.Count)
-                    return null;
-                Debug.Assert(ilOffset >= bb.Start && ilOffset < bb.Start + bb.Count);
-                return bb;
-            }
+            FlowGraph fg = new FlowGraph(bbs);
 
             // We know where each basic block starts now. Proceed by linking them together.
             ILReader reader = new ILReader(il.GetILBytes());
@@ -79,14 +111,14 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 reader.Seek(bb.Start);
                 while (reader.HasNext)
                 {
-                    Debug.Assert(LookupBasicBlock(reader.Offset) == bb);
+                    Debug.Assert(fg.Lookup(reader.Offset) == bb);
                     ILOpcode opc = reader.ReadILOpcode();
                     if (opc.IsBranch())
                     {
                         int tar = reader.ReadBranchDestination(opc);
-                        bb.Targets.Add(LookupBasicBlock(tar));
+                        bb.Targets.Add(fg.Lookup(tar));
                         if (!opc.IsUnconditionalBranch())
-                            bb.Targets.Add(LookupBasicBlock(reader.Offset));
+                            bb.Targets.Add(fg.Lookup(reader.Offset));
 
                         break;
                     }
@@ -95,12 +127,12 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                     {
                         uint numCases = reader.ReadILUInt32();
                         int jmpBase = reader.Offset + checked((int)(numCases * 4));
-                        bb.Targets.Add(LookupBasicBlock(jmpBase));
+                        bb.Targets.Add(fg.Lookup(jmpBase));
 
                         for (uint i = 0; i < numCases; i++)
                         {
                             int caseOfs = jmpBase + (int)reader.ReadILUInt32();
-                            bb.Targets.Add(LookupBasicBlock(caseOfs));
+                            bb.Targets.Add(fg.Lookup(caseOfs));
                         }
 
                         break;
@@ -115,7 +147,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                     // Check fall through
                     if (reader.HasNext)
                     {
-                        BasicBlock nextBB = LookupBasicBlock(reader.Offset);
+                        BasicBlock nextBB = fg.Lookup(reader.Offset);
                         if (nextBB != bb)
                         {
                             // Falling through
@@ -126,63 +158,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 }
             }
 
-            // Now associate raw IL-offset samples with basic blocks.
-            Dictionary<BasicBlock, long> bbSamples = bbs.ToDictionary(bb => bb, bb => 0L);
-            foreach (int ofs in ilOffsetSamples.Where(o => o != -1 && LookupBasicBlock(o) != null))
-                bbSamples[LookupBasicBlock(ofs)]++;
-
-            // Smooth the graph to produce something that satisfies flow conservation.
-            FlowSmoothing<BasicBlock> flowSmooth = new FlowSmoothing<BasicBlock>(bbSamples, LookupBasicBlock(0), bb => bb.Targets, (bb, isForward) => bb.Count * (isForward ? 1 : 50) + 2);
-            flowSmooth.Perform();
-
-            return new SampleProfile(il, bbs, bbSamples, flowSmooth.NodeResults, flowSmooth.EdgeResults);
-        }
-
-        internal string DumpGraph(Func<BasicBlock, string> getNodeAnnot, Func<(BasicBlock, BasicBlock), string> getEdgeAnnot)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("digraph G {");
-            sb.AppendLine("  forcelabels=true;");
-            sb.AppendLine();
-            Dictionary<long, int> bbToIndex = new Dictionary<long, int>();
-            for (int i = 0; i < BasicBlocks.Count; i++)
-                bbToIndex.Add(BasicBlocks[i].Start, i);
-
-            foreach (BasicBlock bb in BasicBlocks)
-            {
-                //string label = $"Samples: {(numSamples.TryGetValue(bb, out long ns) ? ns : 0)}\\nSmoothed samples: {smoothed.NodeResults[bb]}";
-                string label = $"[{bb.Start:x}..{bb.Start + bb.Count:x})\\n{getNodeAnnot(bb)}";
-                //if (numSamples == null)
-                //    label = $"#{ilToIndex[bb.Start]} @ {bb.Start} -> {bb.Start + bb.Count}";
-                //else
-                //    label = (numSamples.TryGetValue(bb, out int ns) ? ns : 0).ToString();
-
-                sb.AppendLine($"  BB{bbToIndex[bb.Start]} [label=\"{label}\"];");
-            }
-
-            sb.AppendLine();
-
-            foreach (BasicBlock bb in BasicBlocks)
-            {
-                foreach (BasicBlock tar in bb.Targets)
-                {
-                    string label = getEdgeAnnot((bb, tar));
-                    string postfix = string.IsNullOrEmpty(label) ? "" : $" [label=\"{label}\"]";
-                    sb.AppendLine($"  BB{bbToIndex[bb.Start]} -> BB{bbToIndex[tar.Start]}{postfix};");
-                }
-            }
-
-            // Write ranks with BFS.
-            List<BasicBlock> curRank = new List<BasicBlock> { BasicBlocks.Single(bb => bb.Start == 0) };
-            HashSet<BasicBlock> seen = new HashSet<BasicBlock>(curRank);
-            while (curRank.Count > 0)
-            {
-                sb.AppendLine($"  {{rank = same; {string.Concat(curRank.Select(bb => $"BB{bbToIndex[bb.Start]}; "))}}}");
-                curRank = curRank.SelectMany(bb => bb.Targets).Where(seen.Add).ToList();
-            }
-
-            sb.AppendLine("}");
-            return sb.ToString();
+            return fg;
         }
 
         /// <summary>
@@ -219,7 +195,8 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 }
                 else if (opc == ILOpcode.ret)
                 {
-                    bbStarts.Add(reader.Offset);
+                    if (reader.HasNext)
+                        bbStarts.Add(reader.Offset);
                 }
                 else
                 {

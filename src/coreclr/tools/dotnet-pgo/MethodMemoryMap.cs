@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -16,8 +17,8 @@ namespace Microsoft.Diagnostics.Tools.Pgo
     // A map that can be used to resolve memory addresses back to the MethodDesc.
     internal class MethodMemoryMap
     {
-        private readonly InstructionPointerRange[] _ranges;
-        private readonly MethodDesc[] _mds;
+        private readonly ulong[] _infoKeys;
+        private readonly MemoryRegionInfo[] _infos;
 
         public MethodMemoryMap(
             TraceProcess p,
@@ -26,7 +27,8 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             int clrInstanceID)
         {
             // Capture the addresses of jitted code
-            List<ValueTuple<InstructionPointerRange, MethodDesc>> codeLocations = new List<(InstructionPointerRange, MethodDesc)>();
+            List<MemoryRegionInfo> infos = new List<MemoryRegionInfo>();
+            Dictionary<long, MemoryRegionInfo> info = new Dictionary<long, MemoryRegionInfo>();
             foreach (var e in p.EventsInProcess.ByEventType<MethodLoadUnloadTraceData>())
             {
                 if (e.ClrInstanceID != clrInstanceID)
@@ -48,7 +50,13 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 
                 if (method != null)
                 {
-                    codeLocations.Add((new InstructionPointerRange(e.MethodStartAddress, e.MethodSize), method));
+                    infos.Add(new MemoryRegionInfo
+                    {
+                        StartAddress = e.MethodStartAddress,
+                        EndAddress = e.MethodStartAddress + checked((uint)e.MethodSize),
+                        MethodID = e.MethodID,
+                        Desc = method,
+                    });
                 }
             }
 
@@ -73,7 +81,13 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 
                 if (method != null)
                 {
-                    codeLocations.Add((new InstructionPointerRange(e.MethodStartAddress, e.MethodSize), method));
+                    infos.Add(new MemoryRegionInfo
+                    {
+                        StartAddress = e.MethodStartAddress,
+                        EndAddress = e.MethodStartAddress + checked((uint)e.MethodSize),
+                        MethodID = e.MethodID,
+                        Desc = method,
+                    });
                 }
             }
 
@@ -102,86 +116,68 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                     {
                         foreach (var runtimeFunction in methodEntry.Value.RuntimeFunctions)
                         {
-                            codeLocations.Add((new InstructionPointerRange(module.ImageBase + (ulong)runtimeFunction.StartAddress, runtimeFunction.Size), methodEntry.Key));
+                            infos.Add(new MemoryRegionInfo
+                            {
+                                StartAddress = module.ImageBase + (ulong)runtimeFunction.StartAddress,
+                                EndAddress = module.ImageBase + (ulong)runtimeFunction.StartAddress + (uint)runtimeFunction.Size,
+                                Desc = methodEntry.Key,
+                                NativeToILMap = runtimeFunction.DebugInfo != null ? NativeToILMap.FromR2RBounds(runtimeFunction.DebugInfo.BoundsList) : null,
+                            });
                         }
                     }
                 }
                 catch { }
             }
 
-            _ranges = new InstructionPointerRange[codeLocations.Count];
-            _mds = new MethodDesc[codeLocations.Count];
-            for (int i = 0; i < codeLocations.Count; i++)
+            // Can have duplicate events, so pick first for each
+            var byMethodID = infos.GroupBy(i => i.MethodID).ToDictionary(g => g.Key, g => g.First());
+            foreach (MethodILToNativeMapTraceData e in p.EventsInProcess.ByEventType<MethodILToNativeMapTraceData>())
             {
-                _ranges[i] = codeLocations[i].Item1;
-                _mds[i] = codeLocations[i].Item2;
+                byMethodID[e.MethodID].NativeToILMap = NativeToILMap.FromEvent(e);
             }
 
-            Array.Sort(_ranges, _mds);
+            // And get rid of all the duplicates
+            _infos = byMethodID.Values.OrderBy(i => i.StartAddress).ToArray();
+            _infoKeys = _infos.Select(i => i.StartAddress).ToArray();
+
+#if DEBUG
+            for (int i = 0; i < _infos.Length - 1; i++)
+            {
+                var cur = _infos[i];
+                var next = _infos[i + 1];
+                if (cur.EndAddress <= next.StartAddress)
+                    continue;
+
+                Debug.Fail("Overlap in memory ranges");
+            }
+#endif
         }
 
-        public MethodDesc ResolveIP(ulong ip)
+        public MemoryRegionInfo GetInfo(ulong ip)
         {
-            int index = Array.BinarySearch(_ranges, new InstructionPointerRange(ip, 1));
+            int index = Array.BinarySearch(_infoKeys, ip);
+            if (index < 0)
+                index = ~index - 1;
 
-            if (index >= 0)
-            {
-                return _mds[index];
-            }
-            else
-            {
-                index = ~index;
-                if (index >= _ranges.Length)
-                    return null;
+            if (index < 0)
+                return null; // Before first
 
-                if (_ranges[index].StartAddress < ip)
-                {
-                    if (_ranges[index].EndAddress > ip)
-                    {
-                        return _mds[index];
-                    }
-                }
-
-                if (index == 0)
-                    return null;
-
-                index--;
-
-                if (_ranges[index].StartAddress < ip)
-                {
-                    if (_ranges[index].EndAddress > ip)
-                    {
-                        return _mds[index];
-                    }
-                }
-
+            var info = _infos[index];
+            if (ip < info.StartAddress || ip >= info.EndAddress)
                 return null;
-            }
+
+            return info;
         }
 
-        private struct InstructionPointerRange : IComparable<InstructionPointerRange>
-        {
-            public InstructionPointerRange(ulong startAddress, int size)
-            {
-                StartAddress = startAddress;
-                EndAddress = startAddress + (ulong)size;
-            }
+        public MethodDesc GetMethod(ulong ip) => GetInfo(ip)?.Desc;
+    }
 
-            public ulong StartAddress;
-            public ulong EndAddress;
-
-            public int CompareTo(InstructionPointerRange other)
-            {
-                if (StartAddress < other.StartAddress)
-                {
-                    return -1;
-                }
-                if (StartAddress > other.StartAddress)
-                {
-                    return 1;
-                }
-                return (int)((long)EndAddress - (long)other.EndAddress);
-            }
-        }
+    public class MemoryRegionInfo
+    {
+        public ulong StartAddress { get; set; }
+        public ulong EndAddress { get; set; }
+        public long MethodID { get; set; }
+        public MethodDesc Desc { get; set; }
+        public NativeToILMap NativeToILMap { get; set; }
     }
 }

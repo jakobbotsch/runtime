@@ -32,6 +32,8 @@ using System.Runtime.Serialization.Json;
 using System.Text.Json;
 using System.Text.Encodings.Web;
 using Microsoft.Diagnostics.Tools.Pgo.SamplePGO;
+using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 
 namespace Microsoft.Diagnostics.Tools.Pgo
 {
@@ -468,6 +470,23 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                     return -1;
                 }
 
+                //List<string> names = new List<string>();
+                //foreach (var e in traceLog.Events)
+                //{
+                //    if (e.EventName == "Task(99134383-5248-43fc-834b-529454e75df3)/Opcode(32)")
+                //    {
+                //        e.DataStart
+                //    }
+                //    names.Add(e.EventName);
+                //}
+
+                //var grouped = names.GroupBy(n => n).Select(n => (n.Key, n.Count())).OrderByDescending(t => t.Item2).ToList();
+
+                //foreach (var e in traceLog.Events.ByEventType<PMCCounterProfTraceData>())
+                //{
+
+                //}
+
                 // For a particular process
                 TraceProcess p;
                 if (commandLineOptions.Pid.HasValue)
@@ -729,12 +748,12 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                             continue;
 
                         ulong address1 = callstack.CodeAddress.Address;
-                        MethodDesc topOfStackMethod = mmap.ResolveIP(address1);
+                        MethodDesc topOfStackMethod = mmap.GetMethod(address1);
                         MethodDesc nextMethod = null;
                         if (callstack.Caller != null)
                         {
                             ulong address2 = callstack.Caller.CodeAddress.Address;
-                            nextMethod = mmap.ResolveIP(address2);
+                            nextMethod = mmap.GetMethod(address2);
                         }
 
                         if (topOfStackMethod != null)
@@ -833,47 +852,135 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 if (commandLineOptions.GenerateSampleProfile)
                 {
                     MethodMemoryMap mmap = GetMethodMemMap();
-                    var allSamples =
-                        p.EventsInProcess.ByEventType<SampledProfileTraceData>()
-                        .Select(e => (Method: mmap.ResolveIP(e.InstructionPointer), IP: e.InstructionPointer, Offset: traceLog.CodeAddresses.ILOffset(e.IntructionPointerCodeAddressIndex())))
-                        .ToList();
+                    //(MethodDesc Method, ulong IP, int Offset) GetTuple(SampledProfileTraceData e)
+                    //{
+                    //    MemoryRegionInfo info = mmap.GetInfo(e.InstructionPointer);
+                    //    if (info == null)
+                    //        return (null, e.InstructionPointer, -1);
 
-                    var samples =
-                        allSamples
-                        .Where(t => t.Method != null && t.Offset != -1)
-                        .Select(t => (t.Method, t.IP, Offset: t.Offset + 1)) // Needed because TraceEvent subtracts 1 for some reason
-                        .ToList();
+                    //    int offset = info.NativeToILMap?.Lookup(checked((uint)(e.InstructionPointer - info.StartAddress))) ?? -1;
+                    //    return (info.Desc, e.InstructionPointer, offset);
+                    //}
 
-                    foreach (var g in samples.GroupBy(t => t.Method))
+                    //var allSamples =
+                    //    p.EventsInProcess.ByEventType<SampledProfileTraceData>()
+                    //    .Select(GetTuple)
+                    //    .ToList();
+
+                    //var samples =
+                    //    allSamples
+                    //    .Where(t => t.Method != null && t.Offset >= 0)
+                    //    .ToList();
+
+                    //foreach (var g in samples.GroupBy(t => t.Method))
+                    //{
+                    //    MethodIL il = g.Key switch
+                    //    {
+                    //        EcmaMethod em => EcmaMethodIL.Create(em),
+                    //        var m => new InstantiatedMethodIL(m, EcmaMethodIL.Create((EcmaMethod)m.GetTypicalMethodDefinition())),
+                    //    };
+
+                    //    var ep = SampleProfile.Create(il, g.Select(t => t.Offset));
+                    //    sampleProfiles.Add(g.Key, ep);
+                    //}
+
+                    Guid lbrGuid = Guid.Parse("99134383-5248-43fc-834b-529454e75df3");
+                    Dictionary<(ulong startRun, ulong endRun), long> runs = new Dictionary<(ulong startRun, ulong endRun), long>();
+                    long totalLbrs = 0;
+                    foreach (var e in traceLog.Events)
                     {
-                        MethodIL il = g.Key switch
+                        if (e.TaskGuid != lbrGuid)
+                            continue;
+
+                        if (e.Opcode != (TraceEventOpcode)32)
+                            continue;
+
+                        totalLbrs++;
+                        unsafe
+                        {
+                            if (traceLog.PointerSize == 8)
+                            {
+                                LbrTraceEventData64* data = (LbrTraceEventData64*)e.DataStart;
+                                // todo: handle timestamp, but we don't have access to PerfView functions to convert it.
+                                if (data->ProcessId != p.ProcessID)
+                                    continue;
+
+                                Span<LbrEntry64> lbr = data->Entries(e.EventDataLength);
+                                // Store runs. LBR is chronological with most recent branches first.
+                                for (int i = lbr.Length - 2; i >= 0; i--)
+                                {
+                                    var pair = (lbr[i + 1].ToAddress, lbr[i].FromAddress);
+                                    ref long count = ref CollectionsMarshal.GetValueRefOrNullRef(runs, pair);
+                                    if (Unsafe.IsNullRef(ref count))
+                                        runs.Add(pair, 1);
+                                    else
+                                        count++;
+                                }
+                            }
+                            else
+                            {
+                                LbrTraceEventData32* data = (LbrTraceEventData32*)e.DataStart;
+                                if (data->ProcessId != p.ProcessID)
+                                    continue;
+
+                                Span<LbrEntry32> lbr = data->Entries(e.EventDataLength);
+                                for (int i = lbr.Length - 2; i >= 0; i--)
+                                {
+                                    var pair = ((ulong)lbr[i + 1].ToAddress, (ulong)lbr[i].FromAddress);
+                                    ref long count = ref CollectionsMarshal.GetValueRefOrNullRef(runs, pair);
+                                    if (Unsafe.IsNullRef(ref count))
+                                        runs.Add(pair, 1);
+                                    else
+                                        count++;
+                                }
+                            }
+                        }
+                    }
+
+                    foreach (var g in runs.Select(r => (start: r.Key.startRun, end: r.Key.endRun, count: r.Value, info: methodMemMap.GetInfo(r.Key.startRun))).GroupBy(t => t.info))
+                    {
+                        if (g.Key == null || g.Key.NativeToILMap == null)
+                            continue;
+
+                        MethodIL il = g.Key.Desc switch
                         {
                             EcmaMethod em => EcmaMethodIL.Create(em),
                             var m => new InstantiatedMethodIL(m, EcmaMethodIL.Create((EcmaMethod)m.GetTypicalMethodDefinition())),
                         };
 
-                        var ep = SampleProfile.Create(il, g.Select(t => t.Offset));
-                        sampleProfiles.Add(g.Key, ep);
+                        var ep = SampleProfile.CreateFromLbr(
+                            il,
+                            g.Key.NativeToILMap,
+                            g
+                            .Where(t => t.end >= t.start && t.end < g.Key.EndAddress)
+                            .Select(t => ((uint)(t.start - g.Key.StartAddress), (uint)(t.end - g.Key.StartAddress), t.count)));
+
+                        sampleProfiles.Add(g.Key.Desc, ep);
                     }
 
-                    foreach (var m in allSamples.Select(m => m.Method).Distinct())
-                    {
-                        if (m != null && m.Name.Contains("GetHashCode"))
-                        {
-                            var byIP = allSamples.Where(a => a.Method == m)
-                                .GroupBy(a => a.IP)
-                                .Select(g => (IP: g.Key, IL: g.First().Offset, Count: g.Count()))
-                                .OrderBy(t => t.IP)
-                                //.OrderByDescending(t => t.Count)
-                                .ToList();
+                    //var test = runs.Where(r =>
+                    //(methodMemMap.GetMethod(r.Key.startRun)?.Name ?? "").Contains("CountFlips") ||
+                    //(methodMemMap.GetMethod(r.Key.endRun)?.Name ?? "").Contains("CountFlips"))
+                    //    .OrderByDescending(r => r.Value)
+                    //    .Select(kvp => (kvp.Key.startRun.ToString("x"), kvp.Key.endRun.ToString("x"), kvp.Value))
+                    //    .ToList();
+                    //long valid = 0;
+                    //long invalid = 0;
+                    //foreach (((ulong from, ulong to), long count) in runs)
+                    //{
+                    //    var fromInfo = methodMemMap.GetInfo(from);
+                    //    if (fromInfo == null)
+                    //        continue;
 
-                            var byIL = allSamples.Where(a => a.Method == m)
-                                .GroupBy(a => a.Offset)
-                                .Select(g => (Offset: g.Key, IPs: g.Select(t => t.IP).Distinct().ToList(), Count: g.Count()))
-                                .OrderBy(t => t.Offset)
-                                .ToList();
-                        }
-                    }
+                    //    if (to < from || to >= fromInfo.EndAddress)
+                    //    {
+                    //        invalid++;
+                    //    }
+                    //    else
+                    //    {
+                    //        valid++;
+                    //    }
+                    //}
 
                     List<InstrumentedPgoProfile> profile;
                     using (var sr = new StreamReader(File.OpenRead(@"D:\dev\dotnet\spgo_data\pgo.txt")))
@@ -897,20 +1004,21 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         else
                             continue;
 
-                        List<InstrumentedPgoProfile> pgoList = profile.Where(p => p.MethodName == name && p.ILSize == sp.MethodIL.GetILBytes().Length).ToList();
-                        if (pgoList.Count != 1)
-                            continue;
-
-                        if (name.Contains("GetHashCode"))
+                        if (name.Contains("KNucleotide", StringComparison.OrdinalIgnoreCase))
                         {
 
                         }
 
+
+                        List<InstrumentedPgoProfile> pgoList = profile.Where(p => p.MethodName == name && p.ILSize == sp.MethodIL.GetILBytes().Length).ToList();
+                        if (pgoList.Count != 1)
+                            continue;
+
                         InstrumentedPgoProfile pgo = pgoList[0];
 
                         var basicBlockSchema = pgo.Schema.Where(e => e.InstrumentationKind == PgoInstrumentationKind.BasicBlockIntCount).ToList();
-                        bool flowGraphRight = basicBlockSchema.All(e => sp.BasicBlocks.Any(bb => bb.Start == e.ILOffset)) &&
-                                              sp.BasicBlocks.All(bb => basicBlockSchema.Any(e => e.ILOffset == bb.Start));
+                        bool flowGraphRight = basicBlockSchema.All(e => sp.FlowGraph.BasicBlocks.Any(bb => bb.Start == e.ILOffset)) &&
+                                              sp.FlowGraph.BasicBlocks.All(bb => basicBlockSchema.Any(e => e.ILOffset == bb.Start));
                         Trace.Assert(flowGraphRight);
 
                         long numSamples = sp.Samples.Sum(kvp => kvp.Value);
@@ -935,7 +1043,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                                 return FormattableString.Invariant($"Count: {c}\\nNormalized count: {bc:F2}\\nSamples weight: {bw:F2}");
                             }
 
-                            string graph = sp.DumpGraph(GetAnnot, p => "");
+                            string graph = sp.FlowGraph.Dump(GetAnnot, p => "");
                             string path = Path.Combine(outputPath, "graphs", name + "_" + postfix + ".svg");
                             var startInfo = new ProcessStartInfo("dot", $"-Tsvg -o \"{path}\"")
                             {
@@ -968,7 +1076,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                             smoothedOverlap += Math.Min(instrumentedPw[elem.ILOffset].samplesWeight, smoothedPw[elem.ILOffset].samplesWeight);
                         }
 
-                        entries.Add((name, sp.MethodIL.GetILBytes().Length, sp.BasicBlocks.Count, numSamples, rawOverlap, smoothedOverlap, instrGraph, rawGraph, smoothedGraph));
+                        entries.Add((name, sp.MethodIL.GetILBytes().Length, sp.FlowGraph.BasicBlocks.Count, numSamples, rawOverlap, smoothedOverlap, instrGraph, rawGraph, smoothedGraph));
                     }
 
                     StringBuilder sb = new StringBuilder();
