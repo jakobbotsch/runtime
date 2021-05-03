@@ -910,11 +910,15 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                                 for (int i = lbr.Length - 2; i >= 0; i--)
                                 {
                                     var pair = (lbr[i + 1].ToAddress, lbr[i].FromAddress);
-                                    ref long count = ref CollectionsMarshal.GetValueRefOrNullRef(runs, pair);
-                                    if (Unsafe.IsNullRef(ref count))
-                                        runs.Add(pair, 1);
+                                    if (runs.TryGetValue(pair, out long prevCount))
+                                        runs[pair] = prevCount + 1;
                                     else
-                                        count++;
+                                        runs.Add(pair, 1);
+                                    //ref long count = ref CollectionsMarshal.GetValueRefOrNullRef(runs, pair);
+                                    //if (Unsafe.IsNullRef(ref count))
+                                    //    runs.Add(pair, 1);
+                                    //else
+                                    //    count++;
                                 }
                             }
                             else
@@ -927,11 +931,15 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                                 for (int i = lbr.Length - 2; i >= 0; i--)
                                 {
                                     var pair = ((ulong)lbr[i + 1].ToAddress, (ulong)lbr[i].FromAddress);
-                                    ref long count = ref CollectionsMarshal.GetValueRefOrNullRef(runs, pair);
-                                    if (Unsafe.IsNullRef(ref count))
-                                        runs.Add(pair, 1);
+                                    if (runs.TryGetValue(pair, out long prevCount))
+                                        runs[pair] = prevCount + 1;
                                     else
-                                        count++;
+                                        runs.Add(pair, 1);
+                                    //ref long count = ref CollectionsMarshal.GetValueRefOrNullRef(runs, pair);
+                                    //if (Unsafe.IsNullRef(ref count))
+                                    //    runs.Add(pair, 1);
+                                    //else
+                                    //    count++;
                                 }
                             }
                         }

@@ -357,14 +357,8 @@ public:
         DescriptorMin = 0x40,
 
         Done = None, // All instrumentation schemas must end with a record which is "Done"
-<<<<<<< HEAD
-        BasicBlockIntCount = (DescriptorMin * 1) | EightByte, // 4 byte basic block counter, using unsigned 4 byte int
-||||||| e6bb456e608
-        BasicBlockIntCount = (DescriptorMin * 1) | FourByte, // 4 byte basic block counter, using unsigned 4 byte int
-=======
         BasicBlockIntCount = (DescriptorMin * 1) | FourByte, // basic block counter using unsigned 4 byte int
         BasicBlockLongCount = (DescriptorMin * 1) | EightByte, // basic block counter using unsigned 8 byte int
->>>>>>> dfbe3aeb0941d5498b8c41b830d74b1f96f6f9db
         TypeHandleHistogramCount = (DescriptorMin * 2) | FourByte | AlignPointer, // 4 byte counter that is part of a type histogram
         TypeHandleHistogramTypeHandle = (DescriptorMin * 3) | TypeHandle, // TypeHandle that is part of a type histogram
         Version = (DescriptorMin * 4) | None, // Version is encoded in the Other field of the schema
