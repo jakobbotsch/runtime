@@ -126,6 +126,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             graph.AddNode(source);
             graph.AddNode(target);
 
+
             MinimumCostCirculation.FindMinCostCirculation(graph, smoothingIterations);
 
             // Derive the new concrete block hit counts by subtracting the backflow from the inflow of the entry node.

@@ -73,13 +73,13 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 return new TypeSystemEntityOrUnknown(0);
 
             TypeDesc type = null;
-            
+
             try
             {
                 type = _idParser.ResolveTypeHandle(input, false);
             }
             catch
-            {}
+            { }
             if (type != null)
             {
                 return new TypeSystemEntityOrUnknown(type);
@@ -118,7 +118,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
     class Program
     {
         static Logger s_logger = new Logger();
-        static int Main(string []args)
+        static int Main(string[] args)
         {
             var options = CommandLineOptions.ParseCommandLine(args);
 
@@ -390,7 +390,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
         }
 
         static int InnerProcessTraceFileMain(CommandLineOptions commandLineOptions)
-        { 
+        {
             if (commandLineOptions.TraceFile == null)
             {
                 PrintUsage(commandLineOptions, "--trace must be specified");
@@ -852,6 +852,35 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 if (commandLineOptions.GenerateSampleProfile)
                 {
                     MethodMemoryMap mmap = GetMethodMemMap();
+                    Dictionary<MethodDesc, MethodIL> ils = new Dictionary<MethodDesc, MethodIL>();
+                    Dictionary<MethodDesc, FlowGraph> flowGraphs = new Dictionary<MethodDesc, FlowGraph>();
+
+                    MethodIL GetMethodIL(MethodDesc desc)
+                    {
+                        if (!ils.TryGetValue(desc, out MethodIL il))
+                        {
+                            il = desc switch
+                            {
+                                EcmaMethod em => EcmaMethodIL.Create(em),
+                                var m => new InstantiatedMethodIL(m, EcmaMethodIL.Create((EcmaMethod)m.GetTypicalMethodDefinition())),
+                            };
+
+                            ils.Add(desc, il);
+                        }
+
+                        return il;
+                    }
+
+                    FlowGraph GetFlowGraph(MethodDesc desc)
+                    {
+                        if (!flowGraphs.TryGetValue(desc, out FlowGraph fg))
+                        {
+                            flowGraphs.Add(desc, fg = FlowGraph.Create(GetMethodIL(desc)));
+                        }
+
+                        return fg;
+                    }
+
                     //(MethodDesc Method, ulong IP, int Offset) GetTuple(SampledProfileTraceData e)
                     //{
                     //    MemoryRegionInfo info = mmap.GetInfo(e.InstructionPointer);
@@ -886,7 +915,8 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 
                     Guid lbrGuid = Guid.Parse("99134383-5248-43fc-834b-529454e75df3");
                     Dictionary<(ulong startRun, ulong endRun), long> runs = new Dictionary<(ulong startRun, ulong endRun), long>();
-                    long totalLbrs = 0;
+                    //Dictionary<(ulong from, ulong to), long> branches = new Dictionary<(ulong from, ulong to), long>();
+                    List<(ulong start, ulong end)> lbrRuns = new List<(ulong start, ulong end)>();
                     foreach (var e in traceLog.Events)
                     {
                         if (e.TaskGuid != lbrGuid)
@@ -895,7 +925,6 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         if (e.Opcode != (TraceEventOpcode)32)
                             continue;
 
-                        totalLbrs++;
                         unsafe
                         {
                             if (traceLog.PointerSize == 8)
@@ -906,23 +935,84 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                                     continue;
 
                                 Span<LbrEntry64> lbr = data->Entries(e.EventDataLength);
+
+                                //foreach (LbrEntry64 entry in lbr)
+                                //{
+                                //    if (branches.TryGetValue((entry.FromAddress, entry.ToAddress), out long count))
+                                //        branches[(entry.FromAddress, entry.ToAddress)] = count + 1;
+                                //    else
+                                //        branches.Add((entry.FromAddress, entry.ToAddress), 1);
+                                //}
+
                                 // Store runs. LBR is chronological with most recent branches first.
+                                // To avoid double-counting blocks containing calls when the LBR buffer contains
+                                // both the call and the return from the call, we must keep track of exits
+                                // from the function that we have seen. If we reenter the function in the same
+                                // basic block, then we skip recounting that basic block again.
+                                lbrRuns.Clear();
                                 for (int i = lbr.Length - 2; i >= 0; i--)
                                 {
-                                    var pair = (lbr[i + 1].ToAddress, lbr[i].FromAddress);
-                                    if (runs.TryGetValue(pair, out long prevCount))
-                                        runs[pair] = prevCount + 1;
+                                    ulong prevFrom = lbr[i + 1].FromAddress;
+                                    ulong prevTo = lbr[i + 1].ToAddress;
+                                    ulong curFrom = lbr[i].FromAddress;
+                                    MemoryRegionInfo prevFromMeth = methodMemMap.GetInfo(prevFrom);
+                                    MemoryRegionInfo prevToMeth = methodMemMap.GetInfo(prevTo);
+                                    MemoryRegionInfo curFromMeth = methodMemMap.GetInfo(curFrom);
+                                    // If this run is not in the same function then ignore it.
+                                    if (prevToMeth == null || prevToMeth != curFromMeth)
+                                        continue;
+
+                                    if (prevToMeth.Desc.Name.Contains("lubksb"))
+                                    {
+
+                                    }
+
+                                    // Otherwise, if this run follows right after jumping back into the function, we might need to extend
+                                    // a previous run instead. This happens if we previously did a call out of this function and now returned back.
+                                    // TODO: Handle recursion here. The same function could return to itself and we wouldn't realize it from this check.
+                                    if (prevFromMeth != prevToMeth)
+                                    {
+                                        bool extendedPrevRun = false;
+                                        // Try to find a previous run
+                                        FlowGraph toFG = null;
+                                        for (int j = lbrRuns.Count - 1; j >= 0; j--)
+                                        {
+                                            MemoryRegionInfo endRunMeth = methodMemMap.GetInfo(lbrRuns[j].end);
+                                            if (endRunMeth != prevToMeth)
+                                                continue;
+
+                                            // Same function at least, check for same basic block
+                                            toFG ??= GetFlowGraph(endRunMeth.Desc);
+                                            BasicBlock endRunBB = toFG.Lookup(endRunMeth.NativeToILMap.Lookup((uint)(lbrRuns[j].end - endRunMeth.StartAddress)));
+                                            BasicBlock toBB = toFG.Lookup(endRunMeth.NativeToILMap.Lookup((uint)(prevTo - endRunMeth.StartAddress)));
+                                            if (endRunBB == toBB && prevTo > lbrRuns[j].end)
+                                            {
+                                                // Same BB, but this jump is to after where the previous run ends. Take that as a return to after that call and extend the previous run.
+                                                lbrRuns[j] = (lbrRuns[j].start, curFrom);
+                                                extendedPrevRun = true;
+                                                break;
+                                            }
+                                        }
+
+                                        if (extendedPrevRun)
+                                            continue;
+                                    }
+
+                                    lbrRuns.Add((prevTo, curFrom));
+                                }
+
+                                // Now insert runs.
+                                foreach (var pair in lbrRuns)
+                                {
+                                    if (runs.TryGetValue(pair, out long count))
+                                        runs[pair] = count + 1;
                                     else
                                         runs.Add(pair, 1);
-                                    //ref long count = ref CollectionsMarshal.GetValueRefOrNullRef(runs, pair);
-                                    //if (Unsafe.IsNullRef(ref count))
-                                    //    runs.Add(pair, 1);
-                                    //else
-                                    //    count++;
                                 }
                             }
                             else
                             {
+                                Trace.Fail("Cannot handle 32-bit LBR yet");
                                 LbrTraceEventData32* data = (LbrTraceEventData32*)e.DataStart;
                                 if (data->ProcessId != p.ProcessID)
                                     continue;
@@ -945,50 +1035,33 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         }
                     }
 
+                    //var foo =
+                    //    branches
+                    //    .Select(kvp => (from: kvp.Key.from.ToString("x"), to: kvp.Key.to.ToString("x"), count: kvp.Value, fromMeth: methodMemMap.GetMethod(kvp.Key.from)?.Name ?? "", toMeth: methodMemMap.GetMethod(kvp.Key.to)?.Name ?? ""))
+                    //    .OrderByDescending(t => t.fromMeth.Contains("checkEnding") || t.fromMeth.Contains("countEnding") || t.toMeth.Contains("checkEnding") || t.toMeth.Contains("countEnding") ? 1 : 0)
+                    //    .ThenByDescending(t => t.fromMeth != t.toMeth)
+                    //    .ThenByDescending(t => t.count)
+                    //    .ToList();
+
                     foreach (var g in runs.Select(r => (start: r.Key.startRun, end: r.Key.endRun, count: r.Value, info: methodMemMap.GetInfo(r.Key.startRun))).GroupBy(t => t.info))
                     {
                         if (g.Key == null || g.Key.NativeToILMap == null)
                             continue;
 
-                        MethodIL il = g.Key.Desc switch
-                        {
-                            EcmaMethod em => EcmaMethodIL.Create(em),
-                            var m => new InstantiatedMethodIL(m, EcmaMethodIL.Create((EcmaMethod)m.GetTypicalMethodDefinition())),
-                        };
-
-                        var ep = SampleProfile.CreateFromLbr(
-                            il,
-                            g.Key.NativeToILMap,
+                        var samples =
                             g
                             .Where(t => t.end >= t.start && t.end < g.Key.EndAddress)
-                            .Select(t => ((uint)(t.start - g.Key.StartAddress), (uint)(t.end - g.Key.StartAddress), t.count)));
+                            .Select(t => ((uint)(t.start - g.Key.StartAddress), (uint)(t.end - g.Key.StartAddress), t.count))
+                            .ToList();
+
+                        var ep = SampleProfile.CreateFromLbr(
+                            GetMethodIL(g.Key.Desc),
+                            GetFlowGraph(g.Key.Desc),
+                            g.Key.NativeToILMap,
+                            samples);
 
                         sampleProfiles.Add(g.Key.Desc, ep);
                     }
-
-                    //var test = runs.Where(r =>
-                    //(methodMemMap.GetMethod(r.Key.startRun)?.Name ?? "").Contains("CountFlips") ||
-                    //(methodMemMap.GetMethod(r.Key.endRun)?.Name ?? "").Contains("CountFlips"))
-                    //    .OrderByDescending(r => r.Value)
-                    //    .Select(kvp => (kvp.Key.startRun.ToString("x"), kvp.Key.endRun.ToString("x"), kvp.Value))
-                    //    .ToList();
-                    //long valid = 0;
-                    //long invalid = 0;
-                    //foreach (((ulong from, ulong to), long count) in runs)
-                    //{
-                    //    var fromInfo = methodMemMap.GetInfo(from);
-                    //    if (fromInfo == null)
-                    //        continue;
-
-                    //    if (to < from || to >= fromInfo.EndAddress)
-                    //    {
-                    //        invalid++;
-                    //    }
-                    //    else
-                    //    {
-                    //        valid++;
-                    //    }
-                    //}
 
                     List<InstrumentedPgoProfile> profile;
                     using (var sr = new StreamReader(File.OpenRead(@"D:\dev\dotnet\spgo_data\pgo.txt")))
@@ -1012,19 +1085,13 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         else
                             continue;
 
-                        if (name.Contains("KNucleotide", StringComparison.OrdinalIgnoreCase))
-                        {
-
-                        }
-
-
                         List<InstrumentedPgoProfile> pgoList = profile.Where(p => p.MethodName == name && p.ILSize == sp.MethodIL.GetILBytes().Length).ToList();
                         if (pgoList.Count != 1)
                             continue;
 
                         InstrumentedPgoProfile pgo = pgoList[0];
 
-                        var basicBlockSchema = pgo.Schema.Where(e => e.InstrumentationKind == PgoInstrumentationKind.BasicBlockIntCount).ToList();
+                        var basicBlockSchema = pgo.Schema.Where(e => e.InstrumentationKind == PgoInstrumentationKind.BasicBlockLongCount).ToList();
                         bool flowGraphRight = basicBlockSchema.All(e => sp.FlowGraph.BasicBlocks.Any(bb => bb.Start == e.ILOffset)) &&
                                               sp.FlowGraph.BasicBlocks.All(bb => basicBlockSchema.Any(e => e.ILOffset == bb.Start));
                         Trace.Assert(flowGraphRight);

@@ -18,7 +18,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
     internal class MethodMemoryMap
     {
         private readonly ulong[] _infoKeys;
-        private readonly MemoryRegionInfo[] _infos;
+        public readonly MemoryRegionInfo[] _infos;
 
         public MethodMemoryMap(
             TraceProcess p,

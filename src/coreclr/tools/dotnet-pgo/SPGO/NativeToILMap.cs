@@ -72,6 +72,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             for (int i = 0; i < ev.CountOfMapEntries; i++)
                 pairs.Add(((uint)ev.NativeOffset(i), ev.ILOffset(i)));
 
+            pairs.RemoveAll(p => p.ilOffset < 0);
             pairs.Sort((p1, p2) => p1.rva.CompareTo(p2.rva));
             return new NativeToILMap(pairs.Select(p => p.rva).ToArray(), pairs.Select(p => p.ilOffset).ToArray());
         }
