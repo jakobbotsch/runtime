@@ -435,7 +435,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             {
                 if (commandLineOptions.TraceFile.FullName.EndsWith(nettraceExtension))
                 {
-                    etlFileName = commandLineOptions.TraceFile.FullName.Substring(0, commandLineOptions.TraceFile.FullName.Length - nettraceExtension.Length) + ".etlx";
+                    etlFileName = Path.ChangeExtension(commandLineOptions.TraceFile.FullName, ".etlx");
                     PrintMessage($"Creating ETLX file {etlFileName} from {commandLineOptions.TraceFile.FullName}");
                     TraceLog.CreateFromEventPipeDataFile(commandLineOptions.TraceFile.FullName, etlFileName);
                 }
@@ -444,13 +444,19 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             string lttngExtension = ".trace.zip";
             if (commandLineOptions.TraceFile.FullName.EndsWith(lttngExtension))
             {
-                etlFileName = commandLineOptions.TraceFile.FullName.Substring(0, commandLineOptions.TraceFile.FullName.Length - lttngExtension.Length) + ".etlx";
+                etlFileName = Path.ChangeExtension(commandLineOptions.TraceFile.FullName, ".etlx");
                 PrintMessage($"Creating ETLX file {etlFileName} from {commandLineOptions.TraceFile.FullName}");
                 TraceLog.CreateFromLttngTextDataFile(commandLineOptions.TraceFile.FullName, etlFileName);
             }
 
             UnZipIfNecessary(ref etlFileName, commandLineOptions.BasicProgressMessages ? Console.Out : new StringWriter());
 
+            // For SPGO we need to be able to map raw IPs back to IL offsets in methods.
+            // Normally TraceEvent facilitates this remapping automatically and discards the IL<->IP mapping table events.
+            // However, we have found TraceEvent's remapping to be imprecise (see https://github.com/microsoft/perfview/issues/1410).
+            // Thus, when SPGO is requested, 
+            // For SPGO we need to keep MethodILToNativeMapTraceData events to map IPs back to IL offsets.
+            // These events are normally discarded as TraceEvent constructs its own model
             using (var traceLog = TraceLog.OpenOrConvert(etlFileName, new TraceLogOptions { KeepAllEvents = true }))
             {
                 if ((!commandLineOptions.Pid.HasValue && commandLineOptions.ProcessName == null) && traceLog.Processes.Count != 1)
@@ -961,11 +967,6 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                                     // If this run is not in the same function then ignore it.
                                     if (prevToMeth == null || prevToMeth != curFromMeth)
                                         continue;
-
-                                    if (prevToMeth.Desc.Name.Contains("lubksb"))
-                                    {
-
-                                    }
 
                                     // Otherwise, if this run follows right after jumping back into the function, we might need to extend
                                     // a previous run instead. This happens if we previously did a call out of this function and now returned back.

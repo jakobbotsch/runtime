@@ -22,6 +22,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
         // Number of IL bytes in this basic block
         public int Size { get; }
 
+        public HashSet<BasicBlock> Sources { get; } = new HashSet<BasicBlock>();
         public HashSet<BasicBlock> Targets { get; } = new HashSet<BasicBlock>();
 
         public override string ToString() => $"Start={Start}, Size={Size}";
@@ -210,6 +211,12 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         }
                     }
                 }
+            }
+
+            foreach (BasicBlock bb in bbs)
+            {
+                foreach (BasicBlock tar in bb.Targets)
+                    tar.Sources.Add(bb);
             }
 
             return fg;

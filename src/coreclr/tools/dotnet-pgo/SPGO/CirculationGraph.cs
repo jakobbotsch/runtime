@@ -201,6 +201,8 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 throw new Exception(string.Format("Edge {0}: Has {1} flow while backedge has {2}", this.ID, this.Flow, this.BackEdge.Flow));
             }
         }
+
+        public override string ToString() => $"{Source} -> {Target}";
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -263,6 +265,8 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             }
             return outFlow;
         }
+
+        public override string ToString() => $"{ID}";
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////
