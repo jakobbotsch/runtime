@@ -28,7 +28,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
         public bool DisplayProcessedEvents;
         public bool ValidateOutputFile;
         public bool GenerateCallGraph;
-        public bool GenerateSampleProfile;
+        public bool Spgo;
         public bool VerboseWarnings;
         public jittraceoptions JitTraceOptions;
         public double ExcludeEventsBefore;
@@ -181,7 +181,6 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 HelpArgs = new string[] { "create-mibc", "--help", "--trace", "trace", "--output", "output" };
                 FileType = PgoFileType.mibc;
                 GenerateCallGraph = true;
-                GenerateSampleProfile = true;
                 ProcessJitEvents = true;
                 ProcessR2REvents = true;
 #if DEBUG
@@ -191,6 +190,8 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 #endif
                 CommonOptions();
                 CompressedOption();
+
+                syntax.DefineOption(name: "spgo", value: ref Spgo, help: "Base profile on samples in the input. Uses last branch records if available and otherwise raw IP samples.", requireValue: false);
                 HelpOption();
             }
 

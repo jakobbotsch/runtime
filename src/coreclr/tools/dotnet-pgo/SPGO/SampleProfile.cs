@@ -51,7 +51,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 }
             }
 
-            FlowSmoothing<BasicBlock> flowSmooth = new FlowSmoothing<BasicBlock>(bbSamples, fg.Lookup(0), bb => bb.Targets, (bb, isForward) => (bb.Sources.Count == 1 ? 1 : bb.Size) * (isForward ? 1 : 50) + 2);
+            FlowSmoothing<BasicBlock> flowSmooth = new FlowSmoothing<BasicBlock>(bbSamples, fg.Lookup(0), bb => bb.Targets, (bb, isForward) => bb.Size * (isForward ? 1 : 50) + 2);
             Console.WriteLine("Doing smoothing for {0}", il.OwningMethod);
             flowSmooth.Perform();
 

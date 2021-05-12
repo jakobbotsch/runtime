@@ -59,7 +59,6 @@
     <ProjectReference Include="../aot/ILCompiler.TypeSystem.ReadyToRun/ILCompiler.TypeSystem.ReadyToRun.csproj" />
     <ProjectReference Include="../aot/ILCompiler.Reflection.ReadyToRun/ILCompiler.Reflection.ReadyToRun.csproj" />
     <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="$(TraceEventVersion)" />
-    <PackageReference Include="Microsoft.Z3.x64" Version="4.8.10" />
     <PackageReference Include="System.Reflection.Metadata" Version="$(SystemReflectionMetadataVersion)" />
   </ItemGroup>
 </Project>

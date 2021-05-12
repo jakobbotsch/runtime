@@ -855,7 +855,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 }
 
                 Dictionary<MethodDesc, SampleProfile> sampleProfiles = new Dictionary<MethodDesc, SampleProfile>();
-                if (commandLineOptions.GenerateSampleProfile)
+                if (commandLineOptions.Spgo)
                 {
                     MethodMemoryMap mmap = GetMethodMemMap();
                     Dictionary<MethodDesc, MethodIL> ils = new Dictionary<MethodDesc, MethodIL>();
@@ -887,68 +887,90 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                         return fg;
                     }
 
-                    //(MethodDesc Method, ulong IP, int Offset) GetTuple(SampledProfileTraceData e)
-                    //{
-                    //    MemoryRegionInfo info = mmap.GetInfo(e.InstructionPointer);
-                    //    if (info == null)
-                    //        return (null, e.InstructionPointer, -1);
-
-                    //    int offset = info.NativeToILMap?.Lookup(checked((uint)(e.InstructionPointer - info.StartAddress))) ?? -1;
-                    //    return (info.Desc, e.InstructionPointer, offset);
-                    //}
-
-                    //var allSamples =
-                    //    p.EventsInProcess.ByEventType<SampledProfileTraceData>()
-                    //    .Select(GetTuple)
-                    //    .ToList();
-
-                    //var samples =
-                    //    allSamples
-                    //    .Where(t => t.Method != null && t.Offset >= 0)
-                    //    .ToList();
-
-                    //foreach (var g in samples.GroupBy(t => t.Method))
-                    //{
-                    //    MethodIL il = g.Key switch
-                    //    {
-                    //        EcmaMethod em => EcmaMethodIL.Create(em),
-                    //        var m => new InstantiatedMethodIL(m, EcmaMethodIL.Create((EcmaMethod)m.GetTypicalMethodDefinition())),
-                    //    };
-
-                    //    var ep = SampleProfile.Create(il, g.Select(t => t.Offset));
-                    //    sampleProfiles.Add(g.Key, ep);
-                    //}
-
                     Guid lbrGuid = Guid.Parse("99134383-5248-43fc-834b-529454e75df3");
-                    Dictionary<(ulong startRun, ulong endRun), long> runs = new Dictionary<(ulong startRun, ulong endRun), long>();
-                    //Dictionary<(ulong from, ulong to), long> branches = new Dictionary<(ulong from, ulong to), long>();
-                    List<(ulong start, ulong end)> lbrRuns = new List<(ulong start, ulong end)>();
-                    foreach (var e in traceLog.Events)
+                    bool hasLbr = traceLog.Events.Any(e => e.TaskGuid == lbrGuid);
+
+                    if (!hasLbr)
                     {
-                        if (e.TaskGuid != lbrGuid)
-                            continue;
-
-                        if (e.Opcode != (TraceEventOpcode)32)
-                            continue;
-
-                        unsafe
+                        (MethodDesc Method, ulong IP, int Offset) GetTuple(SampledProfileTraceData e)
                         {
-                            if (traceLog.PointerSize == 8)
+                            MemoryRegionInfo info = mmap.GetInfo(e.InstructionPointer);
+                            if (info == null)
+                                return (null, e.InstructionPointer, -1);
+
+                            int offset = info.NativeToILMap?.Lookup(checked((uint)(e.InstructionPointer - info.StartAddress))) ?? -1;
+                            return (info.Desc, e.InstructionPointer, offset);
+                        }
+
+                        var allSamples =
+                            p.EventsInProcess.ByEventType<SampledProfileTraceData>()
+                            .Select(GetTuple)
+                            .ToList();
+
+                        var samples =
+                            allSamples
+                            .Where(t => t.Method != null && t.Offset >= 0)
+                            .ToList();
+
+                        foreach (var g in samples.GroupBy(t => t.Method))
+                        {
+                            MethodIL il = g.Key switch
                             {
-                                LbrTraceEventData64* data = (LbrTraceEventData64*)e.DataStart;
-                                // todo: handle timestamp, but we don't have access to PerfView functions to convert it.
-                                if (data->ProcessId != p.ProcessID)
-                                    continue;
+                                EcmaMethod em => EcmaMethodIL.Create(em),
+                                var m => new InstantiatedMethodIL(m, EcmaMethodIL.Create((EcmaMethod)m.GetTypicalMethodDefinition())),
+                            };
 
-                                Span<LbrEntry64> lbr = data->Entries(e.EventDataLength);
+                            var ep = SampleProfile.Create(il, GetFlowGraph(g.Key), g.Select(t => t.Offset));
+                            sampleProfiles.Add(g.Key, ep);
+                        }
+                    }
+                    else
+                    {
+                        Dictionary<(ulong startRun, ulong endRun), long> runs = new Dictionary<(ulong startRun, ulong endRun), long>();
+                        List<(ulong start, ulong end)> lbrRuns = new List<(ulong start, ulong end)>();
+                        LbrEntry64[] lbr64Arr = null;
+                        foreach (var e in traceLog.Events)
+                        {
+                            if (e.TaskGuid != lbrGuid)
+                                continue;
 
-                                //foreach (LbrEntry64 entry in lbr)
-                                //{
-                                //    if (branches.TryGetValue((entry.FromAddress, entry.ToAddress), out long count))
-                                //        branches[(entry.FromAddress, entry.ToAddress)] = count + 1;
-                                //    else
-                                //        branches.Add((entry.FromAddress, entry.ToAddress), 1);
-                                //}
+                            if (e.Opcode != (TraceEventOpcode)32)
+                                continue;
+
+                            unsafe
+                            {
+                                Span<LbrEntry64> lbr;
+                                if (traceLog.PointerSize == 4)
+                                {
+                                    LbrTraceEventData32* data = (LbrTraceEventData32*)e.DataStart;
+                                    if (data->ProcessId != p.ProcessID)
+                                        continue;
+
+                                    Span<LbrEntry32> lbr32 = data->Entries(e.EventDataLength);
+                                    if (lbr64Arr == null || lbr64Arr.Length < lbr32.Length)
+                                        lbr64Arr = new LbrEntry64[lbr32.Length];
+
+                                    for (int i = 0; i < lbr32.Length; i++)
+                                    {
+                                        ref LbrEntry64 entry = ref lbr64Arr[i];
+                                        entry.FromAddress = lbr32[i].FromAddress;
+                                        entry.ToAddress = lbr32[i].ToAddress;
+                                        entry.Reserved = lbr32[i].Reserved;
+                                    }
+
+                                    lbr = lbr64Arr[0..lbr32.Length];
+                                }
+                                else
+                                {
+                                    Trace.Assert(traceLog.PointerSize == 8, $"Unexpected PointerSize {traceLog.PointerSize}");
+
+                                    LbrTraceEventData64* data = (LbrTraceEventData64*)e.DataStart;
+                                    // todo: handle timestamp, but we don't have access to PerfView functions to convert it.
+                                    if (data->ProcessId != p.ProcessID)
+                                        continue;
+
+                                    lbr = data->Entries(e.EventDataLength);
+                                }
 
                                 // Store runs. LBR is chronological with most recent branches first.
                                 // To avoid double-counting blocks containing calls when the LBR buffer contains
@@ -1011,161 +1033,131 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                                         runs.Add(pair, 1);
                                 }
                             }
-                            else
-                            {
-                                Trace.Fail("Cannot handle 32-bit LBR yet");
-                                LbrTraceEventData32* data = (LbrTraceEventData32*)e.DataStart;
-                                if (data->ProcessId != p.ProcessID)
-                                    continue;
-
-                                Span<LbrEntry32> lbr = data->Entries(e.EventDataLength);
-                                for (int i = lbr.Length - 2; i >= 0; i--)
-                                {
-                                    var pair = ((ulong)lbr[i + 1].ToAddress, (ulong)lbr[i].FromAddress);
-                                    if (runs.TryGetValue(pair, out long prevCount))
-                                        runs[pair] = prevCount + 1;
-                                    else
-                                        runs.Add(pair, 1);
-                                    //ref long count = ref CollectionsMarshal.GetValueRefOrNullRef(runs, pair);
-                                    //if (Unsafe.IsNullRef(ref count))
-                                    //    runs.Add(pair, 1);
-                                    //else
-                                    //    count++;
-                                }
-                            }
                         }
-                    }
 
-                    //var foo =
-                    //    branches
-                    //    .Select(kvp => (from: kvp.Key.from.ToString("x"), to: kvp.Key.to.ToString("x"), count: kvp.Value, fromMeth: methodMemMap.GetMethod(kvp.Key.from)?.Name ?? "", toMeth: methodMemMap.GetMethod(kvp.Key.to)?.Name ?? ""))
-                    //    .OrderByDescending(t => t.fromMeth.Contains("checkEnding") || t.fromMeth.Contains("countEnding") || t.toMeth.Contains("checkEnding") || t.toMeth.Contains("countEnding") ? 1 : 0)
-                    //    .ThenByDescending(t => t.fromMeth != t.toMeth)
-                    //    .ThenByDescending(t => t.count)
-                    //    .ToList();
-
-                    foreach (var g in runs.Select(r => (start: r.Key.startRun, end: r.Key.endRun, count: r.Value, info: methodMemMap.GetInfo(r.Key.startRun))).GroupBy(t => t.info))
-                    {
-                        if (g.Key == null || g.Key.NativeToILMap == null)
-                            continue;
-
-                        var samples =
-                            g
-                            .Where(t => t.end >= t.start && t.end < g.Key.EndAddress)
-                            .Select(t => ((uint)(t.start - g.Key.StartAddress), (uint)(t.end - g.Key.StartAddress), t.count))
-                            .ToList();
-
-                        var ep = SampleProfile.CreateFromLbr(
-                            GetMethodIL(g.Key.Desc),
-                            GetFlowGraph(g.Key.Desc),
-                            g.Key.NativeToILMap,
-                            samples);
-
-                        sampleProfiles.Add(g.Key.Desc, ep);
-                    }
-
-                    List<InstrumentedPgoProfile> profile;
-                    using (var sr = new StreamReader(File.OpenRead(@"D:\dev\dotnet\spgo_data\pgo.txt")))
-                        profile = InstrumentedPgoProfile.Parse(sr);
-
-                    var entries = new List<(string method, int ilSize, int numBbs, long numSamples, double rawOverlap, double smoothedOverlap, string instrGraph, string rawGraph, string smoothGraph)>();
-
-                    string outputPath = @"D:\dev\dotnet\spgo_data";
-
-                    foreach ((MethodDesc meth, SampleProfile sp) in sampleProfiles)
-                    {
-                        MethodSignature sig = meth.Signature;
-                        string name;
-                        if (meth.OwningType is DefType dt)
+                        foreach (var g in runs.Select(r => (start: r.Key.startRun, end: r.Key.endRun, count: r.Value, info: methodMemMap.GetInfo(r.Key.startRun))).GroupBy(t => t.info))
                         {
-                            if (string.IsNullOrEmpty(dt.Namespace))
-                                name = $"{dt.Name}.{meth.Name}";
-                            else
-                                name = $"{dt.Namespace}.{dt.Name}.{meth.Name}";
+                            if (g.Key == null || g.Key.NativeToILMap == null)
+                                continue;
+
+                            var samples =
+                                g
+                                .Where(t => t.end >= t.start && t.end < g.Key.EndAddress)
+                                .Select(t => ((uint)(t.start - g.Key.StartAddress), (uint)(t.end - g.Key.StartAddress), t.count))
+                                .ToList();
+
+                            var ep = SampleProfile.CreateFromLbr(
+                                GetMethodIL(g.Key.Desc),
+                                GetFlowGraph(g.Key.Desc),
+                                g.Key.NativeToILMap,
+                                samples);
+
+                            sampleProfiles.Add(g.Key.Desc, ep);
                         }
-                        else
-                            continue;
-
-                        List<InstrumentedPgoProfile> pgoList = profile.Where(p => p.MethodName == name && p.ILSize == sp.MethodIL.GetILBytes().Length).ToList();
-                        if (pgoList.Count != 1)
-                            continue;
-
-                        InstrumentedPgoProfile pgo = pgoList[0];
-
-                        var basicBlockSchema = pgo.Schema.Where(e => e.InstrumentationKind == PgoInstrumentationKind.BasicBlockLongCount).ToList();
-                        bool flowGraphRight = basicBlockSchema.All(e => sp.FlowGraph.BasicBlocks.Any(bb => bb.Start == e.ILOffset)) &&
-                                              sp.FlowGraph.BasicBlocks.All(bb => basicBlockSchema.Any(e => e.ILOffset == bb.Start));
-                        Trace.Assert(flowGraphRight);
-
-                        long numSamples = sp.Samples.Sum(kvp => kvp.Value);
-                        if (numSamples < 50)
-                            continue;
-
-                        long totalInstrumentedCount = basicBlockSchema.Sum(s => s.DataLong);
-                        long totalSmoothedSamplesCount = sp.SmoothedSamples.Sum(kvp => kvp.Value);
-                        var entrySchema = basicBlockSchema.Single(e => e.ILOffset == 0).DataLong;
-                        var entryRaw = sp.Samples.Single(kvp => kvp.Key.Start == 0).Value;
-                        var entrySmooth = sp.SmoothedSamples.Single(kvp => kvp.Key.Start == 0).Value;
-                        Dictionary<int, (long count, double normCount, double samplesWeight)> instrumentedPw = basicBlockSchema.ToDictionary(e => e.ILOffset, e => (e.DataLong, e.DataLong / (double)entrySchema, e.DataLong / (double)totalInstrumentedCount));
-                        Dictionary<int, (long count, double normCount, double samplesWeight)> rawPw = sp.Samples.ToDictionary(kvp => kvp.Key.Start, kvp => (kvp.Value, kvp.Value / (double)entryRaw, kvp.Value / (double)numSamples));
-                        Dictionary<int, (long count, double normCount, double samplesWeight)> smoothedPw = sp.SmoothedSamples.ToDictionary(kvp => kvp.Key.Start, kvp => (kvp.Value, kvp.Value / (double)entrySmooth, kvp.Value / (double)totalSmoothedSamplesCount));
-
-                        Directory.CreateDirectory(Path.Combine(outputPath, "graphs"));
-                        string GenGraph(Dictionary<int, (long count, double normalizedBlockCount, double blockWeight)> annots, string postfix)
-                        {
-                            string GetAnnot(BasicBlock bb)
-                            {
-                                var (c, bc, bw) = annots[bb.Start];
-                                return FormattableString.Invariant($"Count: {c}\\nNormalized count: {bc:F2}\\nSamples weight: {bw:F2}");
-                            }
-
-                            string graph = sp.FlowGraph.Dump(GetAnnot, p => "");
-                            string path = Path.Combine(outputPath, "graphs", name + "_" + postfix + ".svg");
-                            var startInfo = new ProcessStartInfo("dot", $"-Tsvg -o \"{path}\"")
-                            {
-                                UseShellExecute = false,
-                                RedirectStandardInput = true,
-                                RedirectStandardOutput = true,
-                            };
-
-                            using (Process p = Process.Start(startInfo))
-                            {
-                                p.StandardInput.Write(graph);
-                                p.StandardInput.Flush();
-                                p.StandardInput.Close();
-                                p.StandardOutput.ReadToEnd();
-                                p.WaitForExit();
-                            }
-
-                            return path;
-                        }
-
-                        string instrGraph = GenGraph(instrumentedPw, "instrumented");
-                        string rawGraph = GenGraph(rawPw, "raw");
-                        string smoothedGraph = GenGraph(smoothedPw, "smoothed");
-
-                        double rawOverlap = 0;
-                        double smoothedOverlap = 0;
-                        foreach (PgoSchemaElem elem in basicBlockSchema)
-                        {
-                            rawOverlap += Math.Min(instrumentedPw[elem.ILOffset].samplesWeight, rawPw[elem.ILOffset].samplesWeight);
-                            smoothedOverlap += Math.Min(instrumentedPw[elem.ILOffset].samplesWeight, smoothedPw[elem.ILOffset].samplesWeight);
-                        }
-
-                        entries.Add((name, sp.MethodIL.GetILBytes().Length, sp.FlowGraph.BasicBlocks.Count, numSamples, rawOverlap, smoothedOverlap, instrGraph, rawGraph, smoothedGraph));
                     }
 
-                    StringBuilder sb = new StringBuilder();
-                    sb.AppendLine("Method | IL size | # BBs | # Samples | Raw overlap | Smoothed overlap | Instrumented graph | Smoothed graph");
-                    sb.AppendLine("--- | --- | --- | --- | --- | --- | --- | ---");
-                    foreach (var (name, ilSize, numBBs, numSamples, rawOverlap, smoothedOverlap, instGraph, rawGraph, smoothedGraph) in entries.OrderBy(e => e.smoothedOverlap))
-                    {
-                        string Graph(string path) => $"<details><summary>Expand</summary>![](graphs/{Path.GetFileName(path)})</details>";
-                        sb.AppendLine(FormattableString.Invariant($"{name} | {ilSize} | {numBBs} | {numSamples} | {rawOverlap * 100:F2}% | {smoothedOverlap * 100:F2}% | {Graph(instGraph)} | {Graph(smoothedGraph)}"));
-                    }
+                    //List<InstrumentedPgoProfile> profile;
+                    //using (var sr = new StreamReader(File.OpenRead(@"D:\dev\dotnet\spgo_data\pgo.txt")))
+                    //    profile = InstrumentedPgoProfile.Parse(sr);
 
-                    File.WriteAllText(Path.Combine(outputPath, "README.md"), sb.ToString());
-                    Console.WriteLine("{{{0}}}", string.Join(", ", entries.Select(e => string.Format(CultureInfo.InvariantCulture, "{0:R}", e.smoothedOverlap))));
+                    //var entries = new List<(string method, int ilSize, int numBbs, long numSamples, double rawOverlap, double smoothedOverlap, string instrGraph, string rawGraph, string smoothGraph)>();
+
+                    //string outputPath = @"D:\dev\dotnet\spgo_data";
+
+                    //foreach ((MethodDesc meth, SampleProfile sp) in sampleProfiles)
+                    //{
+                    //    MethodSignature sig = meth.Signature;
+                    //    string name;
+                    //    if (meth.OwningType is DefType dt)
+                    //    {
+                    //        if (string.IsNullOrEmpty(dt.Namespace))
+                    //            name = $"{dt.Name}.{meth.Name}";
+                    //        else
+                    //            name = $"{dt.Namespace}.{dt.Name}.{meth.Name}";
+                    //    }
+                    //    else
+                    //        continue;
+
+                    //    List<InstrumentedPgoProfile> pgoList = profile.Where(p => p.MethodName == name && p.ILSize == sp.MethodIL.GetILBytes().Length).ToList();
+                    //    if (pgoList.Count != 1)
+                    //        continue;
+
+                    //    InstrumentedPgoProfile pgo = pgoList[0];
+
+                    //    var basicBlockSchema = pgo.Schema.Where(e => e.InstrumentationKind == PgoInstrumentationKind.BasicBlockLongCount).ToList();
+                    //    bool flowGraphRight = basicBlockSchema.All(e => sp.FlowGraph.BasicBlocks.Any(bb => bb.Start == e.ILOffset)) &&
+                    //                          sp.FlowGraph.BasicBlocks.All(bb => basicBlockSchema.Any(e => e.ILOffset == bb.Start));
+                    //    Trace.Assert(flowGraphRight);
+
+                    //    long numSamples = sp.Samples.Sum(kvp => kvp.Value);
+                    //    if (numSamples < 50)
+                    //        continue;
+
+                    //    long totalInstrumentedCount = basicBlockSchema.Sum(s => s.DataLong);
+                    //    long totalSmoothedSamplesCount = sp.SmoothedSamples.Sum(kvp => kvp.Value);
+                    //    var entrySchema = basicBlockSchema.Single(e => e.ILOffset == 0).DataLong;
+                    //    var entryRaw = sp.Samples.Single(kvp => kvp.Key.Start == 0).Value;
+                    //    var entrySmooth = sp.SmoothedSamples.Single(kvp => kvp.Key.Start == 0).Value;
+                    //    Dictionary<int, (long count, double normCount, double samplesWeight)> instrumentedPw = basicBlockSchema.ToDictionary(e => e.ILOffset, e => (e.DataLong, e.DataLong / (double)entrySchema, e.DataLong / (double)totalInstrumentedCount));
+                    //    Dictionary<int, (long count, double normCount, double samplesWeight)> rawPw = sp.Samples.ToDictionary(kvp => kvp.Key.Start, kvp => (kvp.Value, kvp.Value / (double)entryRaw, kvp.Value / (double)numSamples));
+                    //    Dictionary<int, (long count, double normCount, double samplesWeight)> smoothedPw = sp.SmoothedSamples.ToDictionary(kvp => kvp.Key.Start, kvp => (kvp.Value, kvp.Value / (double)entrySmooth, kvp.Value / (double)totalSmoothedSamplesCount));
+
+                    //    Directory.CreateDirectory(Path.Combine(outputPath, "graphs"));
+                    //    string GenGraph(Dictionary<int, (long count, double normalizedBlockCount, double blockWeight)> annots, string postfix)
+                    //    {
+                    //        string GetAnnot(BasicBlock bb)
+                    //        {
+                    //            var (c, bc, bw) = annots[bb.Start];
+                    //            return FormattableString.Invariant($"Count: {c}\\nNormalized count: {bc:F2}\\nSamples weight: {bw:F2}");
+                    //        }
+
+                    //        string graph = sp.FlowGraph.Dump(GetAnnot, p => "");
+                    //        string path = Path.Combine(outputPath, "graphs", name + "_" + postfix + ".svg");
+                    //        var startInfo = new ProcessStartInfo("dot", $"-Tsvg -o \"{path}\"")
+                    //        {
+                    //            UseShellExecute = false,
+                    //            RedirectStandardInput = true,
+                    //            RedirectStandardOutput = true,
+                    //        };
+
+                    //        using (Process p = Process.Start(startInfo))
+                    //        {
+                    //            p.StandardInput.Write(graph);
+                    //            p.StandardInput.Flush();
+                    //            p.StandardInput.Close();
+                    //            p.StandardOutput.ReadToEnd();
+                    //            p.WaitForExit();
+                    //        }
+
+                    //        return path;
+                    //    }
+
+                    //    string instrGraph = GenGraph(instrumentedPw, "instrumented");
+                    //    string rawGraph = GenGraph(rawPw, "raw");
+                    //    string smoothedGraph = GenGraph(smoothedPw, "smoothed");
+
+                    //    double rawOverlap = 0;
+                    //    double smoothedOverlap = 0;
+                    //    foreach (PgoSchemaElem elem in basicBlockSchema)
+                    //    {
+                    //        rawOverlap += Math.Min(instrumentedPw[elem.ILOffset].samplesWeight, rawPw[elem.ILOffset].samplesWeight);
+                    //        smoothedOverlap += Math.Min(instrumentedPw[elem.ILOffset].samplesWeight, smoothedPw[elem.ILOffset].samplesWeight);
+                    //    }
+
+                    //    entries.Add((name, sp.MethodIL.GetILBytes().Length, sp.FlowGraph.BasicBlocks.Count, numSamples, rawOverlap, smoothedOverlap, instrGraph, rawGraph, smoothedGraph));
+                    //}
+
+                    //StringBuilder sb = new StringBuilder();
+                    //sb.AppendLine("Method | IL size | # BBs | # Samples | Raw overlap | Smoothed overlap | Instrumented graph | Smoothed graph");
+                    //sb.AppendLine("--- | --- | --- | --- | --- | --- | --- | ---");
+                    //foreach (var (name, ilSize, numBBs, numSamples, rawOverlap, smoothedOverlap, instGraph, rawGraph, smoothedGraph) in entries.OrderBy(e => e.smoothedOverlap))
+                    //{
+                    //    string Graph(string path) => $"<details><summary>Expand</summary>![](graphs/{Path.GetFileName(path)})</details>";
+                    //    sb.AppendLine(FormattableString.Invariant($"{name} | {ilSize} | {numBBs} | {numSamples} | {rawOverlap * 100:F2}% | {smoothedOverlap * 100:F2}% | {Graph(instGraph)} | {Graph(smoothedGraph)}"));
+                    //}
+
+                    //File.WriteAllText(Path.Combine(outputPath, "README.md"), sb.ToString());
+                    //Console.WriteLine("{{{0}}}", string.Join(", ", entries.Select(e => string.Format(CultureInfo.InvariantCulture, "{0:R}", e.smoothedOverlap))));
                 }
 
                 if (commandLineOptions.DisplayProcessedEvents)
@@ -1221,6 +1213,21 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                             var intDecompressor = new PgoProcessor.PgoEncodedCompressedIntParser(instrumentationData, 0);
                             methodData.InstrumentationData = PgoProcessor.ParsePgoData<TypeSystemEntityOrUnknown>(pgoDataLoader, intDecompressor, true).ToArray();
                         }
+                        else if (sampleProfiles.TryGetValue(methodData.Method, out SampleProfile sp))
+                        {
+                            methodData.InstrumentationData =
+                                sp.SmoothedSamples
+                                .Select(kvp =>
+                                    new PgoSchemaElem
+                                    {
+                                        InstrumentationKind = kvp.Value > uint.MaxValue ? PgoInstrumentationKind.BasicBlockLongCount : PgoInstrumentationKind.BasicBlockIntCount,
+                                        ILOffset = kvp.Key.Start,
+                                        Count = 1,
+                                        DataLong = kvp.Value,
+                                    })
+                                .ToArray();
+                        }
+
                         methodsUsedInProcess.Add(methodData);
                     }
                 }

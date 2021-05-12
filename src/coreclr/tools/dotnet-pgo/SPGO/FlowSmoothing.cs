@@ -30,7 +30,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
-using Microsoft.Z3;
 
 namespace Microsoft.Diagnostics.Tools.Pgo
 {
@@ -129,120 +128,24 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             graph.AddNode(source);
             graph.AddNode(target);
 
-            Stopwatch timer = Stopwatch.StartNew();
-            MinimumCostCirculation.FindMinCostCirculation(graph, smoothingIterations);
-            TimeSpan our = timer.Elapsed;
-            var (nodeSols, edgeSols) = SolveZ3(graph, abstractNodeMap, abstractEdgeMap);
-            TimeSpan z3 = timer.Elapsed - our;
-            double z3Cost = edgeSols.Sum(kvp => kvp.Value * kvp.Key.Cost);
-            double ourCost = graph.TotalCirculationCost();
-            Console.WriteLine("Z3 {0:F2}ms vs {1:F2}ms ours", z3.TotalMilliseconds, our.TotalMilliseconds);
+            MinimumCostCirculation.FindMinCostCirculation(graph);
 
-            NodeResults = nodeSols.ToDictionary(kvp => kvp.Key, kvp => (long)Math.Round(kvp.Value));
+            // Derive the new concrete block hit counts by subtracting the backflow from the inflow of the entry node.
+            foreach (T concreteNode in abstractNodeMap.Keys)
+            {
+                long entryNodeFlow = abstractNodeMap[concreteNode].entrance.NetInFlow();
+                long backEdgeFlow = abstractNodeMap[concreteNode].back.Flow;
+                NodeResults[concreteNode] = entryNodeFlow - backEdgeFlow;
+            }
+            // Now log all the edge values back into the edgeResult dictionary.
 
             foreach (var concreteEdge in abstractEdgeMap.Keys)
-                EdgeResults[concreteEdge] = (long)Math.Round(edgeSols[abstractEdgeMap[concreteEdge]]);
-
-            //// Derive the new concrete block hit counts by subtracting the backflow from the inflow of the entry node.
-            //foreach (T concreteNode in abstractNodeMap.Keys)
-            //{
-            //    long entryNodeFlow = abstractNodeMap[concreteNode].entrance.NetInFlow();
-            //    long backEdgeFlow = abstractNodeMap[concreteNode].back.Flow;
-            //    NodeResults[concreteNode] = entryNodeFlow - backEdgeFlow;
-            //}
-            //// Now log all the edge values back into the edgeResult dictionary.
-
-            //foreach (var concreteEdge in abstractEdgeMap.Keys)
-            //{
-            //    EdgeResults[concreteEdge] = abstractEdgeMap[concreteEdge].Flow;
-            //}
+            {
+                EdgeResults[concreteEdge] = abstractEdgeMap[concreteEdge].Flow;
+            }
 
             MakeGraphFeasible();
             CheckGraphConsistency();
-        }
-
-        private (Dictionary<T, double>, Dictionary<Edge, double>) SolveZ3(CirculationGraph graph, Dictionary<T, (Node entrance, Node exit, Edge backEdge)> abstractNodeMap, Dictionary<(T, T), Edge> abstractEdgeMap)
-        {
-            using var ctx = new Context();
-            Optimize opt = ctx.MkOptimize();
-            Params p = ctx.MkParams();
-            //p = p.Add("priority", ctx.MkSymbol("pareto"));
-            //opt.Set("priority", "pareto");
-            opt.Parameters = p;
-
-            Dictionary<Edge, RealExpr> edgeFlows = new Dictionary<Edge, RealExpr>();
-            foreach (Edge edge in graph.Edges)
-            {
-                if (edge.MinCapacity < 0 || edge.MaxCapacity < 0)
-                    continue;
-
-                var flow = ctx.MkRealConst($"e{edge.ID}");
-                edgeFlows.Add(edge, flow);
-                opt.Assert(flow >= edge.MinCapacity);
-                if (edge.MaxCapacity != long.MaxValue)
-                    opt.Assert(flow <= edge.MaxCapacity);
-            }
-
-            Dictionary<Node, ArithExpr> inFlows = new Dictionary<Node, ArithExpr>();
-            Dictionary<Node, ArithExpr> outFlows = new Dictionary<Node, ArithExpr>();
-
-            foreach (Node node in graph.Nodes)
-            {
-                var inEdges = node.InEdgeList.Where(e => e.MaxCapacity > 0 && e.MinCapacity >= 0).Select(e => edgeFlows[e]).ToArray();
-                var outEdges = node.OutEdgeList.Where(e => e.MaxCapacity > 0 && e.MinCapacity >= 0).Select(e => edgeFlows[e]).ToArray();
-                if (inEdges.Length == 0)
-                    inFlows.Add(node, ctx.MkReal(0));
-                else
-                    inFlows.Add(node, ctx.MkAdd(inEdges));
-
-                if (outEdges.Length == 0)
-                    outFlows.Add(node, ctx.MkReal(0));
-                else
-                    outFlows.Add(node, ctx.MkAdd(outEdges));
-
-                if (inEdges.Length != 0 || outEdges.Length != 0)
-                    opt.Assert(ctx.MkEq(inFlows[node], outFlows[node]));
-            }
-
-            opt.MkMinimize(ctx.MkAdd(graph.Edges.Where(e => e.MaxCapacity >= 0 && e.MinCapacity >= 0).Select(e => e.Cost * edgeFlows[e])));
-
-            // Secondly, for nodes with only one in-edge, we try to keep the distribution in the result as close to the distribution in the data as possible.
-            // That is, for a case like
-            //        NODE1(10000)
-            //       e12 /    \ e13
-            //    NODE2(10)  NODE3(50)    
-            //
-            // We don't want the 10000 to be pushed to only one of the nodes, but would like most of the counts to go to NODE3.
-            // To do this we look for situations like above and want to minimize |e12/(e12+e13) - 10/10000|.
-            // e12/(e12+e13) = 10/10000
-            // e12 = (10e12+10e13)/10000
-            // 10000e12 = 10e12+10e13
-            // 10e12+10e13-10000e12 = 0
-            // 
-
-            List<ArithExpr> ratioExprs = new List<ArithExpr>();
-            foreach (((T from, T to), Edge edge) in abstractEdgeMap)
-            {
-                (Node entrance, Node exit, Edge backEdge) toNode = abstractNodeMap[to];
-                var inEdges = toNode.entrance.InEdgeList.Where(e => e != toNode.backEdge && e.MinCapacity >= 0 && e.MaxCapacity > 0).ToList();
-                if (inEdges.Count != 1)
-                    continue;
-
-                ArithExpr fromNodeFlow = ctx.MkSub(inFlows[abstractNodeMap[from].entrance], edgeFlows[abstractNodeMap[from].backEdge]);
-                ArithExpr toNodeFlow = ctx.MkSub(inFlows[abstractNodeMap[to].entrance], edgeFlows[abstractNodeMap[to].backEdge]);
-                ArithExpr inner = ctx.MkSub(m_sampleData[to] * fromNodeFlow, m_sampleData[from] * toNodeFlow);
-                ArithExpr finalExpr = (ArithExpr)ctx.MkITE(ctx.MkLt(inner, ctx.MkReal(0)), ctx.MkUnaryMinus(inner), inner);
-                ratioExprs.Add(finalExpr);
-            }
-
-            if (ratioExprs.Count > 0)
-                opt.MkMinimize(ctx.MkAdd(ratioExprs));
-
-            var result = opt.Check();
-            Trace.Assert(result == Status.SATISFIABLE);
-            var nodeSols = abstractNodeMap.ToDictionary(kvp => kvp.Key, kvp => opt.Model.Double(ctx.MkSub(inFlows[kvp.Value.entrance], edgeFlows[kvp.Value.backEdge])));
-            var edgeSols = edgeFlows.ToDictionary(k => k.Key, k => opt.Model.Double(k.Value));
-            return (nodeSols, edgeSols);
         }
 
         // Helper function to perform parametric mapping on the NodeResults dictionary.
