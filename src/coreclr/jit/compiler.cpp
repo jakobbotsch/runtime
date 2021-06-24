@@ -5942,10 +5942,18 @@ void Compiler::compCompileFinish()
         {
             // clang-format off
             headerPrinted = true;
+
+#if defined(HOST_64BIT)
             printf("         |  Profiled   | Method   |   Method has    |   calls   | Num |LclV |AProp| CSE |   Perf  |bytes | %3s codesize| \n", Target::g_tgtCPUName);
-            printf(" mdToken |  CNT |  RGN |    Hash  | EH | FRM | LOOP | NRM | IND | BBs | Cnt | Cnt | Cnt |  Score  |  IL  |   HOT | CLD | method name \n");
-            printf("---------+------+------+----------+----+-----+------+-----+-----+-----+-----+-----+-----+---------+------+-------+-----+\n");
-            //      06001234 | 1234 |  HOT | 0f1e2d3c | EH | ebp | LOOP |  15 |   6 |  12 |  17 |  12 |   8 | 1234.56 |  145 |  1234 | 123 | System.Example(int)
+            printf(" mdToken |  CNT |  RGN |    Hash  | EH | FRM | LOOP | NRM | IND | BBs | Cnt | Cnt | Cnt |  Score  |  IL  |   HOT | CLD |      ADDRESS      | DELTA | method name \n");
+            printf("---------+------+------+----------+----+-----+------+-----+-----+-----+-----+-----+-----+---------+------+-------+-----+-------------------+-------+\n");
+            //      06001234 | 1234 |  HOT | 0f1e2d3c | EH | ebp | LOOP |  15 |   6 |  12 |  17 |  12 |   8 | 1234.56 |  145 |  1234 | 123 | deadbeef`deadbeef | 12345 | System.Example(int)
+#else
+            printf("         |  Profiled   | Method   |   Method has    |   calls   | Num |LclV |AProp| CSE |   Perf  |bytes | %3s codesize| \n", Target::g_tgtCPUName);
+            printf(" mdToken |  CNT |  RGN |    Hash  | EH | FRM | LOOP | NRM | IND | BBs | Cnt | Cnt | Cnt |  Score  |  IL  |   HOT | CLD | ADDRESS  | DELTA | method name \n");
+            printf("---------+------+------+----------+----+-----+------+-----+-----+-----+-----+-----+-----+---------+------+-------+-----+---------+--------+");
+            //      06001234 | 1234 |  HOT | 0f1e2d3c | EH | ebp | LOOP |  15 |   6 |  12 |  17 |  12 |   8 | 1234.56 |  145 |  1234 | 123 | deadbeef | 12345 | System.Example(int)
+#endif
             // clang-format on
         }
 
@@ -6064,6 +6072,28 @@ void Compiler::compCompileFinish()
         printf(" %4d |", info.compMethodInfo->ILCodeSize);
         printf(" %5d |", info.compTotalHotCodeSize);
         printf(" %3d |", info.compTotalColdCodeSize);
+        BYTE* jitAddr = GetEmitter()->emitCodeBlock;
+
+        printf(FMT_ADDR "|", DBG_ADDR(jitAddr));
+        static BYTE* s_lastJitAddr;
+        if (s_lastJitAddr == 0)
+        {
+            printf("       |");
+        }
+        else if (jitAddr < s_lastJitAddr)
+        {
+            printf("  NEG  |");
+        }
+        else if (jitAddr - s_lastJitAddr > 99999)
+        {
+            printf(" LARGE |");
+        }
+        else
+        {
+            printf(" %5d |", (int)(jitAddr - s_lastJitAddr));
+        }
+
+        s_lastJitAddr = jitAddr;
 
         printf(" %s\n", eeGetMethodFullName(info.compMethodHnd));
         printf(""); // in our logic this causes a flush
