@@ -5479,8 +5479,24 @@ void Compiler::optPerformHoistExpr(GenTree* origExpr, unsigned lnum)
     // This loop has to be in a form that is approved for hoisting.
     assert(optLoopTable[lnum].lpFlags & LPFLG_HOISTABLE);
 
-    // Create a copy of the expression and mark it for CSE's.
-    GenTree* hoistExpr = gtCloneExpr(origExpr, GTF_MAKE_CSE);
+    // Create a copy of the expression and mark it for CSE's. If the original
+    // expression is a constant by liberal VN, then hoist it as a constant
+    // here. We can have situations where class fields or indirections are
+    // constant by liberal VN in the loop, and in those cases we should not
+    // hoist the original.
+    GenTree* hoistExpr;
+    ValueNum vn = origExpr->gtVNPair.GetLiberal();
+    if (vnStore->IsVNConstant(vn))
+    {
+        hoistExpr = optCreateVNConstant(vn, origExpr->TypeGet());
+        noway_assert(hoistExpr != nullptr);
+        hoistExpr->SetVNs(ValueNumPair(vn, vn));
+        hoistExpr->gtFlags |= GTF_MAKE_CSE;
+    }
+    else
+    {
+        hoistExpr = gtCloneExpr(origExpr, GTF_MAKE_CSE);
+    }
 
     // The hoist Expr does not have to computed into a specific register,
     // so clear the RegNum if it was set in the original expression
@@ -6093,18 +6109,22 @@ void Compiler::optHoistLoopBlocks(unsigned loopNum, ArrayStack<BasicBlock*>* blo
         bool IsTreeVNInvariant(GenTree* tree)
         {
             ValueNum vn = tree->gtVNPair.GetLiberal();
+            if (vn == ValueNumStore::NoVN)
+                return false;
+
+            ValueNum vnx;
+            m_compiler->vnStore->VNUnpackExc(vn, &vn, &vnx);
             if (m_compiler->vnStore->IsVNConstant(vn))
             {
-                // It is unsafe to allow a GT_CLS_VAR that has been assigned a constant.
+                // It is unsafe to allow a GT_CLS_VAR or GT_IND that has been assigned a constant.
                 // The logic in optVNIsLoopInvariant would consider it to be loop-invariant, even
-                // if the assignment of the constant to the GT_CLS_VAR was inside the loop.
+                // if the assignment of the constant to the GT_CLS_VAR/GT_IND was inside the loop.
                 //
-                if (tree->OperIs(GT_CLS_VAR))
+                if (tree->OperIs(GT_CLS_VAR/*, GT_IND*/))
                 {
                     return false;
                 }
             }
-
             return m_compiler->optVNIsLoopInvariant(vn, m_loopNum, &m_hoistContext->m_curLoopVnInvariantCache);
         }
 

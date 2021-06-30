@@ -2464,6 +2464,167 @@ AssertionIndex Compiler::optAssertionIsSubtype(GenTree* tree, GenTree* methodTab
     return NO_ASSERTION_INDEX;
 }
 
+GenTree* Compiler::optCreateVNConstant(ValueNum vnCns, var_types targetType)
+{
+    assert(vnStore->IsVNConstant(vnCns));
+    GenTree* conValTree = nullptr;
+    switch (vnStore->TypeOfVN(vnCns))
+    {
+        case TYP_FLOAT:
+        {
+            float value = vnStore->ConstantValue<float>(vnCns);
+
+            if (targetType == TYP_INT)
+            {
+                // Same sized reinterpretation of bits to integer
+                conValTree = gtNewIconNode(*(reinterpret_cast<int*>(&value)));
+            }
+            else
+            {
+                // Implicit assignment conversion to float or double
+                assert(varTypeIsFloating(targetType));
+                conValTree = gtNewDconNode(value, targetType);
+            }
+            break;
+        }
+
+        case TYP_DOUBLE:
+        {
+            double value = vnStore->ConstantValue<double>(vnCns);
+
+            if (targetType == TYP_LONG)
+            {
+                conValTree = gtNewLconNode(*(reinterpret_cast<INT64*>(&value)));
+            }
+            else
+            {
+                // Implicit assignment conversion to float or double
+                assert(varTypeIsFloating(targetType));
+                conValTree = gtNewDconNode(value, targetType);
+            }
+            break;
+        }
+
+        case TYP_LONG:
+        {
+            INT64 value = vnStore->ConstantValue<INT64>(vnCns);
+
+#ifdef TARGET_64BIT
+            if (vnStore->IsVNHandle(vnCns))
+            {
+                // Don't perform constant folding that involves a handle that needs
+                // to be recorded as a relocation with the VM.
+                if (!opts.compReloc)
+                {
+                    conValTree = gtNewIconHandleNode(value, vnStore->GetHandleFlags(vnCns));
+                }
+            }
+            else
+#endif
+            {
+                switch (targetType)
+                {
+                    case TYP_INT:
+                        // Implicit assignment conversion to smaller integer
+                        conValTree = gtNewIconNode(static_cast<int>(value));
+                        break;
+
+                    case TYP_LONG:
+                        // Same type no conversion required
+                        conValTree = gtNewLconNode(value);
+                        break;
+
+                    case TYP_FLOAT:
+                        // No implicit conversions from long to float and value numbering will
+                        // not propagate through memory reinterpretations of different size.
+                        unreached();
+                        break;
+
+                    case TYP_DOUBLE:
+                        // Same sized reinterpretation of bits to double
+                        conValTree = gtNewDconNode(*(reinterpret_cast<double*>(&value)));
+                        break;
+
+                    default:
+                        // Do not support such optimization.
+                        break;
+                }
+            }
+        }
+        break;
+
+        case TYP_REF:
+        {
+            assert(vnStore->ConstantValue<size_t>(vnCns) == 0);
+            // Support onle ref(ref(0)), do not support other forms (e.g byref(ref(0)).
+            if (targetType == TYP_REF)
+            {
+                conValTree = gtNewIconNode(0, TYP_REF);
+            }
+        }
+        break;
+
+        case TYP_INT:
+        {
+            int value = vnStore->ConstantValue<int>(vnCns);
+#ifndef TARGET_64BIT
+            if (vnStore->IsVNHandle(vnCns))
+            {
+                // Don't perform constant folding that involves a handle that needs
+                // to be recorded as a relocation with the VM.
+                if (!opts.compReloc)
+                {
+                    conValTree = gtNewIconHandleNode(value, vnStore->GetHandleFlags(vnCns));
+                }
+            }
+            else
+#endif
+            {
+                switch (targetType)
+                {
+                    case TYP_REF:
+                    case TYP_INT:
+                        // Same type no conversion required
+                        conValTree = gtNewIconNode(static_cast<int>(value));
+                        break;
+
+                    case TYP_LONG:
+                        // Implicit assignment conversion to larger integer
+                        conValTree = gtNewLconNode(static_cast<int>(value));
+                        break;
+
+                    case TYP_FLOAT:
+                        // Same sized reinterpretation of bits to float
+                        conValTree = gtNewDconNode(*(reinterpret_cast<float*>(&value)), TYP_FLOAT);
+                        break;
+
+                    case TYP_DOUBLE:
+                        // No implicit conversions from int to double and value numbering will
+                        // not propagate through memory reinterpretations of different size.
+                        unreached();
+                        break;
+
+                    default:
+                        // Do not support (e.g. bool(const int)).
+                        break;
+                }
+            }
+        }
+        break;
+
+        case TYP_BYREF:
+            // Do not support const byref optimization.
+            break;
+
+        default:
+            // We do not record constants of other types.
+            unreached();
+            break;
+    }
+
+    return conValTree;
+}
+
 //------------------------------------------------------------------------------
 // optVNConstantPropOnTree: Substitutes tree with an evaluated constant while
 //                          managing side-effects.
@@ -2517,160 +2678,7 @@ GenTree* Compiler::optVNConstantPropOnTree(BasicBlock* block, GenTree* tree)
         return nullptr;
     }
 
-    GenTree* conValTree = nullptr;
-    switch (vnStore->TypeOfVN(vnCns))
-    {
-        case TYP_FLOAT:
-        {
-            float value = vnStore->ConstantValue<float>(vnCns);
-
-            if (tree->TypeGet() == TYP_INT)
-            {
-                // Same sized reinterpretation of bits to integer
-                conValTree = gtNewIconNode(*(reinterpret_cast<int*>(&value)));
-            }
-            else
-            {
-                // Implicit assignment conversion to float or double
-                assert(varTypeIsFloating(tree->TypeGet()));
-                conValTree = gtNewDconNode(value, tree->TypeGet());
-            }
-            break;
-        }
-
-        case TYP_DOUBLE:
-        {
-            double value = vnStore->ConstantValue<double>(vnCns);
-
-            if (tree->TypeGet() == TYP_LONG)
-            {
-                conValTree = gtNewLconNode(*(reinterpret_cast<INT64*>(&value)));
-            }
-            else
-            {
-                // Implicit assignment conversion to float or double
-                assert(varTypeIsFloating(tree->TypeGet()));
-                conValTree = gtNewDconNode(value, tree->TypeGet());
-            }
-            break;
-        }
-
-        case TYP_LONG:
-        {
-            INT64 value = vnStore->ConstantValue<INT64>(vnCns);
-
-#ifdef TARGET_64BIT
-            if (vnStore->IsVNHandle(vnCns))
-            {
-                // Don't perform constant folding that involves a handle that needs
-                // to be recorded as a relocation with the VM.
-                if (!opts.compReloc)
-                {
-                    conValTree = gtNewIconHandleNode(value, vnStore->GetHandleFlags(vnCns));
-                }
-            }
-            else
-#endif
-            {
-                switch (tree->TypeGet())
-                {
-                    case TYP_INT:
-                        // Implicit assignment conversion to smaller integer
-                        conValTree = gtNewIconNode(static_cast<int>(value));
-                        break;
-
-                    case TYP_LONG:
-                        // Same type no conversion required
-                        conValTree = gtNewLconNode(value);
-                        break;
-
-                    case TYP_FLOAT:
-                        // No implicit conversions from long to float and value numbering will
-                        // not propagate through memory reinterpretations of different size.
-                        unreached();
-                        break;
-
-                    case TYP_DOUBLE:
-                        // Same sized reinterpretation of bits to double
-                        conValTree = gtNewDconNode(*(reinterpret_cast<double*>(&value)));
-                        break;
-
-                    default:
-                        // Do not support such optimization.
-                        break;
-                }
-            }
-        }
-        break;
-
-        case TYP_REF:
-        {
-            assert(vnStore->ConstantValue<size_t>(vnCns) == 0);
-            // Support onle ref(ref(0)), do not support other forms (e.g byref(ref(0)).
-            if (tree->TypeGet() == TYP_REF)
-            {
-                conValTree = gtNewIconNode(0, TYP_REF);
-            }
-        }
-        break;
-
-        case TYP_INT:
-        {
-            int value = vnStore->ConstantValue<int>(vnCns);
-#ifndef TARGET_64BIT
-            if (vnStore->IsVNHandle(vnCns))
-            {
-                // Don't perform constant folding that involves a handle that needs
-                // to be recorded as a relocation with the VM.
-                if (!opts.compReloc)
-                {
-                    conValTree = gtNewIconHandleNode(value, vnStore->GetHandleFlags(vnCns));
-                }
-            }
-            else
-#endif
-            {
-                switch (tree->TypeGet())
-                {
-                    case TYP_REF:
-                    case TYP_INT:
-                        // Same type no conversion required
-                        conValTree = gtNewIconNode(static_cast<int>(value));
-                        break;
-
-                    case TYP_LONG:
-                        // Implicit assignment conversion to larger integer
-                        conValTree = gtNewLconNode(static_cast<int>(value));
-                        break;
-
-                    case TYP_FLOAT:
-                        // Same sized reinterpretation of bits to float
-                        conValTree = gtNewDconNode(*(reinterpret_cast<float*>(&value)), TYP_FLOAT);
-                        break;
-
-                    case TYP_DOUBLE:
-                        // No implicit conversions from int to double and value numbering will
-                        // not propagate through memory reinterpretations of different size.
-                        unreached();
-                        break;
-
-                    default:
-                        // Do not support (e.g. bool(const int)).
-                        break;
-                }
-            }
-        }
-        break;
-
-        case TYP_BYREF:
-            // Do not support const byref optimization.
-            break;
-
-        default:
-            // We do not record constants of other types.
-            unreached();
-            break;
-    }
+    GenTree* conValTree = optCreateVNConstant(vnCns, tree->TypeGet());
 
     if (conValTree != nullptr)
     {

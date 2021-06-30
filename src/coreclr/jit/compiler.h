@@ -7448,6 +7448,7 @@ public:
     void optVnNonNullPropCurStmt(BasicBlock* block, Statement* stmt, GenTree* tree);
     fgWalkResult optVNConstantPropCurStmt(BasicBlock* block, Statement* stmt, GenTree* tree);
     GenTree* optVNConstantPropOnJTrue(BasicBlock* block, GenTree* test);
+    GenTree* optCreateVNConstant(ValueNum vnCns, var_types targetType);
     GenTree* optVNConstantPropOnTree(BasicBlock* block, GenTree* tree);
     GenTree* optExtractSideEffListFromConst(GenTree* tree);
 
