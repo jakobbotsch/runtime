@@ -2429,10 +2429,10 @@ UNATIVE_OFFSET emitter::emitInsSizeAM(instrDesc* id, code_t code)
             return size;
         }
 
-        // If this is just "call reg", we're done.
+        // If this is just "call reg" we're done.
         if (id->idIsCallRegPtr())
         {
-            assert(ins == INS_call);
+            assert(ins == INS_call || ins == INS_rex_jmp);
             assert(dsp == 0);
             return size;
         }
@@ -7478,8 +7478,13 @@ void emitter::emitIns_Call(EmitCallType          callType,
 
     if (isJump)
     {
-        assert(callType == EC_FUNC_TOKEN || callType == EC_FUNC_TOKEN_INDIR || callType == EC_INDIR_ARD);
-        if (callType == EC_FUNC_TOKEN)
+        assert(callType == EC_FUNC_TOKEN || callType == EC_FUNC_TOKEN_INDIR || callType == EC_INDIR_ARD || callType == EC_INDIR_R);
+        if (callType == EC_INDIR_R)
+        {
+            // The stack walker requires that a register indirect tail call be rex.w prefixed.
+            ins = INS_rex_jmp;
+        }
+        else if (callType == EC_FUNC_TOKEN)
         {
             ins = INS_l_jmp;
         }
@@ -8846,9 +8851,15 @@ void emitter::emitDispIns(
         case IF_AWR:
         case IF_ARW:
 
-            if (ins == INS_call && id->idIsCallRegPtr())
+            if (((ins == INS_call) || (ins == INS_rex_jmp)) && id->idIsCallRegPtr())
             {
                 printf("%s", emitRegName(id->idAddr()->iiaAddrMode.amBaseReg));
+                if (id->idDebugOnlyInfo()->idMemCookie != 0)
+                {
+                    methodName = emitComp->eeGetMethodFullName((CORINFO_METHOD_HANDLE)id->idDebugOnlyInfo()->idMemCookie);
+                    printf("/%s", methodName);
+                }
+
                 break;
             }
 
@@ -8856,7 +8867,7 @@ void emitter::emitDispIns(
             emitDispAddrMode(id, isNew);
             emitDispShift(ins);
 
-            if ((ins == INS_call) || (ins == INS_i_jmp))
+            if ((ins == INS_call) || (ins == INS_i_jmp) || (ins == INS_rex_jmp))
             {
                 assert(id->idInsFmt() == IF_ARD);
 
@@ -8866,8 +8877,6 @@ void emitter::emitDispIns(
                 {
                     break;
                 }
-
-                assert(id->idDebugOnlyInfo()->idMemCookie);
 
                 /* This is a virtual call */
 

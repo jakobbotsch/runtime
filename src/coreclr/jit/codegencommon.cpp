@@ -8466,23 +8466,41 @@ void CodeGen::genFnEpilog(BasicBlock* block)
             // target address will be in gtDirectCallAddress. It is still possible that calls
             // to user funcs require indirection, in which case the control expression will
             // be non-null.
-            if ((callType == CT_USER_FUNC) && (call->gtControlExpr == nullptr))
+            if (callType == CT_USER_FUNC)
             {
+                emitter::EmitCallType callType;
+                void* addr;
+                regNumber indCallReg;
+                if (call->gtControlExpr == nullptr)
+                {
+                    // Actual direct call
+                    callType = emitter::EC_FUNC_TOKEN;
+                    addr = call->gtDirectCallAddress;
+                    indCallReg = REG_NA;
+                }
+                else
+                {
+                    // Indirect call to user func in tail call position. genCallInstruction will have materialized into RAX.
+                    callType = emitter::EC_INDIR_R;
+                    addr = nullptr;
+                    indCallReg = REG_RAX;
+                }
+
                 assert(call->gtCallMethHnd != nullptr);
                 // clang-format off
                 GetEmitter()->emitIns_Call(
-                        emitter::EC_FUNC_TOKEN,
-                        call->gtCallMethHnd,
-                        INDEBUG_LDISASM_COMMA(nullptr)
-                        call->gtDirectCallAddress,
-                        0,                                              // argSize
-                        EA_UNKNOWN                                      // retSize
-                        MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(EA_UNKNOWN),// secondRetSize
-                        gcInfo.gcVarPtrSetCur,
-                        gcInfo.gcRegGCrefSetCur,
-                        gcInfo.gcRegByrefSetCur,
-                        BAD_IL_OFFSET, REG_NA, REG_NA, 0, 0,  /* iloffset, ireg, xreg, xmul, disp */
-                        true /* isJump */
+                    callType,
+                    call->gtCallMethHnd,
+                    INDEBUG_LDISASM_COMMA(nullptr)
+                    addr,
+                    0,                                              // argSize
+                    EA_UNKNOWN                                      // retSize
+                    MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(EA_UNKNOWN),// secondRetSize
+                    gcInfo.gcVarPtrSetCur,
+                    gcInfo.gcRegGCrefSetCur,
+                    gcInfo.gcRegByrefSetCur,
+                    BAD_IL_OFFSET, indCallReg, REG_NA, 0, 0,  /* iloffset, ireg, xreg, xmul, disp */
+                    true /* isJump */
                 );
                 // clang-format on
             }
