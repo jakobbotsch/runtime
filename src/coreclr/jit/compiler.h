@@ -6343,6 +6343,9 @@ private:
     //
     bool optComputeLoopSideEffectsOfBlock(BasicBlock* blk);
 
+    // Create expression to be hoisted out of loop.
+    GenTree* optCreateHoistExpr(GenTree* expr);
+
     // Hoist the expression "expr" out of loop "lnum".
     void optPerformHoistExpr(GenTree* expr, unsigned lnum);
 

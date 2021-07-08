@@ -808,7 +808,7 @@ bool Compiler::optValnumCSE_Locate()
                 //
                 if (tree->IsIntegralConst())
                 {
-                    if (!enableConstCSE)
+                    if (!enableConstCSE && ((tree->gtFlags & GTF_MAKE_CSE) == 0))
                     {
                         continue;
                     }
@@ -3373,7 +3373,7 @@ public:
                 continue;
             }
 
-            bool doCSE = PromotionCheck(&candidate);
+            bool doCSE = ((candidate.Expr()->gtFlags & GTF_MAKE_CSE) != 0) || PromotionCheck(&candidate);
 
 #ifdef DEBUG
             if (m_pCompiler->verbose)
@@ -3497,7 +3497,7 @@ bool Compiler::optIsCSEcandidate(GenTree* tree)
     }
 
     /* Don't bother if the potential savings are very low */
-    if (cost < MIN_CSE_COST)
+    if (cost < MIN_CSE_COST && ((tree->gtFlags & GTF_MAKE_CSE) == 0))
     {
         return false;
     }

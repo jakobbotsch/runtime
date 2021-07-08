@@ -5462,6 +5462,67 @@ int Compiler::optIsSetAssgLoop(unsigned lnum, ALLVARSET_VALARG_TP vars, varRefKi
     return 0;
 }
 
+GenTree* Compiler::optCreateHoistExpr(GenTree* expr)
+{
+    ValueNum origVn = expr->gtVNPair.GetLiberal();
+    if (origVn != ValueNumStore::NoVN)
+    {
+        ValueNum vnx;
+        ValueNum vn;
+        vnStore->VNUnpackExc(origVn, &vn, &vnx);
+
+        GenTree* hoistExpr = nullptr;
+        if (vnStore->IsVNConstant(vn))
+        {
+            hoistExpr = optCreateVNConstant(vn, expr->TypeGet());
+            noway_assert(hoistExpr != nullptr);
+        }
+        else
+        {
+            VNFuncApp func;
+            if (vnStore->GetVNFunc(vn, &func))
+            {
+                if (func.m_func == VNF_InitVal)
+                {
+                    int lcl = vnStore->ConstantValue<int>(func.m_args[0]);
+                    noway_assert(lcl >= 0);
+                    hoistExpr = gtNewLclvNode((unsigned int)lcl, expr->TypeGet());
+                }
+                else if (func.m_func == VNF_PhiDef)
+                {
+                    unsigned int lcl = func.m_args[0];
+                    hoistExpr = gtNewLclvNode(lcl, expr->TypeGet());
+                }
+            }
+        }
+
+        if (hoistExpr != nullptr)
+        {
+            hoistExpr->SetVNs(ValueNumPair(vn, vn));
+
+            GenTree* sideEffects = nullptr;
+            gtExtractSideEffList(expr, &sideEffects);
+            if (sideEffects != nullptr)
+            {
+                hoistExpr = gtNewOperNode(GT_COMMA, expr->TypeGet(), gtCloneExpr(sideEffects), hoistExpr);
+            }
+
+            hoistExpr->SetVNs(ValueNumPair(origVn, origVn));
+            hoistExpr->gtFlags |= GTF_MAKE_CSE;
+
+            return hoistExpr;
+        }
+    }
+
+    GenTree* hoistExpr = gtCloneExpr(expr, GTF_MAKE_CSE);
+
+    // The hoist Expr does not have to computed into a specific register,
+    // so clear the RegNum if it was set in the original expression
+    hoistExpr->ClearRegNum();
+
+    return hoistExpr;
+}
+
 void Compiler::optPerformHoistExpr(GenTree* origExpr, unsigned lnum)
 {
 #ifdef DEBUG
@@ -5484,25 +5545,15 @@ void Compiler::optPerformHoistExpr(GenTree* origExpr, unsigned lnum)
     // here. We can have situations where class fields or indirections are
     // constant by liberal VN in the loop, and in those cases we should not
     // hoist the original.
-    GenTree* hoistExpr;
-    ValueNum vn = origExpr->gtVNPair.GetLiberal();
-    if (vnStore->IsVNConstant(vn))
-    {
-        hoistExpr = optCreateVNConstant(vn, origExpr->TypeGet());
-        noway_assert(hoistExpr != nullptr);
-        hoistExpr->SetVNs(ValueNumPair(vn, vn));
-        hoistExpr->gtFlags |= GTF_MAKE_CSE;
-    }
-    else
-    {
-        hoistExpr = gtCloneExpr(origExpr, GTF_MAKE_CSE);
-    }
+    //GenTree* hoistExpr = optCreateHoistExpr(origExpr);
+    GenTree* hoistExpr = gtCloneExpr(origExpr, GTF_MAKE_CSE);
 
     // The hoist Expr does not have to computed into a specific register,
     // so clear the RegNum if it was set in the original expression
     hoistExpr->ClearRegNum();
 
-    // At this point we should have a cloned expression, marked with the GTF_MAKE_CSE flag
+
+    // At this point we should have an expression marked with the GTF_MAKE_CSE flag
     assert(hoistExpr != origExpr);
     assert(hoistExpr->gtFlags & GTF_MAKE_CSE);
 
@@ -6109,22 +6160,7 @@ void Compiler::optHoistLoopBlocks(unsigned loopNum, ArrayStack<BasicBlock*>* blo
         bool IsTreeVNInvariant(GenTree* tree)
         {
             ValueNum vn = tree->gtVNPair.GetLiberal();
-            if (vn == ValueNumStore::NoVN)
-                return false;
 
-            ValueNum vnx;
-            m_compiler->vnStore->VNUnpackExc(vn, &vn, &vnx);
-            if (m_compiler->vnStore->IsVNConstant(vn))
-            {
-                // It is unsafe to allow a GT_CLS_VAR or GT_IND that has been assigned a constant.
-                // The logic in optVNIsLoopInvariant would consider it to be loop-invariant, even
-                // if the assignment of the constant to the GT_CLS_VAR/GT_IND was inside the loop.
-                //
-                if (tree->OperIs(GT_CLS_VAR/*, GT_IND*/))
-                {
-                    return false;
-                }
-            }
             return m_compiler->optVNIsLoopInvariant(vn, m_loopNum, &m_hoistContext->m_curLoopVnInvariantCache);
         }
 
