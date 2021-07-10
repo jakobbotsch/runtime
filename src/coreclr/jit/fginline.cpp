@@ -89,11 +89,6 @@ unsigned Compiler::fgCheckInlineDepthAndRecursion(InlineInfo* inlineInfo)
 //
 PhaseStatus Compiler::fgInline()
 {
-    if (!opts.OptEnabled(CLFLG_INLINING))
-    {
-        return PhaseStatus::MODIFIED_NOTHING;
-    }
-
 #ifdef DEBUG
     fgPrintInlinedMethods = JitConfig.JitPrintInlinedMethods().contains(info.compMethodName, info.compClassName,
                                                                         &info.compMethodInfo->args);
@@ -110,6 +105,11 @@ PhaseStatus Compiler::fgInline()
         {
             stmt->SetInlineContext(rootContext);
         }
+    }
+
+    if (!opts.OptEnabled(CLFLG_INLINING))
+    {
+        return PhaseStatus::MODIFIED_NOTHING;
     }
 
     BasicBlock* block       = fgFirstBB;

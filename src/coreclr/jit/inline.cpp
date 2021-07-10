@@ -344,6 +344,7 @@ InlineContext::InlineContext(InlineStrategy* strategy)
     , m_Callee(nullptr)
     , m_TreeID(0)
     , m_Ordinal(0)
+    , m_ILInsts(nullptr)
 #endif // defined(DEBUG) || defined(INLINE_DATA)
 {
     // Empty
@@ -600,6 +601,55 @@ void InlineContext::DumpXml(FILE* file, unsigned indent)
     {
         fprintf(file, "%*s</%s>\n", indent, "", inlineType);
     }
+}
+
+FixedBitVect* InlineContext::GetILInstsSet()
+{
+    if (m_ILInsts == nullptr)
+    {
+        m_ILInsts = FixedBitVect::bitVectInit(m_ILSize, m_InlineStrategy->GetCompiler());
+        const BYTE* codeAddr = m_Code;
+        const BYTE* codeEndp = m_Code + m_ILSize;
+
+        while (codeAddr < codeEndp)
+        {
+            m_ILInsts->bitVectSet((UINT)(codeAddr - m_Code));
+
+            while (codeAddr < codeEndp)
+            {
+                OPCODE opcode = (OPCODE)getU1LittleEndian(codeAddr);
+                codeAddr += sizeof(__int8);
+
+                if (opcode == CEE_PREFIX1)
+                {
+                    if (codeAddr >= codeEndp)
+                    {
+                        break;
+                    }
+                    opcode = (OPCODE)(getU1LittleEndian(codeAddr) + 256);
+                    codeAddr += sizeof(__int8);
+                }
+
+                codeAddr += opcodeSizes[opcode];
+
+                switch (opcode)
+                {
+                case CEE_UNALIGNED:
+                case CEE_VOLATILE:
+                case CEE_TAILCALL:
+                case CEE_CONSTRAINED:
+                case CEE_READONLY:
+                    break;
+                default:
+                    goto NextInstruction;
+                }
+            }
+
+        NextInstruction:;
+        }
+    }
+
+    return m_ILInsts;
 }
 
 #endif // defined(DEBUG) || defined(INLINE_DATA)

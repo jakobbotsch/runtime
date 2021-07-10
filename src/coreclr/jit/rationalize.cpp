@@ -963,11 +963,30 @@ PhaseStatus Rationalizer::DoPhase()
                 // node and insert it into the LIR.
                 if (statement->GetILOffsetX() != BAD_IL_OFFSET)
                 {
-                    assert(!statement->IsPhiDefnStmt());
                     GenTreeILOffset* ilOffset = new (comp, GT_IL_OFFSET)
                         GenTreeILOffset(statement->GetILOffsetX() DEBUGARG(statement->GetLastILOffset()));
                     BlockRange().InsertBefore(statement->GetTreeList(), ilOffset);
                 }
+
+#if DEBUG
+                assert(statement->GetInlineContext() != nullptr);
+
+                if (statement->GetILOffsetX() != BAD_IL_OFFSET)
+                {
+                    // If there is an IL offset verify that it starts at a proper instruction in the code of the inlinee.
+                    switch ((int)statement->GetILOffsetX())
+                    {
+                    case ICorDebugInfo::NO_MAPPING:
+                    case ICorDebugInfo::PROLOG:
+                    case ICorDebugInfo::EPILOG:
+                        break;
+                    default:
+                        IL_OFFSET ofs = jitGetILoffs(statement->GetILOffsetX());
+                        assert(ofs < statement->GetInlineContext()->GetILSize() && statement->GetInlineContext()->GetILInstsSet()->bitVectTest(ofs));
+                        break;
+                    }
+                }
+#endif
 
                 m_block = block;
                 visitor.WalkTree(statement->GetRootNodePointer(), nullptr);

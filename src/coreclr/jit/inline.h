@@ -709,6 +709,9 @@ public:
         return m_Callee;
     }
 
+    // Get set of offsets where IL insts begin.
+    FixedBitVect* GetILInstsSet();
+
 #endif // defined(DEBUG) || defined(INLINE_DATA)
 
     // Get the parent context for this context.
@@ -804,6 +807,7 @@ private:
     CORINFO_METHOD_HANDLE m_Callee;  // handle to the method
     unsigned              m_TreeID;  // ID of the GenTreeCall
     unsigned              m_Ordinal; // Ordinal number of this inline
+    FixedBitVect*         m_ILInsts; // Bit vector of where IL instructions begin
 
 #endif // defined(DEBUG) || defined(INLINE_DATA)
 };
