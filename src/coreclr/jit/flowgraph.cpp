@@ -2266,7 +2266,7 @@ private:
     // Return Value:
     //    The new merged return block.
     //
-    BasicBlock* CreateReturnBB(unsigned index, GenTreeIntConCommon* returnConst = nullptr, IL_OFFSET ofs = BAD_IL_OFFSET)
+    BasicBlock* CreateReturnBB(unsigned index, GenTreeIntConCommon* returnConst = nullptr)
     {
         BasicBlock* newReturnBB = comp->fgNewBBinRegion(BBJ_RETURN);
         newReturnBB->bbRefs     = 1; // bbRefs gets update later, for now it should be 1
@@ -2424,7 +2424,6 @@ private:
                     if (slotsReserved < maxReturns)
                     {
                         // We have enough space to allocate a slot for this constant.
-                        // Associate its debug info with the statement that we created it from.
                         constReturnBlock = CreateReturnBB(searchLimit, retConst);
                     }
                 }

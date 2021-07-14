@@ -2314,14 +2314,10 @@ inline LoopFlags& operator&=(LoopFlags& a, LoopFlags b)
 
 enum class IPmappingDscKind
 {
-    // The mapping represents the start of a prolog.
-    Prolog,
-    // The mapping represents the start of an epilog.
-    Epilog,
-    // This does not map to any IL offset.
-    NoMapping,
-    // The mapping maps to an IL offset.
-    Normal,
+    Prolog,    // The mapping represents the start of a prolog.
+    Epilog,    // The mapping represents the start of an epilog.
+    NoMapping, // This does not map to any IL offset.
+    Normal,    // The mapping maps to an IL offset.
 };
 
 struct IPmappingDsc
@@ -7906,6 +7902,7 @@ public:
 
 #ifdef DEBUG
     static void eeDispILOffs(IL_OFFSET offs);
+    static void eeDispSourceMappingOffs(uint32_t offs);
     static void eeDispLineInfo(const ICorDebugInfo::OffsetMapping* line);
     void eeDispLineInfos();
 #endif // DEBUG

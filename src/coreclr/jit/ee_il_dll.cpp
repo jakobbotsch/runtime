@@ -925,12 +925,15 @@ void Compiler::eeSetLIinfo(
         break;
     case IPmappingDscKind::Prolog:
         eeBoundaries[which].ilOffset = ICorDebugInfo::PROLOG;
+        eeBoundaries[which].source = ICorDebugInfo::STACK_EMPTY;
         break;
     case IPmappingDscKind::Epilog:
         eeBoundaries[which].ilOffset = ICorDebugInfo::EPILOG;
+        eeBoundaries[which].source = ICorDebugInfo::STACK_EMPTY;
         break;
     case IPmappingDscKind::NoMapping:
         eeBoundaries[which].ilOffset = ICorDebugInfo::NO_MAPPING;
+        eeBoundaries[which].source = ICorDebugInfo::STACK_EMPTY;
         break;
     default:
         unreached();
@@ -958,8 +961,13 @@ void Compiler::eeSetLIdone()
 
 #if defined(DEBUG)
 
-/* static */
 void Compiler::eeDispILOffs(IL_OFFSET offs)
+{
+    printf("0x%04X", offs);
+}
+
+/* static */
+void Compiler::eeDispSourceMappingOffs(uint32_t offs)
 {
     const char* specialOffs[] = {"EPILOG", "PROLOG", "NO_MAP"};
 
@@ -975,7 +983,8 @@ void Compiler::eeDispILOffs(IL_OFFSET offs)
             printf("%s", specialOffs[specialOffsNum]);
             break;
         default:
-            printf("0x%04X", offs);
+            eeDispILOffs(offs);
+            break;
     }
 }
 
@@ -984,7 +993,7 @@ void Compiler::eeDispLineInfo(const ICorDebugInfo::OffsetMapping* line)
 {
     printf("IL offs ");
 
-    eeDispILOffs(line->ilOffset);
+    eeDispSourceMappingOffs(line->ilOffset);
 
     printf(" : 0x%08X", line->nativeOffset);
     if (line->source != 0)

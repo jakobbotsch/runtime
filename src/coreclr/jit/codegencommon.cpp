@@ -8440,7 +8440,8 @@ void CodeGen::genFnEpilog(BasicBlock* block)
                                        gcInfo.gcVarPtrSetCur,
                                        gcInfo.gcRegGCrefSetCur,
                                        gcInfo.gcRegByrefSetCur,
-                                       DebugInfo(), indCallReg, REG_NA, 0, 0,  /* loc, ireg, xreg, xmul, disp */
+                                       DebugInfo(),
+                                       indCallReg, REG_NA, 0, 0,  /* ireg, xreg, xmul, disp */
                                        true /* isJump */
             );
             // clang-format on
@@ -10442,7 +10443,7 @@ void CodeGen::genIPmappingAdd(IPmappingDscKind kind, const DebugInfo& di, bool i
         return;
     }
 
-    assert((kind != IPmappingDscKind::Normal) || di.GetLocation().IsValid());
+    assert((kind == IPmappingDscKind::Normal) == (di.GetLocation().IsValid()));
 
     switch (kind)
     {
@@ -10457,10 +10458,10 @@ void CodeGen::genIPmappingAdd(IPmappingDscKind kind, const DebugInfo& di, bool i
                 noway_assert(di.GetLocation().GetOffset() <= compiler->info.compILCodeSize);
             }
 
-            // Ignore this one if it's the same IL offset as the last one we
-            // saw. Note that we'll let through two identical "special"
-            // mappings (e.g., PROLOG).
-            if ((compiler->genIPmappingLast != nullptr) && (compiler->genIPmappingLast->ipmdKind == IPmappingDscKind::Normal) && (di.GetLocation().GetOffset() == compiler->genIPmappingLast->ipmdLoc.GetOffset()))
+            // Ignore this one if it's the same IL location as the last one we saw.
+            // Note that we'll let through two identical IL offsets if the flag bits
+            // differ, or two identical "special" mappings (e.g., PROLOG).
+            if ((compiler->genIPmappingLast != nullptr) && (di.GetLocation() == compiler->genIPmappingLast->ipmdLoc))
             {
                 JITDUMP("genIPmappingAdd: ignoring duplicate IL offset 0x%x\n", di.GetLocation().GetOffset());
                 return;
@@ -10562,7 +10563,7 @@ void CodeGen::genEnsureCodeEmitted(const DebugInfo& di)
         return;
     }
 
-    if ((compiler->genIPmappingLast->ipmdKind != IPmappingDscKind::Normal) || (compiler->genIPmappingLast->ipmdLoc.GetOffset() != di.GetLocation().GetOffset()))
+    if (compiler->genIPmappingLast->ipmdLoc != di.GetLocation())
     {
         return;
     }
