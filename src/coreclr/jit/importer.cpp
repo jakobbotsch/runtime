@@ -771,7 +771,7 @@ void Compiler::impAssignTempGen(unsigned    tmp,
         }
         else
         {
-            impAppendTree(asg, curLevel, di);
+            impAppendTree(asg, curLevel, impCurStmtDI);
         }
     }
 }

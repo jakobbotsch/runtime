@@ -10461,7 +10461,7 @@ void CodeGen::genIPmappingAdd(IPmappingDscKind kind, const DebugInfo& di, bool i
             // Ignore this one if it's the same IL location as the last one we saw.
             // Note that we'll let through two identical IL offsets if the flag bits
             // differ, or two identical "special" mappings (e.g., PROLOG).
-            if ((compiler->genIPmappingLast != nullptr) && (di.GetLocation() == compiler->genIPmappingLast->ipmdLoc))
+            if ((compiler->genIPmappingLast != nullptr) && (kind == compiler->genIPmappingLast->ipmdKind) && (di.GetLocation() == compiler->genIPmappingLast->ipmdLoc))
             {
                 JITDUMP("genIPmappingAdd: ignoring duplicate IL offset 0x%x\n", di.GetLocation().GetOffset());
                 return;
