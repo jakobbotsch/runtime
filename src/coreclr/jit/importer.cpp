@@ -63,7 +63,7 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 void Compiler::impInit()
 {
     impStmtList = impLastStmt = nullptr;
-    impCurStmtDI = DebugInfo();
+    //impCurStmtDI = DebugInfo();
 #ifdef DEBUG
     impInlinedCodeSize = 0;
 #endif // DEBUG
@@ -619,7 +619,7 @@ inline void Compiler::impAppendStmt(Statement* stmt, unsigned chkLevel)
     /* Once we set impCurStmtDI in an appended tree, we are ready to
        report the following offsets. So reset impCurStmtDI */
 
-    if (impLastStmt->GetDebugInfo().GetLocation().GetOffset() == impCurStmtDI.GetLocation().GetOffset())
+    if (impLastStmt->GetDebugInfo().GetLocation() == impCurStmtDI.GetLocation())
     {
         impCurStmtOffsSet(BAD_IL_OFFSET);
     }
@@ -1263,7 +1263,7 @@ GenTree* Compiler::impAssignStruct(GenTree*             dest,
 //    structHnd    - handle representing the struct type
 //    curLevel     - stack level for which a spill may be being done
 //    pAfterStmt   - statement to insert any additional statements after
-//    loc          - il offset for new statements
+//    di           - debug info for new statements
 //    block        - block to insert any additional statements in
 //
 // Return Value:
@@ -11297,7 +11297,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                         GenTree* placeHolder = new (this, GT_NO_OP) GenTree(GT_NO_OP, TYP_VOID);
                         impAppendTree(placeHolder, (unsigned)CHECK_SPILL_NONE, impCurStmtDI);
 
-                        assert(impCurStmtDI.IsEmpty());
+                        assert(!impCurStmtDI.GetLocation().IsValid());
                     }
 
                     if (!impCurStmtDI.GetLocation().IsValid())
@@ -20785,7 +20785,7 @@ bool Compiler::IsMathIntrinsic(GenTree* tree)
 //     pExactContextHandle -- [OUT] updated context handle iff call devirtualized
 //     isLateDevirtualization -- if devirtualization is happening after importation
 //     isExplicitTailCalll -- [IN] true if we plan on using an explicit tail call
-//     ilLoc -- IL offset of the call
+//     di -- [IN] debug info about the statement containing the call
 //
 // Notes:
 //     Virtual calls in IL will always "invoke" the base class method.

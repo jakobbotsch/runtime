@@ -29,7 +29,7 @@
 unsigned Compiler::fgCheckInlineDepthAndRecursion(InlineInfo* inlineInfo)
 {
     BYTE*          candidateCode = inlineInfo->inlineCandidateInfo->methInfo.ILCode;
-    InlineContext* inlineContext = inlineInfo->iciStmt->GetDebugInfo().GetInlineContext();
+    InlineContext* inlineContext = inlineInfo->iciStmt->GetInlineContext();
     InlineResult*  inlineResult  = inlineInfo->inlineResult;
 
     // There should be a context for all candidates.
@@ -89,6 +89,11 @@ unsigned Compiler::fgCheckInlineDepthAndRecursion(InlineInfo* inlineInfo)
 //
 PhaseStatus Compiler::fgInline()
 {
+    if (!opts.OptEnabled(CLFLG_INLINING))
+    {
+        return PhaseStatus::MODIFIED_NOTHING;
+    }
+
 #ifdef DEBUG
     fgPrintInlinedMethods = JitConfig.JitPrintInlinedMethods().contains(info.compMethodName, info.compClassName,
                                                                         &info.compMethodInfo->args);
@@ -105,11 +110,6 @@ PhaseStatus Compiler::fgInline()
         {
             stmt->SetInlineContext(rootContext);
         }
-    }
-
-    if (!opts.OptEnabled(CLFLG_INLINING))
-    {
-        return PhaseStatus::MODIFIED_NOTHING;
     }
 
     BasicBlock* block       = fgFirstBB;
@@ -1758,11 +1758,11 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
     }
 
     // Update any newly added statements with the appropriate context.
-    InlineContext* context = callStmt->GetDebugInfo().GetInlineContext();
+    InlineContext* context = callStmt->GetInlineContext();
     assert(context != nullptr);
     for (Statement* addedStmt = callStmt->GetNextStmt(); addedStmt != postStmt; addedStmt = addedStmt->GetNextStmt())
     {
-        assert(addedStmt->GetDebugInfo().GetInlineContext() == nullptr);
+        assert(addedStmt->GetInlineContext() == nullptr);
         addedStmt->SetInlineContext(context);
     }
 

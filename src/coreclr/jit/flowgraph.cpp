@@ -2254,14 +2254,11 @@ private:
     //
     // Arguments:
     //    index - Index into `returnBlocks` to store the new block into.
-    //
     //    returnConst - Constant that the new block should return; may be nullptr to
     //      indicate that the new merged return is for the non-constant case, in which
     //      case, if the method's return type is non-void, `comp->genReturnLocal` will
     //      be initialized to a new local of the appropriate type, and the new block will
     //      return it.
-    //
-    //    ofs - Offset of the created return statement.
     //
     // Return Value:
     //    The new merged return block.

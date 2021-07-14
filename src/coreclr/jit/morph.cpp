@@ -16156,7 +16156,8 @@ void Compiler::fgMergeBlockReturn(BasicBlock* block)
             noway_assert(ret->gtGetOp1() != nullptr);
 
             Statement* pAfterStatement = lastStmt;
-            GenTree*   tree = gtNewTempAssign(genReturnLocal, ret->gtGetOp1(), &pAfterStatement, lastStmt->GetDebugInfo(), block);
+            const DebugInfo& di = lastStmt->GetDebugInfo();
+            GenTree*   tree = gtNewTempAssign(genReturnLocal, ret->gtGetOp1(), &pAfterStatement, di, block);
             if (tree->OperIsCopyBlkOp())
             {
                 tree = fgMorphCopyBlock(tree);
@@ -16170,7 +16171,7 @@ void Compiler::fgMergeBlockReturn(BasicBlock* block)
             {
                 // gtNewTempAssign inserted additional statements after last
                 fgRemoveStmt(block, lastStmt);
-                Statement* newStmt = gtNewStmt(tree, lastStmt->GetDebugInfo());
+                Statement* newStmt = gtNewStmt(tree, di);
                 fgInsertStmtAfter(block, pAfterStatement, newStmt);
                 lastStmt = newStmt;
             }

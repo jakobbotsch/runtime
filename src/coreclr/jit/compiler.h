@@ -4348,7 +4348,7 @@ private:
 
     void impCurStmtOffsSet(IL_OFFSET offs);
     /*
-     * Get current debug info with call instruction info incoporated
+     * Get current debug info with stack info and call instruction info incoporated
      */
     DebugInfo impCurDebugInfo(IL_OFFSET offs, bool callInstruction = false);
 

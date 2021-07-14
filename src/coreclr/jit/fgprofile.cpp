@@ -1260,7 +1260,7 @@ public:
         schemaElem.InstrumentationKind = JitConfig.JitCollect64BitCounts()
                                              ? ICorJitInfo::PgoInstrumentationKind::TypeHandleHistogramLongCount
                                              : ICorJitInfo::PgoInstrumentationKind::TypeHandleHistogramIntCount;
-        schemaElem.ILOffset = (int32_t)call->gtClassProfileCandidateInfo->di.GetRoot().GetLocation().GetOffset();
+        schemaElem.ILOffset = (int32_t)call->gtClassProfileCandidateInfo->di.GetLocation().GetOffset();
         schemaElem.Offset   = 0;
 
         m_schema.push_back(schemaElem);
@@ -1296,7 +1296,7 @@ public:
     void operator()(Compiler* compiler, GenTreeCall* call)
     {
         JITDUMP("Found call [%06u] with probe index %d and ilOffset 0x%X\n", compiler->dspTreeID(call),
-                call->gtClassProfileCandidateInfo->probeIndex, call->gtClassProfileCandidateInfo->di.GetRoot().GetLocation().GetOffset());
+                call->gtClassProfileCandidateInfo->probeIndex, call->gtClassProfileCandidateInfo->di.GetLocation().GetOffset());
 
         // We transform the call from (CALLVIRT obj, ... args ...) to
         // to
@@ -1313,7 +1313,7 @@ public:
 
         // Sanity check that we're looking at the right schema entry
         //
-        assert(m_schema[*m_currentSchemaIndex].ILOffset == (int32_t)call->gtClassProfileCandidateInfo->di.GetRoot().GetLocation().GetOffset());
+        assert(m_schema[*m_currentSchemaIndex].ILOffset == (int32_t)call->gtClassProfileCandidateInfo->di.GetLocation().GetOffset());
         bool is32 = m_schema[*m_currentSchemaIndex].InstrumentationKind ==
                     ICorJitInfo::PgoInstrumentationKind::TypeHandleHistogramIntCount;
         bool is64 = m_schema[*m_currentSchemaIndex].InstrumentationKind ==
