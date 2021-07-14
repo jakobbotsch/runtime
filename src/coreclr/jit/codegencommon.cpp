@@ -10381,16 +10381,20 @@ void CodeGen::genIPmappingDisp(unsigned mappingNum, IPmappingDsc* ipMapping)
         printf("%d: ", mappingNum);
     }
 
-    const ILLocation& loc = ipMapping->ipmdLoc;
-
-    if (!loc.IsValid())
+    switch (ipMapping->ipmdKind)
     {
-        printf("???");
-    }
-    else
-    {
+    case IPmappingDscKind::Prolog:
+        printf("PROLOG");
+        break;
+    case IPmappingDscKind::Epilog:
+        printf("EPILOG");
+        break;
+    case IPmappingDscKind::NoMapping:
+        printf("NO_MAP");
+        break;
+    case IPmappingDscKind::Normal:
+        const ILLocation& loc = ipMapping->ipmdLoc;
         Compiler::eeDispILOffs(loc.GetOffset());
-
         if (loc.IsStackEmpty())
         {
             printf(" STACK_EMPTY");
@@ -10400,6 +10404,8 @@ void CodeGen::genIPmappingDisp(unsigned mappingNum, IPmappingDsc* ipMapping)
         {
             printf(" CALL_INSTRUCTION");
         }
+
+        break;
     }
 
     printf(" ");
