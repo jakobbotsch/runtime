@@ -63,6 +63,7 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 void Compiler::impInit()
 {
     impStmtList = impLastStmt = nullptr;
+    impCurStmtDI = DebugInfo();
 #ifdef DEBUG
     impInlinedCodeSize = 0;
 #endif // DEBUG
@@ -1201,7 +1202,7 @@ GenTree* Compiler::impAssignStruct(GenTree*             dest,
     assert(varTypeIsStruct(dest));
 
     DebugInfo usedDI = di;
-    if (usedDI.IsEmpty())
+    if (!usedDI.GetLocation().IsValid())
     {
         usedDI = impCurStmtDI;
     }
@@ -1284,7 +1285,7 @@ GenTree* Compiler::impAssignStructPtr(GenTree*             destAddr,
     GenTreeFlags destFlags = GTF_EMPTY;
 
     DebugInfo usedDI = di;
-    if (usedDI.IsEmpty())
+    if (!usedDI.GetLocation().IsValid())
     {
         usedDI = impCurStmtDI;
     }
@@ -11291,7 +11292,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
 
                     // Has impCurStmtDI been reported in any tree?
 
-                    if (!impCurStmtDI.IsEmpty() && opts.compDbgCode)
+                    if (impCurStmtDI.GetLocation().IsValid() && opts.compDbgCode)
                     {
                         GenTree* placeHolder = new (this, GT_NO_OP) GenTree(GT_NO_OP, TYP_VOID);
                         impAppendTree(placeHolder, (unsigned)CHECK_SPILL_NONE, impCurStmtDI);
@@ -11299,7 +11300,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                         assert(impCurStmtDI.IsEmpty());
                     }
 
-                    if (impCurStmtDI.IsEmpty())
+                    if (!impCurStmtDI.GetLocation().IsValid())
                     {
                         /* Make sure that nxtStmtIndex is in sync with opcodeOffs.
                            If opcodeOffs has gone past nxtStmtIndex, catch up */
@@ -11371,7 +11372,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                     impCurStmtOffsSet(opcodeOffs);
                 }
 
-                assert(impCurStmtDI.IsEmpty() || nxtStmtOffs == BAD_IL_OFFSET ||
+                assert(!impCurStmtDI.GetLocation().IsValid() || nxtStmtOffs == BAD_IL_OFFSET ||
                        impCurStmtDI.GetLocation().GetOffset() <= nxtStmtOffs);
             }
         }
@@ -13036,7 +13037,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                 /* GT_JTRUE is handled specially for non-empty stacks. See 'addStmt'
                    in impImportBlock(block). For correct line numbers, spill stack. */
 
-                if (opts.compDbgCode && !impCurStmtDI.IsEmpty())
+                if (opts.compDbgCode && impCurStmtDI.GetLocation().IsValid())
                 {
                     impSpillStackEnsure(true);
                 }

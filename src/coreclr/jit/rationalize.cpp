@@ -961,7 +961,7 @@ PhaseStatus Rationalizer::DoPhase()
 
                 // If this statement has correct debug information, change it into a debug info
                 // node and insert it into the LIR.
-                if (!statement->GetDebugInfo().IsEmpty())
+                if (statement->GetDebugInfo().GetLocation().IsValid())
                 {
                     GenTreeILOffset* ilOffset = new (comp, GT_IL_OFFSET)
                         GenTreeILOffset(statement->GetDebugInfo() DEBUGARG(statement->GetLastILOffset()));

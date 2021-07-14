@@ -6083,12 +6083,6 @@ public:
     // eventually produced this statement through inlines.
     DebugInfo GetRoot() const;
 
-#ifdef DEBUG
-    void Validate() const;
-#else
-    inline void Validate() const {}
-#endif
-
     inline bool operator==(const DebugInfo& other) const
     {
         return (m_inlineContext == other.m_inlineContext) && (m_location == other.m_location);
@@ -6241,7 +6235,6 @@ public:
     void SetDebugInfo(const DebugInfo& di)
     {
         m_debugInfo = di;
-        di.Validate();
     }
 
     // During inlining we require the inline context to be maintained. We use

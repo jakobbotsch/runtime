@@ -4024,10 +4024,9 @@ IL_OFFSET Compiler::fgFindBlockILOffset(BasicBlock* block)
 
     for (Statement* const stmt : block->Statements())
     {
-        DebugInfo rootDI = stmt->GetDebugInfo().GetRoot();
-        if (!rootDI.IsEmpty())
+        if (stmt->GetDebugInfo().GetLocation().IsValid())
         {
-            return rootDI.GetLocation().GetOffset();
+            return stmt->GetDebugInfo().GetLocation().GetOffset();
         }
     }
 
@@ -4198,7 +4197,7 @@ BasicBlock* Compiler::fgSplitBlockAfterNode(BasicBlock* curr, GenTree* node)
             if ((*riter)->gtOper == GT_IL_OFFSET)
             {
                 GenTreeILOffset* ilOffset = (*riter)->AsILOffset();
-                if (!ilOffset->gtStmtDI.IsEmpty())
+                if (ilOffset->gtStmtDI.GetLocation().IsValid())
                 {
                     splitPointILOffset = ilOffset->gtStmtDI.GetLocation().GetOffset();
                     break;

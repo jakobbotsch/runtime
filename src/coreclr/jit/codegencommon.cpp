@@ -10442,7 +10442,7 @@ void CodeGen::genIPmappingAdd(IPmappingDscKind kind, const DebugInfo& di, bool i
         return;
     }
 
-    assert((kind != IPmappingDscKind::Normal) || !di.IsEmpty());
+    assert((kind != IPmappingDscKind::Normal) || di.GetLocation().IsValid());
 
     switch (kind)
     {
@@ -10476,6 +10476,8 @@ void CodeGen::genIPmappingAdd(IPmappingDscKind kind, const DebugInfo& di, bool i
     addMapping->ipmdLoc = di.GetLocation();
     addMapping->ipmdIsLabel = isLabel;
     addMapping->ipmdNext    = nullptr;
+
+    assert((kind == IPmappingDscKind::Normal) == (addMapping->ipmdLoc.IsValid()));
 
     if (compiler->genIPmappingList != nullptr)
     {
@@ -10512,7 +10514,7 @@ void CodeGen::genIPmappingAddToFront(IPmappingDscKind kind, const DebugInfo& di,
         return;
     }
 
-    noway_assert((kind != IPmappingDscKind::Normal) || (!di.IsEmpty() && (di.GetLocation().GetOffset() <= compiler->info.compILCodeSize)));
+    noway_assert((kind != IPmappingDscKind::Normal) || (di.GetLocation().IsValid() && (di.GetLocation().GetOffset() <= compiler->info.compILCodeSize)));
 
     /* Create a mapping entry and prepend it to the list */
 
@@ -10548,7 +10550,7 @@ void CodeGen::genEnsureCodeEmitted(const DebugInfo& di)
         return;
     }
 
-    if (di.IsEmpty())
+    if (!di.GetLocation().IsValid())
     {
         return;
     }

@@ -1463,7 +1463,7 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
 {
     BasicBlock*  block        = inlineInfo->iciBlock;
     Statement*   callStmt     = inlineInfo->iciStmt;
-    const DebugInfo& callDI = callStmt->GetDebugInfo();
+    const DebugInfo& callDI = DebugInfo(nullptr, callStmt->GetDebugInfo().GetLocation());
     Statement*   postStmt     = callStmt->GetNextStmt();
     Statement*   afterStmt    = callStmt; // afterStmt is the place where the new statements should be inserted after.
     Statement*   newStmt      = nullptr;

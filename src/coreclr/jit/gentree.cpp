@@ -399,18 +399,6 @@ DebugInfo DebugInfo::GetRoot() const
     return result;
 }
 
-#ifdef DEBUG
-void DebugInfo::Validate() const
-{
-    if (IsEmpty())
-        return;
-
-    assert(m_inlineContext != nullptr && m_location.IsValid());
-    assert(m_location.GetOffset() < m_inlineContext->GetILSize() && m_inlineContext->GetILInstsSet()->bitVectTest(m_location.GetOffset()));
-}
-#endif
-
-
 //------------------------------------------------------------------------
 // ReplaceWith: replace this with the src node. The source must be an isolated node
 //              and cannot be used after the replacement.
@@ -11608,13 +11596,13 @@ void Compiler::gtDispLeaf(GenTree* tree, IndentStack* indentStack)
 
         case GT_IL_OFFSET:
             printf(" IL offset: ");
-            if (tree->AsILOffset()->gtStmtDI.IsEmpty())
+            if (!tree->AsILOffset()->gtStmtDI.GetLocation().IsValid())
             {
                 printf("???");
             }
             else
             {
-                printf("0x%x", tree->AsILOffset()->gtStmtDI.GetRoot().GetLocation().GetOffset());
+                printf("0x%x", tree->AsILOffset()->gtStmtDI.GetLocation().GetOffset());
             }
             break;
 
@@ -12485,7 +12473,7 @@ void Compiler::gtDispStmt(Statement* stmt, const char* msg /* = nullptr */)
         }
         printStmtID(stmt);
         printf(" (IL ");
-        if (stmt->GetDebugInfo().IsEmpty())
+        if (!stmt->GetDebugInfo().GetLocation().IsValid())
         {
             printf("  ???");
         }
