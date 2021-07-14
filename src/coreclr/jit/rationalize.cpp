@@ -959,34 +959,35 @@ PhaseStatus Rationalizer::DoPhase()
             {
                 BlockRange().InsertAtEnd(LIR::Range(statement->GetTreeList(), statement->GetRootNode()));
 
-                // If this statement has correct offset information, change it into an IL offset
+                // If this statement has correct debug information, change it into a debug info
                 // node and insert it into the LIR.
-                if (statement->GetILOffsetX() != BAD_IL_OFFSET)
+                if (!statement->GetDebugInfo().IsEmpty())
                 {
                     GenTreeILOffset* ilOffset = new (comp, GT_IL_OFFSET)
-                        GenTreeILOffset(statement->GetILOffsetX() DEBUGARG(statement->GetLastILOffset()));
+                        GenTreeILOffset(statement->GetDebugInfo() DEBUGARG(statement->GetLastILOffset()));
                     BlockRange().InsertBefore(statement->GetTreeList(), ilOffset);
                 }
 
-#if DEBUG
-                assert(statement->GetInlineContext() != nullptr);
-
-                if (statement->GetILOffsetX() != BAD_IL_OFFSET)
-                {
-                    // If there is an IL offset verify that it starts at a proper instruction in the code of the inlinee.
-                    switch ((int)statement->GetILOffsetX())
-                    {
-                    case ICorDebugInfo::NO_MAPPING:
-                    case ICorDebugInfo::PROLOG:
-                    case ICorDebugInfo::EPILOG:
-                        break;
-                    default:
-                        IL_OFFSET ofs = jitGetILoffs(statement->GetILOffsetX());
-                        assert(ofs < statement->GetInlineContext()->GetILSize() && statement->GetInlineContext()->GetILInstsSet()->bitVectTest(ofs));
-                        break;
-                    }
-                }
-#endif
+//#if DEBUG
+//                assert(statement->GetInlineContext() != nullptr);
+//                //
+//
+//                if (statement->GetDebugInfo() != BAD_IL_OFFSET)
+//                {
+//                    // If there is an IL offset verify that it starts at a proper instruction in the code of the inlinee.
+//                    switch ((int)statement->GetDebugInfo())
+//                    {
+//                    case ICorDebugInfo::NO_MAPPING:
+//                    case ICorDebugInfo::PROLOG:
+//                    case ICorDebugInfo::EPILOG:
+//                        break;
+//                    default:
+//                        IL_OFFSET ofs = jitGetILoffs(statement->GetDebugInfo());
+//                        assert(ofs < statement->GetInlineContext()->GetILSize() && statement->GetInlineContext()->GetILInstsSet()->bitVectTest(ofs));
+//                        break;
+//                    }
+//                }
+//#endif
 
                 m_block = block;
                 visitor.WalkTree(statement->GetRootNodePointer(), nullptr);

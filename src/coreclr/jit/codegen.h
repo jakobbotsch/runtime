@@ -460,7 +460,7 @@ protected:
                      X86_ARG(int  argSize),
                      emitAttr              retSize
                      MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(emitAttr secondRetSize),
-                     IL_OFFSETX            ilOffset,
+                     const DebugInfo& di,
                      regNumber             base   = REG_NA,
                      bool                  isJump = false);
     // clang-format on
@@ -473,7 +473,7 @@ protected:
                      X86_ARG(int  argSize),
                      emitAttr              retSize
                      MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(emitAttr secondRetSize),
-                     IL_OFFSETX            ilOffset);
+                     const DebugInfo& di);
     // clang-format on
 
     //
@@ -574,15 +574,16 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 */
 
 #ifdef DEBUG
-    void genIPmappingDisp(unsigned mappingNum, Compiler::IPmappingDsc* ipMapping);
+    void genIPmappingDisp(unsigned mappingNum, IPmappingDsc* ipMapping);
     void genIPmappingListDisp();
 #endif // DEBUG
 
-    void genIPmappingAdd(IL_OFFSETX offset, bool isLabel);
-    void genIPmappingAddToFront(IL_OFFSETX offset);
+    IPmappingDsc* genCreateIPMapping(IPmappingDscKind kind, const DebugInfo& di, bool isLabel);
+    void genIPmappingAdd(IPmappingDscKind kind, const DebugInfo& di, bool isLabel);
+    void genIPmappingAddToFront(IPmappingDscKind kind, const DebugInfo& di, bool isLabel);
     void genIPmappingGen();
 
-    void genEnsureCodeEmitted(IL_OFFSETX offsx);
+    void genEnsureCodeEmitted(const DebugInfo& di);
 
     //-------------------------------------------------------------------------
     // scope info for the variables

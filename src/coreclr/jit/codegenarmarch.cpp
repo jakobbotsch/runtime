@@ -2244,8 +2244,6 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
 {
     gtCallTypes callType = (gtCallTypes)call->gtCallType;
 
-    IL_OFFSETX ilOffset = BAD_IL_OFFSET;
-
     // all virtuals should have been expanded into a control expression
     assert(!call->IsVirtual() || call->gtControlExpr || call->gtCallAddr);
 
@@ -2401,13 +2399,14 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
         }
     }
 
-    // We need to propagate the IL offset information to the call instruction, so we can emit
+    DebugInfo di;
+    // We need to propagate the debug information to the call instruction, so we can emit
     // an IL to native mapping record for the call, to support managed return value debugging.
     // We don't want tail call helper calls that were converted from normal calls to get a record,
     // so we skip this hash table lookup logic in that case.
-    if (compiler->opts.compDbgInfo && compiler->genCallSite2ILOffsetMap != nullptr && !call->IsTailCall())
+    if (compiler->opts.compDbgInfo && compiler->genCallSite2DebugInfoMap != nullptr && !call->IsTailCall())
     {
-        (void)compiler->genCallSite2ILOffsetMap->Lookup(call, &ilOffset);
+        (void)compiler->genCallSite2DebugInfoMap->Lookup(call, &di);
     }
 
     if (target != nullptr)
@@ -2424,7 +2423,7 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
 
         genEmitCall(emitter::EC_INDIR_R, methHnd,
                     INDEBUG_LDISASM_COMMA(sigInfo) nullptr, // addr
-                    retSize MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(secondRetSize), ilOffset, target->GetRegNum());
+                    retSize MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(secondRetSize), di, target->GetRegNum());
     }
     else if (call->IsR2ROrVirtualStubRelativeIndir())
     {
@@ -2447,7 +2446,7 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
 
         genEmitCall(emitter::EC_INDIR_R, methHnd,
                     INDEBUG_LDISASM_COMMA(sigInfo) nullptr, // addr
-                    retSize MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(secondRetSize), ilOffset, tmpReg);
+                    retSize MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(secondRetSize), di, tmpReg);
     }
     else
     {
@@ -2486,13 +2485,13 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
         {
             regNumber tmpReg = call->GetSingleTempReg();
             instGen_Set_Reg_To_Imm(EA_HANDLE_CNS_RELOC, tmpReg, (ssize_t)addr);
-            genEmitCall(emitter::EC_INDIR_R, methHnd, INDEBUG_LDISASM_COMMA(sigInfo) NULL, retSize, ilOffset, tmpReg);
+            genEmitCall(emitter::EC_INDIR_R, methHnd, INDEBUG_LDISASM_COMMA(sigInfo) NULL, retSize, di, tmpReg);
         }
         else
 #endif // TARGET_ARM
         {
             genEmitCall(emitter::EC_FUNC_TOKEN, methHnd, INDEBUG_LDISASM_COMMA(sigInfo) addr,
-                        retSize MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(secondRetSize), ilOffset);
+                        retSize MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(secondRetSize), di);
         }
 
 #if 0 && defined(TARGET_ARM64)
@@ -2510,7 +2509,7 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
                     nullptr, //addr
                     retSize,
                     secondRetSize,
-                    ilOffset,
+                    di,
                     REG_IP0);
 #endif
     }

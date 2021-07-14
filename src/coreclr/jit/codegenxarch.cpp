@@ -5011,8 +5011,6 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
 
     gtCallTypes callType = (gtCallTypes)call->gtCallType;
 
-    IL_OFFSETX ilOffset = BAD_IL_OFFSET;
-
     // all virtuals should have been expanded into a control expression
     assert(!call->IsVirtual() || call->gtControlExpr || call->gtCallAddr);
 
@@ -5221,14 +5219,15 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
 
     bool            fPossibleSyncHelperCall = false;
     CorInfoHelpFunc helperNum               = CORINFO_HELP_UNDEF;
+    DebugInfo di;
 
-    // We need to propagate the IL offset information to the call instruction, so we can emit
+    // We need to propagate the debug information to the call instruction, so we can emit
     // an IL to native mapping record for the call, to support managed return value debugging.
     // We don't want tail call helper calls that were converted from normal calls to get a record,
     // so we skip this hash table lookup logic in that case.
-    if (compiler->opts.compDbgInfo && compiler->genCallSite2ILOffsetMap != nullptr && !call->IsTailCall())
+    if (compiler->opts.compDbgInfo && compiler->genCallSite2DebugInfoMap != nullptr && !call->IsTailCall())
     {
-        (void)compiler->genCallSite2ILOffsetMap->Lookup(call, &ilOffset);
+        (void)compiler->genCallSite2DebugInfoMap->Lookup(call, &di);
     }
 
 #if defined(TARGET_X86)
@@ -5301,7 +5300,7 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
                                        gcInfo.gcVarPtrSetCur,
                                        gcInfo.gcRegGCrefSetCur,
                                        gcInfo.gcRegByrefSetCur,
-                                       ilOffset, REG_VIRTUAL_STUB_TARGET, REG_NA, 1, 0);
+                                       di, REG_VIRTUAL_STUB_TARGET, REG_NA, 1, 0);
             // clang-format on
         }
         else
@@ -5322,7 +5321,7 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
                             X86_ARG(argSizeForEmitter),
                             retSize
                             MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(secondRetSize),
-                            ilOffset);
+                            di);
                 // clang-format on
             }
             else
@@ -5335,7 +5334,7 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
                             X86_ARG(argSizeForEmitter),
                             retSize
                             MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(secondRetSize),
-                            ilOffset);
+                            di);
                 // clang-format on
             }
         }
@@ -5353,7 +5352,7 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
                         X86_ARG(argSizeForEmitter),
                         retSize
                         MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(secondRetSize),
-                        ilOffset,
+                        di,
                         genConsumeReg(target));
             // clang-format on
         }
@@ -5370,7 +5369,7 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
                     X86_ARG(argSizeForEmitter),
                     retSize
                     MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(secondRetSize),
-                    ilOffset);
+                    di);
         // clang-format on
     }
 #endif
@@ -5408,7 +5407,7 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
                     X86_ARG(argSizeForEmitter),
                     retSize
                     MULTIREG_HAS_SECOND_GC_RET_ONLY_ARG(secondRetSize),
-                    ilOffset);
+                    di);
         // clang-format on
     }
 
@@ -8266,7 +8265,7 @@ void CodeGen::genEmitHelperCall(unsigned helper, int argSize, emitAttr retSize, 
                                gcInfo.gcVarPtrSetCur,
                                gcInfo.gcRegGCrefSetCur,
                                gcInfo.gcRegByrefSetCur,
-                               BAD_IL_OFFSET, // IL offset
+                               DebugInfo(),
                                callTarget,    // ireg
                                REG_NA, 0, 0,  // xreg, xmul, disp
                                false         // isJump

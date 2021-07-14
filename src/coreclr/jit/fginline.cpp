@@ -29,7 +29,7 @@
 unsigned Compiler::fgCheckInlineDepthAndRecursion(InlineInfo* inlineInfo)
 {
     BYTE*          candidateCode = inlineInfo->inlineCandidateInfo->methInfo.ILCode;
-    InlineContext* inlineContext = inlineInfo->iciStmt->GetInlineContext();
+    InlineContext* inlineContext = inlineInfo->iciStmt->GetDebugInfo().GetInlineContext();
     InlineResult*  inlineResult  = inlineInfo->inlineResult;
 
     // There should be a context for all candidates.
@@ -1276,9 +1276,9 @@ void Compiler::fgInsertInlineeBlocks(InlineInfo* pInlineInfo)
         block->copyEHRegion(iciBlock);
         block->bbFlags |= iciBlock->bbFlags & BBF_BACKWARD_JUMP;
 
-        if (iciStmt->GetILOffsetX() != BAD_IL_OFFSET)
+        if (iciStmt->GetDebugInfo().GetLocation().IsValid())
         {
-            block->bbCodeOffs    = jitGetILoffs(iciStmt->GetILOffsetX());
+            block->bbCodeOffs    = iciStmt->GetDebugInfo().GetLocation().GetOffset();
             block->bbCodeOffsEnd = block->bbCodeOffs + 1; // TODO: is code size of 1 some magic number for inlining?
         }
         else
@@ -1463,7 +1463,7 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
 {
     BasicBlock*  block        = inlineInfo->iciBlock;
     Statement*   callStmt     = inlineInfo->iciStmt;
-    IL_OFFSETX   callILOffset = callStmt->GetILOffsetX();
+    const DebugInfo& callDI = callStmt->GetDebugInfo();
     Statement*   postStmt     = callStmt->GetNextStmt();
     Statement*   afterStmt    = callStmt; // afterStmt is the place where the new statements should be inserted after.
     Statement*   newStmt      = nullptr;
@@ -1581,7 +1581,7 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
                     // argTmpNum here since in-linee compiler instance
                     // would have iterated over these and marked them
                     // accordingly.
-                    impAssignTempGen(tmpNum, argNode, structHnd, (unsigned)CHECK_SPILL_NONE, &afterStmt, callILOffset,
+                    impAssignTempGen(tmpNum, argNode, structHnd, (unsigned)CHECK_SPILL_NONE, &afterStmt, callDI,
                                      block);
 
                     // We used to refine the temp type here based on
@@ -1630,14 +1630,14 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
                         // Don't put GT_OBJ node under a GT_COMMA.
                         // Codegen can't deal with it.
                         // Just hang the address here in case there are side-effect.
-                        newStmt = gtNewStmt(gtUnusedValNode(argNode->AsOp()->gtOp1), callILOffset);
+                        newStmt = gtNewStmt(gtUnusedValNode(argNode->AsOp()->gtOp1), callDI);
                     }
 
                     // If we don't have something custom to append,
                     // just append the arg node as an unused value.
                     if (newStmt == nullptr)
                     {
-                        newStmt = gtNewStmt(gtUnusedValNode(argNode), callILOffset);
+                        newStmt = gtNewStmt(gtUnusedValNode(argNode), callDI);
                     }
 
                     fgInsertStmtAfter(block, afterStmt, newStmt);
@@ -1672,7 +1672,7 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
         CORINFO_CLASS_HANDLE exactClass = eeGetClassFromContext(inlineInfo->inlineCandidateInfo->exactContextHnd);
 
         tree    = fgGetSharedCCtor(exactClass);
-        newStmt = gtNewStmt(tree, callILOffset);
+        newStmt = gtNewStmt(tree, callDI);
         fgInsertStmtAfter(block, afterStmt, newStmt);
         afterStmt = newStmt;
     }
@@ -1680,7 +1680,7 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
     // Insert the nullcheck statement now.
     if (nullcheck)
     {
-        newStmt = gtNewStmt(nullcheck, callILOffset);
+        newStmt = gtNewStmt(nullcheck, callDI);
         fgInsertStmtAfter(block, afterStmt, newStmt);
         afterStmt = newStmt;
     }
@@ -1733,7 +1733,7 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
                     // Unsafe value cls check is not needed here since in-linee compiler instance would have
                     // iterated over locals and marked accordingly.
                     impAssignTempGen(tmpNum, gtNewZeroConNode(genActualType(lclTyp)), NO_CLASS_HANDLE,
-                                     (unsigned)CHECK_SPILL_NONE, &afterStmt, callILOffset, block);
+                                     (unsigned)CHECK_SPILL_NONE, &afterStmt, callDI, block);
                 }
                 else
                 {
@@ -1742,7 +1742,7 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
                                           false,                         // isVolatile
                                           false);                        // not copyBlock
 
-                    newStmt = gtNewStmt(tree, callILOffset);
+                    newStmt = gtNewStmt(tree, callDI);
                     fgInsertStmtAfter(block, afterStmt, newStmt);
                     afterStmt = newStmt;
                 }
@@ -1758,11 +1758,11 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
     }
 
     // Update any newly added statements with the appropriate context.
-    InlineContext* context = callStmt->GetInlineContext();
+    InlineContext* context = callStmt->GetDebugInfo().GetInlineContext();
     assert(context != nullptr);
     for (Statement* addedStmt = callStmt->GetNextStmt(); addedStmt != postStmt; addedStmt = addedStmt->GetNextStmt())
     {
-        assert(addedStmt->GetInlineContext() == nullptr);
+        assert(addedStmt->GetDebugInfo().GetInlineContext() == nullptr);
         addedStmt->SetInlineContext(context);
     }
 
@@ -1802,7 +1802,7 @@ void Compiler::fgInlineAppendStatements(InlineInfo* inlineInfo, BasicBlock* bloc
     JITDUMP("fgInlineAppendStatements: nulling out gc ref inlinee locals.\n");
 
     Statement*           callStmt          = inlineInfo->iciStmt;
-    IL_OFFSETX           callILOffset      = callStmt->GetILOffsetX();
+    const DebugInfo& callDI = callStmt->GetDebugInfo();
     CORINFO_METHOD_INFO* InlineeMethodInfo = InlineeCompiler->info.compMethodInfo;
     const unsigned       lclCnt            = InlineeMethodInfo->locals.numArgs;
     InlLclVarInfo*       lclVarInfo        = inlineInfo->lclVarInfo;
@@ -1851,7 +1851,7 @@ void Compiler::fgInlineAppendStatements(InlineInfo* inlineInfo, BasicBlock* bloc
 
         // Assign null to the local.
         GenTree*   nullExpr = gtNewTempAssign(tmpNum, gtNewZeroConNode(lclTyp));
-        Statement* nullStmt = gtNewStmt(nullExpr, callILOffset);
+        Statement* nullStmt = gtNewStmt(nullExpr, callDI);
 
         if (stmtAfter == nullptr)
         {

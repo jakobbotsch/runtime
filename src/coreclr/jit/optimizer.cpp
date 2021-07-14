@@ -4384,7 +4384,7 @@ bool Compiler::optInvertWhileLoop(BasicBlock* block)
 
         if (opts.compDbgInfo)
         {
-            clonedStmt->SetILOffsetX(stmt->GetILOffsetX());
+            clonedStmt->SetDebugInfo(stmt->GetDebugInfo());
         }
 
         clonedStmt->SetCompilerAdded();

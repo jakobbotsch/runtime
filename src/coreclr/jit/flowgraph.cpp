@@ -276,7 +276,7 @@ BasicBlock* Compiler::fgCreateGCPoll(GCPollType pollType, BasicBlock* block)
             if (nextStmt != nullptr)
             {
                 // Is it possible for gtNextStmt to be NULL?
-                newStmt->SetILOffsetX(nextStmt->GetILOffsetX());
+                newStmt->SetDebugInfo(nextStmt->GetDebugInfo());
             }
         }
 
@@ -2254,16 +2254,19 @@ private:
     //
     // Arguments:
     //    index - Index into `returnBlocks` to store the new block into.
+    //
     //    returnConst - Constant that the new block should return; may be nullptr to
     //      indicate that the new merged return is for the non-constant case, in which
     //      case, if the method's return type is non-void, `comp->genReturnLocal` will
     //      be initialized to a new local of the appropriate type, and the new block will
     //      return it.
     //
+    //    ofs - Offset of the created return statement.
+    //
     // Return Value:
     //    The new merged return block.
     //
-    BasicBlock* CreateReturnBB(unsigned index, GenTreeIntConCommon* returnConst = nullptr)
+    BasicBlock* CreateReturnBB(unsigned index, GenTreeIntConCommon* returnConst = nullptr, IL_OFFSET ofs = BAD_IL_OFFSET)
     {
         BasicBlock* newReturnBB = comp->fgNewBBinRegion(BBJ_RETURN);
         newReturnBB->bbRefs     = 1; // bbRefs gets update later, for now it should be 1
@@ -2421,6 +2424,7 @@ private:
                     if (slotsReserved < maxReturns)
                     {
                         // We have enough space to allocate a slot for this constant.
+                        // Associate its debug info with the statement that we created it from.
                         constReturnBlock = CreateReturnBB(searchLimit, retConst);
                     }
                 }

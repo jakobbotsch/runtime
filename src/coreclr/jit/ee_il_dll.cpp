@@ -895,7 +895,7 @@ void Compiler::eeSetLIcount(unsigned count)
     eeBoundariesCount = count;
     if (eeBoundariesCount)
     {
-        eeBoundaries = (boundariesDsc*)info.compCompHnd->allocateArray(eeBoundariesCount * sizeof(eeBoundaries[0]));
+        eeBoundaries = (ICorDebugInfo::OffsetMapping*)info.compCompHnd->allocateArray(eeBoundariesCount * sizeof(eeBoundaries[0]));
     }
     else
     {
@@ -904,18 +904,36 @@ void Compiler::eeSetLIcount(unsigned count)
 }
 
 void Compiler::eeSetLIinfo(
-    unsigned which, UNATIVE_OFFSET nativeOffset, IL_OFFSET ilOffset, bool stkEmpty, bool callInstruction)
+    unsigned which, UNATIVE_OFFSET nativeOffset, IPmappingDscKind kind, const ILLocation& loc)
 {
     assert(opts.compDbgInfo);
-    assert(eeBoundariesCount > 0);
+    assert(eeBoundariesCount > 0 && eeBoundaries != nullptr);
     assert(which < eeBoundariesCount);
 
-    if (eeBoundaries != nullptr)
+    eeBoundaries[which].nativeOffset = nativeOffset;
+    eeBoundaries[which].source = (ICorDebugInfo::SourceTypes)0;
+
+    switch (kind)
     {
-        eeBoundaries[which].nativeIP     = nativeOffset;
-        eeBoundaries[which].ilOffset     = ilOffset;
-        eeBoundaries[which].sourceReason = stkEmpty ? ICorDebugInfo::STACK_EMPTY : 0;
-        eeBoundaries[which].sourceReason |= callInstruction ? ICorDebugInfo::CALL_INSTRUCTION : 0;
+        int source;
+
+    case IPmappingDscKind::Normal:
+        eeBoundaries[which].ilOffset = loc.GetOffset();
+        source = loc.IsStackEmpty() ? ICorDebugInfo::STACK_EMPTY : 0;
+        source |= loc.IsCall() ? ICorDebugInfo::CALL_INSTRUCTION : 0;
+        eeBoundaries[which].source = (ICorDebugInfo::SourceTypes)source;
+        break;
+    case IPmappingDscKind::Prolog:
+        eeBoundaries[which].ilOffset = ICorDebugInfo::PROLOG;
+        break;
+    case IPmappingDscKind::Epilog:
+        eeBoundaries[which].ilOffset = ICorDebugInfo::EPILOG;
+        break;
+    case IPmappingDscKind::NoMapping:
+        eeBoundaries[which].ilOffset = ICorDebugInfo::NO_MAPPING;
+        break;
+    default:
+        unreached();
     }
 }
 
@@ -962,28 +980,28 @@ void Compiler::eeDispILOffs(IL_OFFSET offs)
 }
 
 /* static */
-void Compiler::eeDispLineInfo(const boundariesDsc* line)
+void Compiler::eeDispLineInfo(const ICorDebugInfo::OffsetMapping* line)
 {
     printf("IL offs ");
 
     eeDispILOffs(line->ilOffset);
 
-    printf(" : 0x%08X", line->nativeIP);
-    if (line->sourceReason != 0)
+    printf(" : 0x%08X", line->nativeOffset);
+    if (line->source != 0)
     {
         // It seems like it should probably never be zero since ICorDebugInfo::SOURCE_TYPE_INVALID is zero.
         // However, the JIT has always generated this and printed "stack non-empty".
 
         printf(" ( ");
-        if ((line->sourceReason & ICorDebugInfo::STACK_EMPTY) != 0)
+        if ((line->source & ICorDebugInfo::STACK_EMPTY) != 0)
         {
             printf("STACK_EMPTY ");
         }
-        if ((line->sourceReason & ICorDebugInfo::CALL_INSTRUCTION) != 0)
+        if ((line->source & ICorDebugInfo::CALL_INSTRUCTION) != 0)
         {
             printf("CALL_INSTRUCTION ");
         }
-        if ((line->sourceReason & ICorDebugInfo::CALL_SITE) != 0)
+        if ((line->source & ICorDebugInfo::CALL_SITE) != 0)
         {
             printf("CALL_SITE ");
         }
@@ -992,7 +1010,7 @@ void Compiler::eeDispLineInfo(const boundariesDsc* line)
     printf("\n");
 
     // We don't expect to see any other bits.
-    assert((line->sourceReason & ~(ICorDebugInfo::STACK_EMPTY | ICorDebugInfo::CALL_INSTRUCTION)) == 0);
+    assert((line->source & ~(ICorDebugInfo::STACK_EMPTY | ICorDebugInfo::CALL_INSTRUCTION)) == 0);
 }
 
 void Compiler::eeDispLineInfos()
