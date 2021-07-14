@@ -552,7 +552,7 @@ private:
 //
 struct ClassProfileCandidateInfo
 {
-    DebugInfo di;
+    IL_OFFSET ilOffset;
     unsigned  probeIndex;
     void*     stubAddr;
 };

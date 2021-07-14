@@ -4011,7 +4011,7 @@ public:
                              CORINFO_CONTEXT_HANDLE* exactContextHandle,
                              bool                    isLateDevirtualization,
                              bool                    isExplicitTailCall,
-                             const DebugInfo&       di = DebugInfo());
+                             IL_OFFSET               ilOffset = BAD_IL_OFFSET);
 
     //=========================================================================
     //                          PROTECTED
@@ -7079,7 +7079,7 @@ public:
     }
 
     void considerGuardedDevirtualization(GenTreeCall*            call,
-                                         const DebugInfo&       di,
+                                         IL_OFFSET ilOffset,
                                          bool                    isInterface,
                                          CORINFO_METHOD_HANDLE   baseMethod,
                                          CORINFO_CLASS_HANDLE    baseClass,

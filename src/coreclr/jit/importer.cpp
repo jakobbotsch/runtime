@@ -8970,7 +8970,8 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
             const bool isLateDevirtualization = false;
             impDevirtualizeCall(call->AsCall(), pResolvedToken, &callInfo->hMethod, &callInfo->methodFlags,
                                 &callInfo->contextHandle, &exactContextHnd, isLateDevirtualization, isExplicitTailCall,
-                                di);
+                                // Take care to pass raw IL offset here as the 'debug info' might be different for inlinees.
+                                rawILOffset);
         }
 
         if (impIsThis(obj))
@@ -20785,7 +20786,7 @@ bool Compiler::IsMathIntrinsic(GenTree* tree)
 //     pExactContextHandle -- [OUT] updated context handle iff call devirtualized
 //     isLateDevirtualization -- if devirtualization is happening after importation
 //     isExplicitTailCalll -- [IN] true if we plan on using an explicit tail call
-//     di -- [IN] debug info about the statement containing the call
+//     ilOffset -- IL offset of the call
 //
 // Notes:
 //     Virtual calls in IL will always "invoke" the base class method.
@@ -20825,7 +20826,7 @@ void Compiler::impDevirtualizeCall(GenTreeCall*            call,
                                    CORINFO_CONTEXT_HANDLE* pExactContextHandle,
                                    bool                    isLateDevirtualization,
                                    bool                    isExplicitTailCall,
-                                   const DebugInfo& di)
+                                   IL_OFFSET ilOffset)
 {
     assert(call != nullptr);
     assert(method != nullptr);
@@ -20855,7 +20856,7 @@ void Compiler::impDevirtualizeCall(GenTreeCall*            call,
 
             // Record some info needed for the class profiling probe.
             //
-            pInfo->di      = di;
+            pInfo->ilOffset      = ilOffset;
             pInfo->probeIndex = info.compClassProbeCount++;
             pInfo->stubAddr   = call->gtStubCallStubAddr;
 
@@ -21012,7 +21013,7 @@ void Compiler::impDevirtualizeCall(GenTreeCall*            call,
             return;
         }
 
-        considerGuardedDevirtualization(call, di, isInterface, baseMethod, baseClass,
+        considerGuardedDevirtualization(call, ilOffset, isInterface, baseMethod, baseClass,
                                         pContextHandle DEBUGARG(objClass) DEBUGARG(objClassName));
         return;
     }
@@ -21129,7 +21130,7 @@ void Compiler::impDevirtualizeCall(GenTreeCall*            call,
             return;
         }
 
-        considerGuardedDevirtualization(call, di, isInterface, baseMethod, baseClass,
+        considerGuardedDevirtualization(call, ilOffset, isInterface, baseMethod, baseClass,
                                         pContextHandle DEBUGARG(objClass) DEBUGARG(objClassName));
         return;
     }
@@ -21193,7 +21194,7 @@ void Compiler::impDevirtualizeCall(GenTreeCall*            call,
         unsigned numberOfClasses = 0;
 
         CORINFO_CLASS_HANDLE likelyClass =
-            getLikelyClass(fgPgoSchema, fgPgoSchemaCount, fgPgoData, di.GetLocation().GetOffset(), &likelihood, &numberOfClasses);
+            getLikelyClass(fgPgoSchema, fgPgoSchemaCount, fgPgoData, ilOffset, &likelihood, &numberOfClasses);
 
         if (likelyClass != NO_CLASS_HANDLE)
         {
@@ -21229,7 +21230,7 @@ void Compiler::impDevirtualizeCall(GenTreeCall*            call,
                     {
                         printf("@@@ Likely %p (%s) != Derived %p (%s) [n=%u, l=%u, il=%u] in %s \n", likelyClass,
                                eeGetClassName(likelyClass), derivedClass, eeGetClassName(derivedClass), numberOfClasses,
-                               likelihood, di.GetLocation().GetOffset(), info.compFullName);
+                               likelihood, ilOffset, info.compFullName);
                     }
 
                     assert(!(mismatch || (numberOfClasses != 1) || (likelihood != 100)));
@@ -21638,7 +21639,7 @@ void Compiler::addFatPointerCandidate(GenTreeCall* call)
 // Arguments:
 //
 //    call - potential guarded devirtualization candidate
-//    di - Debug info of the call instruction
+//    ilOffset - IL ofset of the call instruction
 //    isInterface - true if this is an interface call
 //    baseMethod - target method of the call
 //    baseClass - class that introduced the target method
@@ -21652,7 +21653,7 @@ void Compiler::addFatPointerCandidate(GenTreeCall* call)
 //
 void Compiler::considerGuardedDevirtualization(
     GenTreeCall*            call,
-    const DebugInfo&              di,
+    IL_OFFSET ilOffset,
     bool                    isInterface,
     CORINFO_METHOD_HANDLE   baseMethod,
     CORINFO_CLASS_HANDLE    baseClass,
@@ -21662,7 +21663,7 @@ void Compiler::considerGuardedDevirtualization(
     const char* callKind = isInterface ? "interface" : "virtual";
 #endif
 
-    JITDUMP("Considering guarded devirtualization at IL offset %u (0x%x)\n", di.GetLocation().GetOffset(), di.GetLocation().GetOffset());
+    JITDUMP("Considering guarded devirtualization at IL offset %u (0x%x)\n", ilOffset, ilOffset);
 
     // We currently only get likely class guesses when there is PGO data
     // with class profiles.
@@ -21697,12 +21698,12 @@ void Compiler::considerGuardedDevirtualization(
             impInlineRoot()->m_inlineStrategy->GetRandom(JitConfig.JitRandomGuardedDevirtualization());
         likelihood      = 100;
         numberOfClasses = 1;
-        likelyClass     = getRandomClass(fgPgoSchema, fgPgoSchemaCount, fgPgoData, di.GetLocation().GetOffset(), random);
+        likelyClass     = getRandomClass(fgPgoSchema, fgPgoSchemaCount, fgPgoData, ilOffset, random);
     }
     else
 #endif
     {
-        likelyClass = getLikelyClass(fgPgoSchema, fgPgoSchemaCount, fgPgoData, di.GetLocation().GetOffset(), &likelihood, &numberOfClasses);
+        likelyClass = getLikelyClass(fgPgoSchema, fgPgoSchemaCount, fgPgoData, ilOffset, &likelihood, &numberOfClasses);
     }
 
     if (likelyClass == NO_CLASS_HANDLE)
