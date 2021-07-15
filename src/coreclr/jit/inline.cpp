@@ -685,7 +685,7 @@ InlineResult::InlineResult(Compiler* compiler, GenTreeCall* call, Statement* stm
 #if defined(DEBUG) || defined(INLINE_DATA)
         m_Policy->NoteOffset(call->gtRawILOffset);
 #else
-        m_Policy->NoteOffset(stmt->GetDebugInfo());
+        m_Policy->NoteOffset(stmt->GetDebugInfo().GetLocation().GetOffset());
 #endif // defined(DEBUG) || defined(INLINE_DATA)
     }
 
