@@ -4707,7 +4707,7 @@ void emitter::emitIns_Call(EmitCallType          callType,
 #endif
 
     /* Managed RetVal: emit sequence point for the call */
-    if (emitComp->opts.compDbgInfo && !di.IsEmpty())
+    if (emitComp->opts.compDbgInfo && di.GetLocation().IsValid())
     {
         codeGen->genIPmappingAdd(IPmappingDscKind::Normal, di, false);
     }

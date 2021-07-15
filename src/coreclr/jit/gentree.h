@@ -6068,13 +6068,6 @@ public:
         return m_location;
     }
 
-    // Returns true if there is no debug information associated with this entry.
-    bool IsEmpty() const
-    {
-        assert(m_location.IsValid() == (m_inlineContext != nullptr));
-        return m_inlineContext == nullptr;
-    }
-
     // Retrieve information about the location that inlined this statement.
     bool GetParent(DebugInfo* par) const;
 
