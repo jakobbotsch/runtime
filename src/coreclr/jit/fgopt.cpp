@@ -186,8 +186,9 @@ void Compiler::fgUpdateChangedFlowGraph(const bool computePreds, const bool comp
     {
         fgComputePreds();
     }
-    fgComputeEnterBlocksSet();
     fgComputeReachabilitySets();
+    fgComputeEnterBlocksSet();
+
     if (computeDoms)
     {
         fgComputeDoms();
@@ -303,15 +304,29 @@ void Compiler::fgComputeEnterBlocksSet()
 
     if (compHndBBtabCount > 0)
     {
-        /* Also 'or' in the handler basic blocks */
-        for (EHblkDsc* const HBtab : EHClauses(this))
+        bool changed;
+        do
         {
-            if (HBtab->HasFilter())
+            changed = false;
+
+            /* Also 'or' in the handler basic blocks */
+            for (EHblkDsc* const HBtab : EHClauses(this))
             {
-                BlockSetOps::AddElemD(this, fgEnterBlks, HBtab->ebdFilter->bbNum);
+                if (BlockSetOps::IsEmptyIntersection(this, fgEnterBlks, HBtab->ebdTryBeg->bbReach))
+                {
+                    // try is unreachable, so so is the filter/handler.
+                    continue;
+                }
+
+                if (HBtab->HasFilter())
+                {
+                    changed |= !BlockSetOps::IsMember(this, fgEnterBlks, HBtab->ebdFilter->bbNum);
+                    BlockSetOps::AddElemD(this, fgEnterBlks, HBtab->ebdFilter->bbNum);
+                }
+                changed |= !BlockSetOps::IsMember(this, fgEnterBlks, HBtab->ebdHndBeg->bbNum);
+                BlockSetOps::AddElemD(this, fgEnterBlks, HBtab->ebdHndBeg->bbNum);
             }
-            BlockSetOps::AddElemD(this, fgEnterBlks, HBtab->ebdHndBeg->bbNum);
-        }
+        } while (changed);
     }
 
 #if defined(FEATURE_EH_FUNCLETS) && defined(TARGET_ARM)
@@ -571,16 +586,16 @@ void Compiler::fgComputeReachability()
         fgRenumberBlocks();
 
         //
-        // Compute fgEnterBlks
-        //
-
-        fgComputeEnterBlocksSet();
-
-        //
         // Compute bbReach
         //
 
         fgComputeReachabilitySets();
+
+        //
+        // Compute fgEnterBlks
+        //
+
+        fgComputeEnterBlocksSet();
 
         //
         // Use reachability information to delete unreachable blocks.
