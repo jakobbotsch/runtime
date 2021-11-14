@@ -135,6 +135,8 @@ namespace Internal.ReadyToRunConstants
         Check_VirtualFunctionOverride = 0x33, // Generate a runtime check to ensure that virtual function resolution has equivalent behavior at runtime as at compile time. If not equivalent, code will not be used
         Verify_VirtualFunctionOverride = 0x34, // Generate a runtime check to ensure that virtual function resolution has equivalent behavior at runtime as at compile time. If not equivalent, generate runtime failure.
 
+        StandaloneILStubEntry = 0x35, // Entry point of IL stub that is not associated with any method token
+
         ModuleOverride = 0x80,
         // followed by sig-encoded UInt with assemblyref index into either the assemblyref
         // table of the MSIL metadata of the master context module for the signature or
@@ -291,6 +293,8 @@ namespace Internal.ReadyToRunConstants
         StackProbe                  = 0x111,
 
         GetCurrentManagedThreadId   = 0x112,
+
+        DispatchTailCalls           = 0x113,
 
         // **********************************************************************************************
         //

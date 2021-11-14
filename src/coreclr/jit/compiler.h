@@ -6332,8 +6332,7 @@ private:
     bool fgCanTailCallViaJitHelper();
     void fgMorphTailCallViaJitHelper(GenTreeCall* call);
     GenTree* fgCreateCallDispatcherAndGetResult(GenTreeCall*          origCall,
-                                                CORINFO_METHOD_HANDLE callTargetStubHnd,
-                                                CORINFO_METHOD_HANDLE dispatcherHnd);
+                                                CORINFO_METHOD_HANDLE callTargetStubHnd);
     GenTree* getLookupTree(CORINFO_RESOLVED_TOKEN* pResolvedToken,
                            CORINFO_LOOKUP*         pLookup,
                            GenTreeFlags            handleFlags,

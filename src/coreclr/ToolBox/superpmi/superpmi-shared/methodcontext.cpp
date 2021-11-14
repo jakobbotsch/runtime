@@ -6558,7 +6558,6 @@ void MethodContext::recGetTailCallHelpers(
         value.flags       = (DWORD)pResult->flags;
         value.hStoreArgs  = CastHandle(pResult->hStoreArgs);
         value.hCallTarget = CastHandle(pResult->hCallTarget);
-        value.hDispatcher = CastHandle(pResult->hDispatcher);
     }
 
     GetTailCallHelpers->Add(key, value);
@@ -6571,12 +6570,11 @@ void MethodContext::dmpGetTailCallHelpers(const Agnostic_GetTailCallHelpers& key
         SpmiDumpHelper::DumpAgnostic_CORINFO_RESOLVED_TOKEN(key.callToken).c_str(),
         SpmiDumpHelper::DumpAgnostic_CORINFO_SIG_INFO(key.sig, GetTailCallHelpers, SigInstHandleMap).c_str(),
         key.flags);
-    printf(", value result-%s flg-%08X hStoreArgs-%016llX hCallTarget-%016llX hDispatcher-%016llX",
+    printf(", value result-%s flg-%08X hStoreArgs-%016llX hCallTarget-%016llX",
         value.result ? "true" : "false",
         value.flags,
         value.hStoreArgs,
-        value.hCallTarget,
-        value.hDispatcher);
+        value.hCallTarget);
 }
 
 bool MethodContext::repGetTailCallHelpers(
@@ -6604,7 +6602,6 @@ bool MethodContext::repGetTailCallHelpers(
     pResult->flags       = (CORINFO_TAILCALL_HELPERS_FLAGS)value.flags;
     pResult->hStoreArgs  = (CORINFO_METHOD_HANDLE)value.hStoreArgs;
     pResult->hCallTarget = (CORINFO_METHOD_HANDLE)value.hCallTarget;
-    pResult->hDispatcher = (CORINFO_METHOD_HANDLE)value.hDispatcher;
     return true;
 }
 

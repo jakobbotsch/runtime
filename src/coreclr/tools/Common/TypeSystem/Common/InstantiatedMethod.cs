@@ -18,7 +18,7 @@ namespace Internal.TypeSystem
         internal InstantiatedMethod(MethodDesc methodDef, Instantiation instantiation)
         {
             Debug.Assert(!(methodDef is InstantiatedMethod));
-            _methodDef = methodDef;
+            _methodDef = methodDef; //
 
             Debug.Assert(instantiation.Length > 0);
             _instantiation = instantiation;

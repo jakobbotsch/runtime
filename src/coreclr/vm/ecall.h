@@ -98,6 +98,8 @@ class ECall
 
         static void PopulateManagedCastHelpers();
 
+        static void PopulateManagedTailCallDispatcher(MethodDesc* pMD);
+
 #ifdef DACCESS_COMPILE
         // Enumerates all gFCallMethods for minidumps.
         static void EnumFCallMethods();

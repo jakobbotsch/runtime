@@ -1947,6 +1947,10 @@ namespace ILCompiler.Reflection.ReadyToRun
                     builder.Append("STACK_PROBE");
                     break;
 
+                case ReadyToRunHelper.DispatchTailCalls:
+                    builder.Append("DISPATCH_TAILCALLS");
+                    break;
+
                 default:
                     throw new BadImageFormatException();
             }

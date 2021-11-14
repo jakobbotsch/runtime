@@ -7888,11 +7888,6 @@ GenTree* Compiler::fgMorphPotentialTailCall(GenTreeCall* call)
 //
 GenTree* Compiler::fgMorphTailCallViaHelpers(GenTreeCall* call, CORINFO_TAILCALL_HELPERS& help)
 {
-    // R2R requires different handling but we don't support tailcall via
-    // helpers in R2R yet, so just leave it for now.
-    // TODO: R2R: TailCallViaHelper
-    assert(!opts.IsReadyToRun());
-
     JITDUMP("fgMorphTailCallViaHelpers (before):\n");
     DISPTREE(call);
 
@@ -7915,7 +7910,7 @@ GenTree* Compiler::fgMorphTailCallViaHelpers(GenTreeCall* call, CORINFO_TAILCALL
     // we rely upon in fgCreateCallDispatcherAndGetResult.
     call->ResetArgInfo();
 
-    GenTree* callDispatcherAndGetResult = fgCreateCallDispatcherAndGetResult(call, help.hCallTarget, help.hDispatcher);
+    GenTree* callDispatcherAndGetResult = fgCreateCallDispatcherAndGetResult(call, help.hCallTarget);
 
     // Change the call to a call to the StoreArgs stub.
     if (call->HasRetBufArg())
@@ -8081,6 +8076,10 @@ GenTree* Compiler::fgMorphTailCallViaHelpers(GenTreeCall* call, CORINFO_TAILCALL
     call->gtCallMethHnd = help.hStoreArgs;
     call->gtFlags &= ~GTF_CALL_VIRT_KIND_MASK;
     call->gtCallMoreFlags &= ~(GTF_CALL_M_TAILCALL | GTF_CALL_M_DELEGATE_INV | GTF_CALL_M_WRAPPER_DELEGATE_INV);
+#ifdef FEATURE_READYTORUN
+    call->gtEntryPoint.addr = nullptr;
+    call->gtEntryPoint.accessType = IAT_VALUE;
+#endif
 
     // The store-args stub returns no value.
     call->gtRetClsHnd  = nullptr;
@@ -8125,17 +8124,14 @@ GenTree* Compiler::fgMorphTailCallViaHelpers(GenTreeCall* call, CORINFO_TAILCALL
 //    origCall - the call
 //    callTargetStubHnd - the handle of the CallTarget function (this is a special
 //    IL stub created by the runtime)
-//    dispatcherHnd - the handle of the tailcall dispatcher function
 //
 // Return Value:
 //    A node that can be used in place of the original call.
 //
 GenTree* Compiler::fgCreateCallDispatcherAndGetResult(GenTreeCall*          origCall,
-                                                      CORINFO_METHOD_HANDLE callTargetStubHnd,
-                                                      CORINFO_METHOD_HANDLE dispatcherHnd)
+                                                      CORINFO_METHOD_HANDLE callTargetStubHnd)
 {
-    GenTreeCall* callDispatcherNode =
-        gtNewCallNode(CT_USER_FUNC, dispatcherHnd, TYP_VOID, nullptr, fgMorphStmt->GetDebugInfo());
+    GenTreeCall* callDispatcherNode = gtNewHelperCallNode(CORINFO_HELP_DISPATCH_TAILCALLS, TYP_VOID);
     // The dispatcher has signature
     // void DispatchTailCalls(void* callersRetAddrSlot, void* callTarget, void* retValue)
 

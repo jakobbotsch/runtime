@@ -515,7 +515,6 @@ struct Agnostic_CORINFO_TAILCALL_HELPERS
     DWORD flags;
     DWORDLONG hStoreArgs;
     DWORDLONG hCallTarget;
-    DWORDLONG hDispatcher;
 };
 
 struct Agnostic_GetArgClass_Value

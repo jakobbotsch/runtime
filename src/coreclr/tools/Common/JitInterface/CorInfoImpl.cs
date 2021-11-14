@@ -30,6 +30,7 @@ using Internal.IL.Stubs;
 #if READYTORUN
 using System.Reflection.Metadata.Ecma335;
 using ILCompiler.DependencyAnalysis.ReadyToRun;
+using ILCompiler.ReadyToRun.IL.Stubs;
 #endif
 
 namespace Internal.JitInterface
@@ -3096,7 +3097,18 @@ namespace Internal.JitInterface
         }
 
         private void getFunctionFixedEntryPoint(CORINFO_METHOD_STRUCT_* ftn, ref CORINFO_CONST_LOOKUP pResult)
-        { throw new NotImplementedException("getFunctionFixedEntryPoint"); }
+        {
+            MethodDesc method = HandleToObject(ftn);
+            if (method is not ILStubMethod ilStub)
+                throw new NotImplementedException("Unexpected call to getFunctionFixedEntryPoint");
+
+            pResult.accessType = InfoAccessType.IAT_VALUE;
+            // Currently this is called only for standalone IL stubs that do not require any lazy fixups
+            // (necessary data structures will be created due to UsesStandaloneILStub fixup by the runtime).
+            // That means we should be able to point directly to the compiled code.
+            // TODO: Is this the right way to get it?
+            pResult.addr = (void*)ObjectToHandle(_compilation.NodeFactory.CompiledMethodNode(method));
+        }
 
         private CorInfoHelpFunc getLazyStringLiteralHelper(CORINFO_MODULE_STRUCT_* handle)
         {
@@ -3217,13 +3229,15 @@ namespace Internal.JitInterface
 
         private bool getTailCallHelpers(ref CORINFO_RESOLVED_TOKEN callToken, CORINFO_SIG_INFO* sig, CORINFO_GET_TAILCALL_HELPERS_FLAGS flags, ref CORINFO_TAILCALL_HELPERS pResult)
         {
-            // Slow tailcalls are not supported yet
-            // https://github.com/dotnet/runtime/issues/35423
-#if READYTORUN
-            throw new RequiresRuntimeJitException(nameof(getTailCallHelpers));
-#else
-            return false;
-#endif
+            pResult.flags = 0;
+            var stub = new TrivialILStub(_compilation.TypeSystemContext);
+            pResult.hCallTarget = ObjectToHandle(stub);
+            pResult.hStoreArgs = ObjectToHandle(stub);
+             //TODO: Add fixups for IL standalone stub.
+             //_methodCodeNode.Fixups.Add(
+
+            return true;
+            //throw new RequiresRuntimeJitException("foobar");
         }
 
         private byte[] _code;

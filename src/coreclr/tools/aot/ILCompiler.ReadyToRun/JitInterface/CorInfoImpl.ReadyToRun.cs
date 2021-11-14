@@ -895,6 +895,10 @@ namespace Internal.JitInterface
                     id = ReadyToRunHelper.ReversePInvokeExit;
                     break;
 
+                case CorInfoHelpFunc.CORINFO_HELP_DISPATCH_TAILCALLS:
+                    id = ReadyToRunHelper.DispatchTailCalls;
+                    break;
+
                 case CorInfoHelpFunc.CORINFO_HELP_INITCLASS:
                 case CorInfoHelpFunc.CORINFO_HELP_INITINSTCLASS:
                 case CorInfoHelpFunc.CORINFO_HELP_THROW_ARGUMENTEXCEPTION:
@@ -918,7 +922,16 @@ namespace Internal.JitInterface
 
         private void getFunctionEntryPoint(CORINFO_METHOD_STRUCT_* ftn, ref CORINFO_CONST_LOOKUP pResult, CORINFO_ACCESS_FLAGS accessFlags)
         {
-            throw new RequiresRuntimeJitException(HandleToObject(ftn).ToString());
+            MethodDesc method = HandleToObject(ftn);
+            if (method is not ILStubMethod ilStub)
+                throw new NotImplementedException("Unexpected call to getFunctionEntryPoint");
+
+            pResult.accessType = InfoAccessType.IAT_VALUE;
+            // Currently this is called only for standalone IL stubs that do not require any lazy fixups
+            // (necessary data structures will be created due to UsesStandaloneILStub fixup by the runtime).
+            // That means we should be able to point directly to the compiled code.
+            // TODO: Is this the right way to get it?
+            pResult.addr = (void*)ObjectToHandle(_compilation.NodeFactory.CompiledMethodNode(method));
         }
 
         private bool canTailCall(CORINFO_METHOD_STRUCT_* callerHnd, CORINFO_METHOD_STRUCT_* declaredCalleeHnd, CORINFO_METHOD_STRUCT_* exactCalleeHnd, bool fIsTailPrefix)

@@ -379,6 +379,8 @@ enum ReadyToRunHelper
     READYTORUN_HELPER_StackProbe                = 0x111,
 
     READYTORUN_HELPER_GetCurrentManagedThreadId = 0x112,
+
+    READYTORUN_HELPER_DispatchTailCalls         = 0x113,
 };
 
 #include "readytoruninstructionset.h"

@@ -17,6 +17,7 @@ using Internal.Text;
 using Internal.TypeSystem.Ecma;
 using Internal.CorConstants;
 using Internal.ReadyToRunConstants;
+using Internal.IL.Stubs;
 
 namespace ILCompiler.DependencyAnalysis
 {
@@ -74,7 +75,7 @@ namespace ILCompiler.DependencyAnalysis
 
         public MethodWithGCInfo CompiledMethodNode(MethodDesc method)
         {
-            Debug.Assert(CompilationModuleGroup.ContainsMethodBody(method, false));
+            Debug.Assert(CompilationModuleGroup.ContainsMethodBody(method, false) || method is ILStubMethod);
             Debug.Assert(method == method.GetCanonMethodTarget(CanonicalFormKind.Specific));
             return _localMethodCache.GetOrAdd(method);
         }
@@ -416,20 +417,23 @@ namespace ILCompiler.DependencyAnalysis
                 MethodDesc method = methodNode.Method;
                 MethodWithGCInfo methodCodeNode = methodNode as MethodWithGCInfo;
 #if DEBUG
-                EcmaModule module = ((EcmaMethod)method.GetTypicalMethodDefinition()).Module;
-                ModuleToken moduleToken = Resolver.GetModuleTokenForMethod(method, throwIfNotFound: true);
+                if (method is EcmaMethod em)
+                {
+                    EcmaModule module = ((EcmaMethod)em.GetTypicalMethodDefinition()).Module;
+                    ModuleToken moduleToken = Resolver.GetModuleTokenForMethod(method, throwIfNotFound: true);
 
-                IMethodNode methodNodeDebug = MethodEntrypoint(new MethodWithToken(method, moduleToken, constrainedType: null, unboxing: false, context: null), false, false, false);
-                MethodWithGCInfo methodCodeNodeDebug = methodNodeDebug as MethodWithGCInfo;
-                if (methodCodeNodeDebug == null && methodNodeDebug is DelayLoadMethodImport DelayLoadMethodImport)
-                {
-                    methodCodeNodeDebug = DelayLoadMethodImport.MethodCodeNode;
+                    IMethodNode methodNodeDebug = MethodEntrypoint(new MethodWithToken(method, moduleToken, constrainedType: null, unboxing: false, context: null), false, false, false);
+                    MethodWithGCInfo methodCodeNodeDebug = methodNodeDebug as MethodWithGCInfo;
+                    if (methodCodeNodeDebug == null && methodNodeDebug is DelayLoadMethodImport DelayLoadMethodImport)
+                    {
+                        methodCodeNodeDebug = DelayLoadMethodImport.MethodCodeNode;
+                    }
+                    if (methodCodeNodeDebug == null && methodNodeDebug is PrecodeMethodImport precodeMethodImport)
+                    {
+                        methodCodeNodeDebug = precodeMethodImport.MethodCodeNode;
+                    }
+                    Debug.Assert(methodCodeNodeDebug == methodCodeNode);
                 }
-                if (methodCodeNodeDebug == null && methodNodeDebug is PrecodeMethodImport precodeMethodImport)
-                {
-                    methodCodeNodeDebug = precodeMethodImport.MethodCodeNode;
-                }
-                Debug.Assert(methodCodeNodeDebug == methodCodeNode);
 #endif
 
                 if (methodCodeNode != null && !methodCodeNode.IsEmpty)

@@ -514,7 +514,9 @@ enum CorInfoHelpFunc
     CORINFO_HELP_BBT_FCN_ENTER,         // record the entry to a method for collecting Tuning data
 
     CORINFO_HELP_PINVOKE_CALLI,         // Indirect pinvoke call
-    CORINFO_HELP_TAILCALL,              // Perform a tail call
+    CORINFO_HELP_TAILCALL,              // Perform a tail call (x86 mechanism)
+    CORINFO_HELP_DISPATCH_TAILCALLS,    // Dispatch tail calls (portable mechanism). Implemented in managed code by System.StubHelpers.StubHelpers.DispatchTailCalls.
+
 
     CORINFO_HELP_GETCURRENTMANAGEDTHREADID,
 
@@ -1808,7 +1810,6 @@ struct CORINFO_TAILCALL_HELPERS
     CORINFO_TAILCALL_HELPERS_FLAGS flags;
     CORINFO_METHOD_HANDLE          hStoreArgs;
     CORINFO_METHOD_HANDLE          hCallTarget;
-    CORINFO_METHOD_HANDLE          hDispatcher;
 };
 
 // This is used to indicate that a finally has been called

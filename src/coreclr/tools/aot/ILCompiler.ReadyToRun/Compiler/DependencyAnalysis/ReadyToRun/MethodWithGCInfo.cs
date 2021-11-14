@@ -94,6 +94,9 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
 
         public override ObjectData GetData(NodeFactory factory, bool relocsOnly)
         {
+            if (!relocsOnly)
+            {
+            }
             return _methodCode;
         }
 
@@ -133,33 +136,26 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
         public byte[] GetFixupBlob(NodeFactory factory)
         {
             Relocation[] relocations = GetData(factory, relocsOnly: true).Relocs;
-
             if (relocations == null)
-            {
                 return null;
-            }
 
             List<FixupCell> fixupCells = null;
 
-            foreach (Relocation reloc in relocations)
+            if (relocations != null)
             {
-                if (reloc.Target is Import fixupCell && fixupCell.EmitPrecode)
+                foreach (Relocation reloc in relocations)
                 {
-                    if (fixupCells == null)
+                    if (reloc.Target is Import fixupCell && fixupCell.EmitPrecode)
                     {
-                        fixupCells = new List<FixupCell>();
+                        fixupCells ??= new List<FixupCell>();
+                        fixupCells.Add(new FixupCell(fixupCell.Table.IndexFromBeginningOfArray, fixupCell.OffsetFromBeginningOfArray));
                     }
-                    fixupCells.Add(new FixupCell(fixupCell.Table.IndexFromBeginningOfArray, fixupCell.OffsetFromBeginningOfArray));
                 }
             }
 
             foreach (ISymbolNode node in _fixups)
             {
-                if (fixupCells == null)
-                {
-                    fixupCells = new List<FixupCell>();
-                }
-
+                fixupCells ??= new List<FixupCell>();
                 Import fixupCell = (Import)node;
                 fixupCells.Add(new FixupCell(fixupCell.Table.IndexFromBeginningOfArray, fixupCell.OffsetFromBeginningOfArray));
             }

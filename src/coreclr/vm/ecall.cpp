@@ -161,6 +161,12 @@ void ECall::PopulateManagedCastHelpers()
     SetJitHelperFunction(CORINFO_HELP_LDELEMA_REF, pDest);
 }
 
+void ECall::PopulateManagedTailCallDispatcher(MethodDesc* pMD)
+{
+    STANDARD_VM_CONTRACT;
+    hlpDynamicFuncTable[DYNAMIC_CORINFO_HELP_DISPATCH_TAILCALLS].pfnHelper = (void*)pMD->GetMultiCallableAddrOfCode();
+}
+
 static CrstStatic gFCallLock;
 
 // This variable is used to force the compiler not to tailcall a function.

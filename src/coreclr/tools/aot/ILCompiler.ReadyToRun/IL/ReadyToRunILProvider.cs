@@ -125,6 +125,10 @@ namespace Internal.IL
                     return null;
                 return new InstantiatedMethodIL(method, methodDefinitionIL);
             }
+            else if (method is ILStubMethod ilStub)
+            {
+                return ilStub.EmitIL();
+            }
             else
             {
                 return null;

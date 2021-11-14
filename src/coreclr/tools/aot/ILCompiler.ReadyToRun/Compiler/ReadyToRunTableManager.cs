@@ -7,7 +7,7 @@ using System.Reflection.Metadata;
 
 using ILCompiler.DependencyAnalysis;
 using ILCompiler.DependencyAnalysisFramework;
-
+using Internal.IL.Stubs;
 using Internal.TypeSystem;
 using Internal.TypeSystem.Ecma;
 
@@ -51,6 +51,7 @@ namespace ILCompiler
         }
 
         private Dictionary<EcmaModule, PerModuleMethodsGenerated> _methodsGenerated = new Dictionary<EcmaModule, PerModuleMethodsGenerated>();
+        private List<IMethodNode> _ilStubs = new List<IMethodNode>();
         private List<IMethodNode> _completeSortedMethods = new List<IMethodNode>();
         private List<IMethodNode> _completeSortedGenericMethods = new List<IMethodNode>();
 
@@ -77,19 +78,30 @@ namespace ILCompiler
                 {
                     Debug.Assert(!_sortedMethods);
                     MethodDesc method = methodNode.Method;
-                    EcmaModule module = (EcmaModule)((EcmaMethod)method.GetTypicalMethodDefinition()).Module;
-                    if (!_methodsGenerated.TryGetValue(module, out var perModuleData))
+                    if (method.GetTypicalMethodDefinition() is EcmaMethod em)
                     {
-                        perModuleData = new PerModuleMethodsGenerated(module);
-                        _methodsGenerated[module] = perModuleData;
+                        EcmaModule module = em.Module;
+                        if (!_methodsGenerated.TryGetValue(module, out var perModuleData))
+                        {
+                            perModuleData = new PerModuleMethodsGenerated(module);
+                            _methodsGenerated[module] = perModuleData;
+                        }
+                        if (method.HasInstantiation || method.OwningType.HasInstantiation)
+                        {
+                            perModuleData.GenericMethodsGenerated.Add(methodNode);
+                        }
+                        else
+                        {
+                            perModuleData.MethodsGenerated.Add(methodNode);
+                        }
                     }
-                    if (method.HasInstantiation || method.OwningType.HasInstantiation)
+                    else if (method is ILStubMethod)
                     {
-                        perModuleData.GenericMethodsGenerated.Add(methodNode);
+                        _ilStubs.Add(methodNode);
                     }
                     else
                     {
-                        perModuleData.MethodsGenerated.Add(methodNode);
+                        Debug.Fail("Unexpected marked method: " + method);
                     }
                 }
             }
@@ -129,6 +141,7 @@ namespace ILCompiler
                         _completeSortedMethods.AddRange(perModuleData.GenericMethodsGenerated);
                         _completeSortedGenericMethods.AddRange(perModuleData.GenericMethodsGenerated);
                     }
+                    _completeSortedMethods.AddRange(_ilStubs);
                     _completeSortedMethods.MergeSort(sortHelper);
                     _completeSortedGenericMethods.MergeSort(sortHelper);
                     _sortedMethods = true;

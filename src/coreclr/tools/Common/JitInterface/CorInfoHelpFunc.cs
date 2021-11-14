@@ -207,7 +207,8 @@ namespace Internal.JitInterface
         CORINFO_HELP_BBT_FCN_ENTER,         // record the entry to a method for collecting Tuning data
 
         CORINFO_HELP_PINVOKE_CALLI,         // Indirect pinvoke call
-        CORINFO_HELP_TAILCALL,              // Perform a tail call
+        CORINFO_HELP_TAILCALL,              // Perform a tail call (x86 mechanism)
+        CORINFO_HELP_DISPATCH_TAILCALLS,    // Dispatch tail calls (portable mechanism)
 
         CORINFO_HELP_GETCURRENTMANAGEDTHREADID,
 

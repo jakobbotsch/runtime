@@ -904,10 +904,9 @@ namespace Internal.JitInterface
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct CORINFO_TAILCALL_HELPERS
     {
-        CORINFO_TAILCALL_HELPERS_FLAGS flags;
-        CORINFO_METHOD_STRUCT_*        hStoreArgs;
-        CORINFO_METHOD_STRUCT_*        hCallTarget;
-        CORINFO_METHOD_STRUCT_*        hDispatcher;
+        public CORINFO_TAILCALL_HELPERS_FLAGS flags;
+        public CORINFO_METHOD_STRUCT_*        hStoreArgs;
+        public CORINFO_METHOD_STRUCT_*        hCallTarget;
     };
 
     public enum CORINFO_THIS_TRANSFORM

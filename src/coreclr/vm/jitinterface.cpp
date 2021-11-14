@@ -13567,6 +13567,12 @@ BOOL LoadDynamicInfoEntry(Module *currentModule,
         {
             DWORD helperNum = CorSigUncompressData(pBlob);
 
+            if (helperNum == READYTORUN_HELPER_DispatchTailCalls)
+            {
+                // Load this helper lazily.
+                ECall::PopulateManagedTailCallDispatcher(TailCallHelp::GetOrLoadTailCallDispatcherMD());
+            }
+
             CorInfoHelpFunc corInfoHelpFunc = MapReadyToRunHelper((ReadyToRunHelper)helperNum);
             if (corInfoHelpFunc != CORINFO_HELP_UNDEF)
             {
@@ -13925,6 +13931,12 @@ bool CEEInfo::getTailCallHelpersInternal(CORINFO_RESOLVED_TOKEN* callToken,
                                          CORINFO_GET_TAILCALL_HELPERS_FLAGS flags,
                                          CORINFO_TAILCALL_HELPERS* pResult)
 {
+    CONTRACTL {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+    } CONTRACTL_END;
+
     MethodDesc* pTargetMD = NULL;
 
     if (callToken != NULL)
@@ -13972,7 +13984,10 @@ bool CEEInfo::getTailCallHelpersInternal(CORINFO_RESOLVED_TOKEN* callToken,
     pResult->flags = (CORINFO_TAILCALL_HELPERS_FLAGS)outFlags;
     pResult->hStoreArgs = (CORINFO_METHOD_HANDLE)pStoreArgsMD;
     pResult->hCallTarget = (CORINFO_METHOD_HANDLE)pCallTargetMD;
-    pResult->hDispatcher = (CORINFO_METHOD_HANDLE)TailCallHelp::GetOrLoadTailCallDispatcherMD();
+
+    // JIT will need tailcall dispatcher after this point, so make sure the necessary
+    // managed helper is loaded.
+    ECall::PopulateManagedTailCallDispatcher(TailCallHelp::GetOrLoadTailCallDispatcherMD());
     return true;
 }
 
