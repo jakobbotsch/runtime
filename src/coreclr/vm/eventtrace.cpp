@@ -6570,6 +6570,12 @@ VOID ETW::MethodLog::SendMethodEvent(MethodDesc *pMethodDesc, DWORD dwEventOptio
         GC_NOTRIGGER;
     } CONTRACTL_END;
 
+    //if (strcmp(pMethodDesc->m_pszDebugMethodName, "TestUninlined") == 0)
+    //{
+    //    printf("here\n");
+    //    _ASSERTE(!"HERE");
+    //}
+
     Module *pModule = NULL;
     Module *pLoaderModule = NULL; // This must not be used except for getting the ModuleID
     ULONGLONG ullMethodStartAddress=0, ullModuleID=0, ullMethodIdentifier=0;
@@ -6962,6 +6968,7 @@ VOID ETW::MethodLog::SendEventsForNgenMethods(Module *pModule, DWORD dwEventOpti
             if (hotDesc != NULL)
             {
                 ETW::MethodLog::SendMethodEvent(hotDesc, dwEventOptions, FALSE);
+                ETW::MethodLog::SendMethodILToNativeMapEvent(hotDesc, dwEventOptions, hotDesc->GetNativeCode(), 0);
             }
         }
 

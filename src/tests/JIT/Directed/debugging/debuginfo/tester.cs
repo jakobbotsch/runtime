@@ -51,18 +51,18 @@ public unsafe class DebugInfoTest
             if (mi.GetCustomAttribute<ExpectedILMappings>() != null)
             {
                 RuntimeHelpers.PrepareMethod(mi.MethodHandle);
+                s_methodsToValidate.Add(mi);
             }
         }
     }
 
+    private static readonly HashSet<MethodBase> s_methodsToValidate = new();
     private static Func<int> ValidateMappings(EventPipeEventSource source)
     {
         List<(long MethodID, OptimizationTier Tier, (int ILOffset, int NativeOffset)[] Mappings)> methodsWithMappings = new();
         Dictionary<long, OptimizationTier> methodTier = new();
 
-        source.Clr.MethodLoad += e => methodTier[e.MethodID] = e.OptimizationTier;
-        source.Clr.MethodLoadVerbose += e => methodTier[e.MethodID] = e.OptimizationTier;
-        source.Clr.MethodILToNativeMap += e =>
+        void HandleILTable(MethodILToNativeMapTraceData e)
         {
             var mappings = new (int, int)[e.CountOfMapEntries];
             for (int i = 0; i < mappings.Length; i++)
@@ -74,19 +74,53 @@ public unsafe class DebugInfoTest
             methodsWithMappings.Add((e.MethodID, tier, mappings));
         };
 
+        source.Clr.MethodLoad += e => methodTier[e.MethodID] = e.OptimizationTier;
+        source.Clr.MethodLoadVerbose += e => methodTier[e.MethodID] = e.OptimizationTier;
+        source.Clr.MethodILToNativeMap += HandleILTable;
+
+        void HandleLoadWithLogging(MethodLoadUnloadTraceData e)
+        {
+            string name = GetMethodFullName(s_getMethodBaseByHandle(null, (IntPtr)(void*)e.MethodID));
+            if (name.Contains("tests_d") || name.Contains("tests_r"))
+                Console.WriteLine("Load for {0} at {1}", name, e.OptimizationTier);
+        }
+        void HandleLoadWithLogging2(MethodLoadUnloadVerboseTraceData e)
+        {
+            string name = GetMethodFullName(s_getMethodBaseByHandle(null, (IntPtr)(void*)e.MethodID));
+            if (name.Contains("tests_d") || name.Contains("tests_r"))
+                Console.WriteLine("Load for {0} at {1}", name, e.OptimizationTier);
+        }
+        ClrRundownTraceEventParser rundownParser = new(source);
+        rundownParser.MethodDCStop += e => { HandleLoadWithLogging(e); methodTier[e.MethodID] = e.OptimizationTier; };
+        rundownParser.MethodDCStopVerbose += e => { HandleLoadWithLogging2(e); methodTier[e.MethodID] = e.OptimizationTier; };
+        rundownParser.MethodILToNativeMapDCStop += e =>
+        {
+            string name = GetMethodFullName(s_getMethodBaseByHandle(null, (IntPtr)(void*)e.MethodID));
+            if (name.Contains("tests_d") || name.Contains("tests_r"))
+                Console.WriteLine("Got IL table for {0}", name);
+
+            HandleILTable(e);
+        };
+
         return () =>
         {
             int result = 100;
             foreach ((long methodID, OptimizationTier tier, (int ILOffset, int NativeOffset)[] mappings) in methodsWithMappings)
             {
                 MethodBase meth = s_getMethodBaseByHandle(null, (IntPtr)(void*)methodID);
+                if (meth == null)
+                {
+                    Console.WriteLine("ID: {0} was null", methodID);
+                    continue;
+                }
+
                 ExpectedILMappings attrib = meth.GetCustomAttribute<ExpectedILMappings>();
                 if (attrib == null)
                 {
                     continue;
                 }
 
-                string name = $"[{meth.DeclaringType.Assembly.GetName().Name}]{meth.DeclaringType.FullName}.{meth.Name}";
+                s_methodsToValidate.Remove(meth);
 
                 // If DebuggableAttribute is saying that the assembly must be debuggable, then verify debug mappings.
                 // Otherwise verify release mappings.
@@ -97,7 +131,7 @@ public unsafe class DebugInfoTest
                 DebuggableAttribute debuggableAttrib = meth.DeclaringType.Assembly.GetCustomAttribute<DebuggableAttribute>();
                 bool debuggableMappings = debuggableAttrib != null && debuggableAttrib.IsJITOptimizerDisabled;
 
-                Console.WriteLine("{0}: Validate mappings for {1} codegen (tier: {2})", name, debuggableMappings ? "debuggable" : "optimized", tier);
+                Console.WriteLine("{0}: Validate mappings for {1} codegen (tier: {2})", GetMethodFullName(meth), debuggableMappings ? "debuggable" : "optimized", tier);
 
                 int[] expected = debuggableMappings ? attrib.Debug : attrib.Opts;
                 if (expected == null)
@@ -119,8 +153,25 @@ public unsafe class DebugInfoTest
                 }
             }
 
+            if (s_methodsToValidate.Count > 0)
+            {
+                Console.WriteLine("Failure: {0} methods were not validated because we saw no ETW events", s_methodsToValidate.Count);
+                foreach (MethodBase mb in s_methodsToValidate)
+                    Console.WriteLine("  {0}", GetMethodFullName(mb));
+
+                result = -1;
+            }
+
             return result;
         };
+    }
+
+    private static string GetMethodFullName(MethodBase meth)
+    {
+        if (meth == null)
+            return "(null)";
+        string name = $"[{meth.DeclaringType.Assembly.GetName().Name}]{meth.DeclaringType.FullName}.{meth.Name}";
+        return name;
     }
 
     // Validate that all IL offsets we expected had mappings generated for them.
@@ -141,7 +192,7 @@ public unsafe class DebugInfoTest
         Type runtimeMethodHandleInternalType = typeof(RuntimeMethodHandle).Assembly.GetType("System.RuntimeMethodHandleInternal");
         Type runtimeTypeType = typeof(RuntimeMethodHandle).Assembly.GetType("System.RuntimeType");
         MethodInfo getMethodBaseMethod = runtimeTypeType.GetMethod("GetMethodBase", BindingFlags.NonPublic | BindingFlags.Static, new[] { runtimeTypeType, runtimeMethodHandleInternalType });
-        s_getMethodBaseByHandle = (delegate*<object, IntPtr, MethodBase>)getMethodBaseMethod.MethodHandle .GetFunctionPointer();
+        s_getMethodBaseByHandle = (delegate*<object, IntPtr, MethodBase>)getMethodBaseMethod.MethodHandle.GetFunctionPointer();
     }
 
     // Needed to go from MethodID -> MethodBase
