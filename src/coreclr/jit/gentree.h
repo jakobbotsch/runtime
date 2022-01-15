@@ -3713,8 +3713,9 @@ enum GenTreeCallFlags : unsigned int
     GTF_CALL_M_SUPPRESS_GC_TRANSITION  = 0x01000000, // suppress the GC transition (i.e. during a pinvoke) but a separate GC safe point is required.
     GTF_CALL_M_EXP_RUNTIME_LOOKUP      = 0x02000000, // this call needs to be tranformed into CFG for the dynamic dictionary expansion feature.
     GTF_CALL_M_STRESS_TAILCALL         = 0x04000000, // the call is NOT "tail" prefixed but GTF_CALL_M_EXPLICIT_TAILCALL was added because of tail call stress mode
-    GTF_CALL_M_EXPANDED_EARLY          = 0x08000000, // the Virtual Call target address is expanded and placed in gtControlExpr in Morph rather than in Lower
+    GTF_CALL_M_TARGET_EXPANDED_EARLY   = 0x08000000, // the Virtual Call target address is expanded and placed in gtControlExpr in Morph rather than in Lower
     GTF_CALL_M_LATE_DEVIRT             = 0x10000000, // this call has late devirtualzation info
+    GTF_CALL_M_ABI_EXPANDED_LATE       = 0x20000000, // this call is ABI expanded late (in lowering instead of fgMorphArgs)
 };
 
 inline constexpr GenTreeCallFlags operator ~(GenTreeCallFlags a)
@@ -4632,19 +4633,34 @@ struct GenTreeCall final : public GenTree
         return (gtCallMoreFlags & GTF_CALL_M_EXP_RUNTIME_LOOKUP) != 0;
     }
 
-    void SetExpandedEarly()
+    void SetTargetExpandedEarly()
     {
-        gtCallMoreFlags |= GTF_CALL_M_EXPANDED_EARLY;
+        gtCallMoreFlags |= GTF_CALL_M_TARGET_EXPANDED_EARLY;
     }
 
-    void ClearExpandedEarly()
+    void ClearTargetExpandedEarly()
     {
-        gtCallMoreFlags &= ~GTF_CALL_M_EXPANDED_EARLY;
+        gtCallMoreFlags &= ~GTF_CALL_M_TARGET_EXPANDED_EARLY;
     }
 
-    bool IsExpandedEarly() const
+    bool IsTargetExpandedEarly() const
     {
-        return (gtCallMoreFlags & GTF_CALL_M_EXPANDED_EARLY) != 0;
+        return (gtCallMoreFlags & GTF_CALL_M_TARGET_EXPANDED_EARLY) != 0;
+    }
+
+    void SetABIExpandedLate()
+    {
+        gtCallMoreFlags |= GTF_CALL_M_ABI_EXPANDED_LATE;
+    }
+
+    void ClearABIExpandedLate()
+    {
+        gtCallMoreFlags |= GTF_CALL_M_ABI_EXPANDED_LATE;
+    }
+
+    bool IsABIExpandedLate() const
+    {
+        return (gtCallMoreFlags & GTF_CALL_M_ABI_EXPANDED_LATE) != 0;
     }
 
     //-----------------------------------------------------------------------------------------

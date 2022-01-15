@@ -535,6 +535,9 @@ CONFIG_INTEGER(JitSaveFpLrWithCalleeSavedRegisters, W("JitSaveFpLrWithCalleeSave
 
 CONFIG_INTEGER(JitEnregStructLocals, W("JitEnregStructLocals"), 1) // Allow to enregister locals with struct type.
 
+// Expand architectural details of these calls late (in lowering instead of fgMorphArgs in morph)
+CONFIG_METHODSET(JitExpandABILate, W("JitExpandABILate"))
+
 #undef CONFIG_INTEGER
 #undef CONFIG_STRING
 #undef CONFIG_METHODSET

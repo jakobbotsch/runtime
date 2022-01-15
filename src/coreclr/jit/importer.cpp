@@ -8882,7 +8882,7 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
                 if (opts.compExpandCallsEarly)
                 {
                     // Mark this method to expand the virtual call target early in fgMorpgCall
-                    call->AsCall()->SetExpandedEarly();
+                    call->AsCall()->SetTargetExpandedEarly();
                 }
                 break;
             }
@@ -9534,6 +9534,30 @@ DONE:
     assert(call->AsCall()->callSig == nullptr);
     call->AsCall()->callSig  = new (this, CMK_Generic) CORINFO_SIG_INFO;
     *call->AsCall()->callSig = *sig;
+#endif
+
+#ifdef DEBUG
+    if (!JitConfig.JitExpandABILate().isEmpty())
+    {
+        GenTreeCall* c = call->AsCall();
+        bool expandLate = false;
+        if (c->gtCallType == CT_INDIRECT)
+        {
+            expandLate = JitConfig.JitExpandABILate().contains("calli", nullptr, nullptr);
+        }
+        else
+        {
+            assert((c->gtCallType == CT_USER_FUNC) || (c->gtCallType == CT_HELPER));
+            const char* className;
+            const char* methodName = eeGetMethodName(c->gtCallMethHnd, &className);
+            expandLate = JitConfig.JitExpandABILate().contains(methodName, className, sig);
+        }
+
+        if (expandLate)
+        {
+            c->SetABIExpandedLate();
+        }
+    }
 #endif
 
     // Final importer checks for calls flagged as tail calls.

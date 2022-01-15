@@ -3421,6 +3421,11 @@ void Compiler::fgInitArgInfo(GenTreeCall* call)
 #endif
 GenTreeCall* Compiler::fgMorphArgs(GenTreeCall* call)
 {
+#ifdef DEBUG
+    if (call->IsABIExpandedLate())
+        return call;
+#endif
+
     GenTreeCall::Use* args;
     GenTree*          argx;
 
@@ -3465,7 +3470,7 @@ GenTreeCall* Compiler::fgMorphArgs(GenTreeCall* call)
         call->fgArgInfo->UpdateRegArg(thisArgEntry, argx, reMorphing);
         flagsSummary |= argx->gtFlags;
 
-        if (!reMorphing && call->IsExpandedEarly() && call->IsVirtualVtable())
+        if (!reMorphing && call->IsTargetExpandedEarly() && call->IsVirtualVtable())
         {
             if (!argx->OperIsLocal())
             {
@@ -7438,7 +7443,7 @@ GenTree* Compiler::fgMorphPotentialTailCall(GenTreeCall* call)
 
     // Are we currently planning to expand the gtControlExpr as an early virtual call target?
     //
-    if (call->IsExpandedEarly() && call->IsVirtualVtable())
+    if (call->IsTargetExpandedEarly() && call->IsVirtualVtable())
     {
         // It isn't alway profitable to expand a virtual call early
         //
@@ -7452,14 +7457,14 @@ GenTree* Compiler::fgMorphPotentialTailCall(GenTreeCall* call)
             // (see LowerTailCallViaJitHelper as it needs some work
             // for us to be able to expand this earlier in morph)
             //
-            call->ClearExpandedEarly();
+            call->ClearTargetExpandedEarly();
         }
         else if ((tailCallResult == TAILCALL_OPTIMIZED) &&
                  ((call->gtCallThisArg->GetNode()->gtFlags & GTF_SIDE_EFFECT) != 0))
         {
             // We generate better code when we expand this late in lower instead.
             //
-            call->ClearExpandedEarly();
+            call->ClearTargetExpandedEarly();
         }
     }
 
@@ -9184,7 +9189,7 @@ GenTree* Compiler::fgMorphCall(GenTreeCall* call)
 
     // Should we expand this virtual method call target early here?
     //
-    if (call->IsExpandedEarly() && call->IsVirtualVtable())
+    if (call->IsTargetExpandedEarly() && call->IsVirtualVtable())
     {
         // We only expand the Vtable Call target once in the global morph phase
         if (fgGlobalMorph)
