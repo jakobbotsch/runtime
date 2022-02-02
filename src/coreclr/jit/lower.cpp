@@ -164,7 +164,10 @@ GenTree* Lowering::LowerNode(GenTree* node)
             return LowerSwitch(node);
 
         case GT_CALL:
-            LowerCall(node);
+            if (node->AsCall()->IsABIExpandedLate())
+                LowerLateABIExpandedCall(node->AsCall());
+            else
+                LowerCall(node);
             break;
 
         case GT_LT:
@@ -1717,6 +1720,98 @@ void Lowering::LowerCall(GenTree* node)
     JITDUMP("lowering call (after):\n");
     DISPTREERANGE(BlockRange(), call);
     JITDUMP("\n");
+
+#if FEATURE_FIXED_OUT_ARGS
+    if (!call->IsFastTailCall())
+    {
+        m_outAreaSize = max(m_outAreaSize, call->fgArgInfo->GetOutArgSize());
+    }
+#endif
+}
+
+void Lowering::LowerLateABIExpandedCall(GenTreeCall* call)
+{
+    comp->fgInitArgInfo(call);
+
+    GenTree* controlExpr          = nullptr;
+    bool     callWasExpandedEarly = false;
+
+    // for x86, this is where we record ESP for checking later to make sure stack is balanced
+
+    // Check for Delegate.Invoke(). If so, we inline it. We get the
+    // target-object and target-function from the delegate-object, and do
+    // an indirect call.
+    if (call->IsDelegateInvoke())
+    {
+        controlExpr = LowerDelegateInvoke(call);
+    }
+    else
+    {
+        //  Virtual and interface calls
+        switch (call->gtFlags & GTF_CALL_VIRT_KIND_MASK)
+        {
+            case GTF_CALL_VIRT_STUB:
+                controlExpr = LowerVirtualStubCall(call);
+                break;
+
+            case GTF_CALL_VIRT_VTABLE:
+                assert(call->IsVirtualVtable());
+                if (!call->IsTargetExpandedEarly())
+                {
+                    assert(call->gtControlExpr == nullptr);
+                    controlExpr = LowerVirtualVtableCall(call);
+                }
+                else
+                {
+                    callWasExpandedEarly = true;
+                    controlExpr          = call->gtControlExpr;
+                }
+                break;
+
+            case GTF_CALL_NONVIRT:
+                if (call->IsUnmanaged())
+                {
+                    controlExpr = LowerNonvirtPinvokeCall(call);
+                }
+                else if (call->gtCallType == CT_INDIRECT)
+                {
+                    controlExpr = LowerIndirectNonvirtCall(call);
+                }
+                else
+                {
+                    controlExpr = LowerDirectCall(call);
+                }
+                break;
+
+            default:
+                noway_assert(!"strange call type");
+                break;
+        }
+    }
+
+    if (call->IsTailCallViaJitHelper())
+    {
+        // Either controlExpr or gtCallAddr must contain real call target.
+        if (controlExpr == nullptr)
+        {
+            assert(call->gtCallType == CT_INDIRECT);
+            assert(call->gtCallAddr != nullptr);
+            controlExpr = call->gtCallAddr;
+        }
+
+        assert(!"Fix this lowering");
+        controlExpr = LowerTailCallViaJitHelper(call, controlExpr);
+    }
+
+    // Now lower args by creating PUTARG_REG nodes.
+
+#if FEATURE_FIXED_OUT_ARGS
+    if (!call->IsFastTailCall())
+    {
+        m_outAreaSize = max(m_outAreaSize, MIN_ARG_AREA_FOR_CALL);
+        m_outAreaSize = max(m_outAreaSize, call->fgArgInfo->GetOutArgSize());
+    }
+#endif
 }
 
 // Inserts profiler hook, GT_PROF_HOOK for a tail call node.
@@ -6083,6 +6178,48 @@ PhaseStatus Lowering::DoPhase()
     // impact of any dead code removal. Note this may leave us with
     // tracked vars that have zero refs.
     comp->lvaComputeRefCounts(isRecompute, setSlotNumbers);
+
+#if FEATURE_FIXED_OUT_ARGS
+    // Finish computing the outgoing args area size
+    //
+    // Need to make sure the MIN_ARG_AREA_FOR_CALL space is added to the frame if:
+    // 1. there are calls to THROW_HELPER methods.
+    // 2. we are generating profiling Enter/Leave/TailCall hooks. This will ensure
+    //    that even methods without any calls will have outgoing arg area space allocated.
+    // 3. We will be generating calls to PInvoke helpers. TODO: This shouldn't be required because
+    //    if there are any calls to PInvoke methods, there should be a call that we processed
+    //    above. However, we still generate calls to PInvoke prolog helpers even if we have dead code
+    //    eliminated all the calls.
+    // 4. We will be generating a stack cookie check. In this case we can call a helper to fail fast.
+    //
+    // An example for these two cases is Windows Amd64, where the ABI requires to have 4 slots for
+    // the outgoing arg space if the method makes any calls.
+    if (m_outAreaSize < MIN_ARG_AREA_FOR_CALL)
+    {
+        if (comp->compUsesThrowHelper || comp->compIsProfilerHookNeeded() ||
+            (comp->compMethodRequiresPInvokeFrame() && !comp->opts.ShouldUsePInvokeHelpers()) || comp->getNeedsGSSecurityCookie())
+        {
+            m_outAreaSize = MIN_ARG_AREA_FOR_CALL;
+            JITDUMP("Bumping outgoing area size to %u for possible helper or profile hook call", m_outAreaSize);
+        }
+    }
+
+    // If a function has localloc, we will need to move the outgoing arg space when the
+    // localloc happens. When we do this, we need to maintain stack alignment. To avoid
+    // leaving alignment-related holes when doing this move, make sure the outgoing
+    // argument space size is a multiple of the stack alignment by aligning up to the next
+    // stack alignment boundary.
+    if (comp->compLocallocUsed)
+    {
+        m_outAreaSize = roundUp(m_outAreaSize, STACK_ALIGN);
+        JITDUMP("Bumping outgoing area size to %u for localloc", m_outAreaSize);
+    }
+
+    assert((m_outAreaSize % TARGET_POINTER_SIZE) == 0);
+
+    comp->lvaOutgoingArgSpaceSize = m_outAreaSize;
+    comp->lvaOutgoingArgSpaceSize.MarkAsReadOnly();
+#endif
 
     return PhaseStatus::MODIFIED_EVERYTHING;
 }

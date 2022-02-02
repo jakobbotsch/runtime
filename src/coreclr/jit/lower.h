@@ -24,6 +24,7 @@ class Lowering final : public Phase
 public:
     inline Lowering(Compiler* compiler, LinearScanInterface* lsra)
         : Phase(compiler, PHASE_LOWERING), vtableCallTemp(BAD_VAR_NUM)
+        , m_outAreaSize(0)
     {
         m_lsra = (LinearScan*)lsra;
         assert(m_lsra);
@@ -123,6 +124,7 @@ private:
     // Call Lowering
     // ------------------------------
     void LowerCall(GenTree* call);
+    void LowerLateABIExpandedCall(GenTreeCall* call);
 #ifndef TARGET_64BIT
     GenTree* DecomposeLongCompare(GenTree* cmp);
 #endif
@@ -613,6 +615,7 @@ private:
     unsigned      vtableCallTemp;       // local variable we use as a temp for vtable calls
     SideEffectSet m_scratchSideEffects; // SideEffectSet used for IsSafeToContainMem and isRMWIndirCandidate
     BasicBlock*   m_block;
+    unsigned      m_outAreaSize;
 };
 
 #endif // _LOWER_H_

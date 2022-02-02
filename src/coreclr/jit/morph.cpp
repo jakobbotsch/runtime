@@ -3368,6 +3368,10 @@ void Compiler::fgInitArgInfo(GenTreeCall* call)
         DEBUG_ARG_SLOTS_ONLY(argSlots += size;)
     } // end foreach argument loop
 
+#if FEATURE_FIXED_OUT_ARGS
+    call->fgArgInfo->SetOutArgSize(GetOutgoingArgByteSize(call->fgArgInfo->GetNextSlotByteOffset()));
+#endif
+
 #ifdef DEBUG
     if (verbose)
     {
@@ -3957,7 +3961,7 @@ GenTreeCall* Compiler::fgMorphArgs(GenTreeCall* call)
         opts.compNeedToAlignFrame = true;
 #endif // UNIX_AMD64_ABI
 
-        const unsigned outgoingArgSpaceSize = GetOutgoingArgByteSize(call->fgArgInfo->GetNextSlotByteOffset());
+        const unsigned outgoingArgSpaceSize = call->fgArgInfo->GetOutArgSize();
 
 #if defined(DEBUG_ARG_SLOTS)
         unsigned preallocatedArgCount = 0;
