@@ -1349,6 +1349,11 @@ public:
         return OperIsCompare(OperGet());
     }
 
+    bool OperIsBitcast() const
+    {
+        return OperIs(GT_BITCAST);
+    }
+
     static bool OperIsShift(genTreeOps gtOper)
     {
         return (gtOper == GT_LSH) || (gtOper == GT_RSH) || (gtOper == GT_RSZ);
@@ -4101,6 +4106,7 @@ struct GenTreeCall final : public GenTree
 
     UseList LateArgs()
     {
+        assert(!IsABIExpandedLate());
         return UseList(gtCallLateArgs);
     }
 

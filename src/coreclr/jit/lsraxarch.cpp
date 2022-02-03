@@ -1083,7 +1083,7 @@ int LinearScan::BuildCall(GenTreeCall* call)
 
     // First, determine internal registers.
     // We will need one for any float arguments to a varArgs call.
-    for (GenTreeCall::Use& use : call->LateArgs())
+    for (GenTreeCall::Use& use : call->IsABIExpandedLate() ? call->Args() : call->LateArgs())
     {
         GenTree* argNode = use.GetNode();
         if (argNode->OperIsPutArgReg())
@@ -1100,8 +1100,18 @@ int LinearScan::BuildCall(GenTreeCall* call)
         }
     }
 
+    if (call->IsABIExpandedLate() && (call->gtCallThisArg != nullptr))
+    {
+        // 'this' is a normal arg for late expanded calls
+        GenTreeCall::Use* thisUse = call->gtCallThisArg;
+        GenTree* thisNode = thisUse->GetNode();
+        assert(thisNode->OperIsPutArgReg());
+        srcCount++;
+        BuildUse(thisNode, genRegMask(thisNode->GetRegNum()));
+    }
+
     // Now, count reg args
-    for (GenTreeCall::Use& use : call->LateArgs())
+    for (GenTreeCall::Use& use : call->IsABIExpandedLate() ? call->Args() : call->LateArgs())
     {
         // By this point, lowering has ensured that all call arguments are one of the following:
         // - an arg setup store

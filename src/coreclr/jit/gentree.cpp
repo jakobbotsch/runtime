@@ -1064,10 +1064,37 @@ void GenTreeCall::ReplaceCallOperand(GenTree** useEdge, GenTree* replacement)
         }
         else
         {
+#ifdef DEBUG
             assert((replacement->gtFlags & GTF_LATE_ARG) == 0);
 
-            fgArgTabEntry* fp = Compiler::gtArgEntryByNode(this, replacement);
-            assert(fp->GetNode() == replacement);
+            if (IsABIExpandedLate())
+            {
+                bool found = false;
+                if (gtCallThisArg != nullptr && useEdge == &gtCallThisArg->NodeRef())
+                {
+                    found = true;
+                }
+
+                if (!found)
+                {
+                    for (GenTreeCall::Use& use : Args())
+                    {
+                        if (useEdge == &use.NodeRef())
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+
+                assert(found || !"Could not find replaced call operand");
+            }
+            else
+            {
+                fgArgTabEntry* fp = Compiler::gtArgEntryByNode(this, replacement);
+                assert(useEdge == &fp->use->NodeRef() || useEdge == &fp->lateUse->NodeRef());
+            }
+#endif
         }
     }
 }
@@ -2029,9 +2056,12 @@ AGAIN:
                 hash = genTreeHashAdd(hash, tree->AsCall()->gtCallMethHnd);
             }
 
-            for (GenTreeCall::Use& use : tree->AsCall()->LateArgs())
+            if (!tree->AsCall()->IsABIExpandedLate())
             {
-                hash = genTreeHashAdd(hash, gtHashValue(use.GetNode()));
+                for (GenTreeCall::Use& use : tree->AsCall()->LateArgs())
+                {
+                    hash = genTreeHashAdd(hash, gtHashValue(use.GetNode()));
+                }
             }
             break;
 
@@ -10922,13 +10952,16 @@ void Compiler::gtDispTree(GenTree*     tree,
                                 (call->gtControlExpr == lastChild) ? IIArcBottom : IIArc, "control expr", topOnly);
                 }
 
-                int lateArgIndex = 0;
-                for (GenTreeCall::Use& use : call->LateArgs())
+                if (!call->IsABIExpandedLate())
                 {
-                    IndentInfo arcType = (use.GetNext() == nullptr) ? IIArcBottom : IIArc;
-                    gtGetLateArgMsg(call, use.GetNode(), lateArgIndex, bufp, sizeof(buf));
-                    gtDispChild(use.GetNode(), indentStack, arcType, bufp, topOnly);
-                    lateArgIndex++;
+                    int lateArgIndex = 0;
+                    for (GenTreeCall::Use& use : call->LateArgs())
+                    {
+                        IndentInfo arcType = (use.GetNext() == nullptr) ? IIArcBottom : IIArc;
+                        gtGetLateArgMsg(call, use.GetNode(), lateArgIndex, bufp, sizeof(buf));
+                        gtDispChild(use.GetNode(), indentStack, arcType, bufp, topOnly);
+                        lateArgIndex++;
+                    }
                 }
             }
         }
@@ -11377,6 +11410,7 @@ void Compiler::gtDispLIRNode(GenTree* node, const char* prefixMsg /* = nullptr *
 
     // Visit operands
     IndentInfo operandArc = IIArcTop;
+    int argIndex = 0;
     for (GenTree* operand : node->Operands())
     {
         if (operand->IsArgPlaceHolderNode() || !operand->IsValue())
@@ -11392,6 +11426,7 @@ void Compiler::gtDispLIRNode(GenTree* node, const char* prefixMsg /* = nullptr *
             {
                 sprintf_s(buf, sizeof(buf), "this in %s", compRegVarName(REG_ARG_0));
                 displayOperand(operand, buf, operandArc, indentStack, prefixIndent);
+                argIndex++;
             }
             else if (operand == call->gtCallAddr)
             {
@@ -11404,6 +11439,12 @@ void Compiler::gtDispLIRNode(GenTree* node, const char* prefixMsg /* = nullptr *
             else if (operand == call->gtCallCookie)
             {
                 displayOperand(operand, "cookie", operandArc, indentStack, prefixIndent);
+            }
+            else if (call->fgArgInfo == nullptr)
+            {
+                gtGetArgMsg(call, operand, argIndex, buf, sizeof(buf));
+                displayOperand(operand, buf, operandArc, indentStack, prefixIndent);
+                argIndex++;
             }
             else
             {
@@ -22028,7 +22069,7 @@ bool GenTreeLclFld::IsOffsetMisaligned() const
 
 bool GenTree::IsInvariant() const
 {
-    return OperIsConst() || Compiler::impIsAddressInLocal(this);
+    return OperIsConst() || OperIsLocalAddr() || Compiler::impIsAddressInLocal(this);
 }
 
 //------------------------------------------------------------------------

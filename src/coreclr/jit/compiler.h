@@ -11539,12 +11539,15 @@ public:
                     }
                 }
 
-                for (GenTreeCall::Use& use : call->LateArgs())
+                if (!call->IsABIExpandedLate())
                 {
-                    result = WalkTree(&use.NodeRef(), call);
-                    if (result == fgWalkResult::WALK_ABORT)
+                    for (GenTreeCall::Use& use : call->LateArgs())
                     {
-                        return result;
+                        result = WalkTree(&use.NodeRef(), call);
+                        if (result == fgWalkResult::WALK_ABORT)
+                        {
+                            return result;
+                        }
                     }
                 }
 

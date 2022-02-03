@@ -125,6 +125,8 @@ private:
     // ------------------------------
     void LowerCall(GenTree* call);
     void LowerLateABIExpandedCall(GenTreeCall* call);
+    void LowerLateABIExpandedArg(GenTreeCall* call, fgArgTabEntry* arg);
+    bool ArgNeedsTemp(fgArgTabEntry* arg, GenTreeCall* call, bool* isInvariant);
 #ifndef TARGET_64BIT
     GenTree* DecomposeLongCompare(GenTree* cmp);
 #endif

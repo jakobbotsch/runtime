@@ -853,6 +853,7 @@ fgArgTabEntry* fgArgInfo::AddRegArg(unsigned          argNum,
     curArgTabEntry->isBackFilled       = false;
     curArgTabEntry->nonStandardArgKind = NonStandardArgKind::None;
     curArgTabEntry->isStruct           = isStruct;
+    curArgTabEntry->passedByRef = false;
     curArgTabEntry->SetIsVararg(isVararg);
     curArgTabEntry->SetByteAlignment(byteAlignment);
     curArgTabEntry->SetByteSize(byteSize, isStruct, isFloatHfa);
@@ -955,6 +956,7 @@ fgArgTabEntry* fgArgInfo::AddStkArg(unsigned          argNum,
     curArgTabEntry->nonStandardArgKind = NonStandardArgKind::None;
     curArgTabEntry->isStruct           = isStruct;
     curArgTabEntry->SetIsVararg(isVararg);
+    curArgTabEntry->passedByRef = false;
 
     curArgTabEntry->SetByteAlignment(byteAlignment);
     curArgTabEntry->SetByteSize(byteSize, isStruct, isFloatHfa);
@@ -3427,7 +3429,15 @@ GenTreeCall* Compiler::fgMorphArgs(GenTreeCall* call)
 {
 #ifdef DEBUG
     if (call->IsABIExpandedLate())
+    {
+        for (GenTree** use : call->UseEdges())
+        {
+            *use = fgMorphTree(*use);
+            call->gtFlags |= (*use)->gtFlags & GTF_ALL_EFFECT;
+        }
+
         return call;
+    }
 #endif
 
     GenTreeCall::Use* args;

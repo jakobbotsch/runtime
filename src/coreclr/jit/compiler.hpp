@@ -4374,11 +4374,14 @@ void GenTree::VisitOperands(TVisitor visitor)
                 }
             }
 
-            for (GenTreeCall::Use& use : call->LateArgs())
+            if (!call->IsABIExpandedLate())
             {
-                if (visitor(use.GetNode()) == VisitResult::Abort)
+                for (GenTreeCall::Use& use : call->LateArgs())
                 {
-                    return;
+                    if (visitor(use.GetNode()) == VisitResult::Abort)
+                    {
+                        return;
+                    }
                 }
             }
 

@@ -3907,9 +3907,12 @@ void Compiler::fgSetTreeSeqHelper(GenTree* tree, bool isLIR)
                 fgSetTreeSeqHelper(use.GetNode(), isLIR);
             }
 
-            for (GenTreeCall::Use& use : tree->AsCall()->LateArgs())
+            if (!tree->AsCall()->IsABIExpandedLate())
             {
-                fgSetTreeSeqHelper(use.GetNode(), isLIR);
+                for (GenTreeCall::Use& use : tree->AsCall()->LateArgs())
+                {
+                    fgSetTreeSeqHelper(use.GetNode(), isLIR);
+                }
             }
 
             if ((tree->AsCall()->gtCallType == CT_INDIRECT) && (tree->AsCall()->gtCallCookie != nullptr))

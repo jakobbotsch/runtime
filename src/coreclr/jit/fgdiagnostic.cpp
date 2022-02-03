@@ -3046,13 +3046,16 @@ void Compiler::fgDebugCheckFlags(GenTree* tree)
                 }
             }
 
-            for (GenTreeCall::Use& use : call->LateArgs())
+            if (!call->IsABIExpandedLate())
             {
-                if ((use.GetNode()->gtFlags & GTF_ASG) != 0)
+                for (GenTreeCall::Use& use : call->LateArgs())
                 {
-                    // TODO-Cleanup: this is a patch for a violation in our GT_ASG propagation.
-                    // see https://github.com/dotnet/runtime/issues/13758
-                    actualFlags |= GTF_ASG;
+                    if ((use.GetNode()->gtFlags & GTF_ASG) != 0)
+                    {
+                        // TODO-Cleanup: this is a patch for a violation in our GT_ASG propagation.
+                        // see https://github.com/dotnet/runtime/issues/13758
+                        actualFlags |= GTF_ASG;
+                    }
                 }
             }
 

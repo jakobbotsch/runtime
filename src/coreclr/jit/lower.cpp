@@ -1731,6 +1731,8 @@ void Lowering::LowerCall(GenTree* node)
 
 void Lowering::LowerLateABIExpandedCall(GenTreeCall* call)
 {
+    JITDUMP("Lowering late ABI expanded call (before):\n");
+    DISPTREERANGE(BlockRange(), call);
     comp->fgInitArgInfo(call);
 
     GenTree* controlExpr          = nullptr;
@@ -1803,7 +1805,10 @@ void Lowering::LowerLateABIExpandedCall(GenTreeCall* call)
         controlExpr = LowerTailCallViaJitHelper(call, controlExpr);
     }
 
-    // Now lower args by creating PUTARG_REG nodes.
+    for (unsigned i = 0; i < call->fgArgInfo->ArgCount(); i++)
+    {
+        LowerLateABIExpandedArg(call, call->fgArgInfo->GetArgEntry(i, false));
+    }
 
 #if FEATURE_FIXED_OUT_ARGS
     if (!call->IsFastTailCall())
@@ -1812,6 +1817,128 @@ void Lowering::LowerLateABIExpandedCall(GenTreeCall* call)
         m_outAreaSize = max(m_outAreaSize, call->fgArgInfo->GetOutArgSize());
     }
 #endif
+
+    JITDUMP("Lowering late ABI expanded call (after):\n");
+    DISPTREERANGE(BlockRange(), call);
+}
+
+void Lowering::LowerLateABIExpandedArg(GenTreeCall* call, fgArgTabEntry* arg)
+{
+    assert(!arg->isLateArg());
+
+    GenTree* node = arg->GetNode();
+
+    bool isInvariant = false;
+    if (ArgNeedsTemp(arg, call, &isInvariant))
+    {
+        // TODO: Check if we can forego a copy here (e.g. because it is the last use)
+        unsigned lclNum;
+        if (arg->passedByRef)
+        {
+            lclNum = comp->lvaGrabTemp(true DEBUGARG("call-arg by-value struct arg"));
+            CORINFO_CLASS_HANDLE argClass = comp->gtGetStructHandle(node);
+            comp->lvaSetStruct(lclNum, argClass, false);
+            if (call->IsVarargs())
+            {
+                comp->lvaSetStructUsedAsVarArg(lclNum);
+            }
+            comp->lvaSetVarAddrExposed(lclNum DEBUGARG(AddressExposedReason::ESCAPE_ADDRESS));
+        }
+        else
+        {
+            lclNum = comp->lvaGrabTemp(true DEBUGARG("call-arg"));
+        }
+
+        GenTree* store = comp->gtNewTempAssign(lclNum, node);
+        BlockRange().InsertAfter(node, store);
+        LowerNode(store);
+
+        GenTree* newArg;
+        if (arg->passedByRef)
+        {
+            newArg = comp->gtNewLclVarAddrNode(lclNum);
+        }
+        else
+        {
+            newArg = comp->gtNewLclvNode(lclNum, node->TypeGet());
+        }
+
+        arg->use->SetNode(newArg);
+        BlockRange().InsertBefore(call, newArg);
+        LowerNode(newArg);
+
+        node = newArg;
+    }
+
+    var_types argPlacementType = genActualType(arg->argType);
+    if (argPlacementType != genActualType(node->TypeGet()))
+    {
+        // For type mismatch ArgNeedsTemp should have been true or we should
+        // have optimized it previously.
+        assert(node->OperIsLocal());
+
+        node->ChangeOper(GT_LCL_FLD);
+        node->gtType = argPlacementType;
+    }
+
+    GenTree* putArg = NewPutArg(call, node, arg, argPlacementType);
+    assert((node != putArg) && putArg->OperIsPutArg());
+
+    if (isInvariant)
+    {
+        BlockRange().Remove(node);
+        BlockRange().InsertBefore(call, node, putArg);
+    }
+    else
+    {
+        BlockRange().InsertBefore(call, putArg);
+    }
+
+    arg->use->SetNode(putArg);
+}
+
+bool Lowering::ArgNeedsTemp(fgArgTabEntry* arg, GenTreeCall* call, bool* isInvariant)
+{
+    GenTree* argNode = arg->GetNode();
+    assert(argNode->Precedes(call));
+
+    if (arg->passedByRef)
+    {
+        return true;
+    }
+
+    if (genActualType(arg->argType) != genActualType(argNode->TypeGet()))
+    {
+        return true;
+    }
+
+    if (argNode->IsInvariant())
+    {
+        *isInvariant = true;
+        return false;
+    }
+
+    if (argNode->OperIsLocal())
+    {
+        GenTreeLclVarCommon* lcl  = argNode->AsLclVarCommon();
+        LclVarDsc*           desc = comp->lvaGetDesc(lcl);
+        if (!desc->IsAddressExposed())
+        {
+            *isInvariant = true;
+            return false;
+        }
+    }
+
+    for (GenTree* interfering = argNode->gtNext; interfering != call; interfering = interfering->gtNext)
+    {
+        if (interfering->IsCall())
+        {
+            return true;
+        }
+    }
+
+    *isInvariant = false;
+    return false;
 }
 
 // Inserts profiler hook, GT_PROF_HOOK for a tail call node.
@@ -6283,9 +6410,12 @@ void Lowering::CheckCall(GenTreeCall* call)
         CheckCallArg(use.GetNode());
     }
 
-    for (GenTreeCall::Use& use : call->LateArgs())
+    if (!call->IsABIExpandedLate())
     {
-        CheckCallArg(use.GetNode());
+        for (GenTreeCall::Use& use : call->LateArgs())
+        {
+            CheckCallArg(use.GetNode());
+        }
     }
 }
 

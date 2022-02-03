@@ -5118,7 +5118,7 @@ void CodeGen::genCall(GenTreeCall* call)
     }
 
     // Consume all the arg regs
-    for (GenTreeCall::Use& use : call->LateArgs())
+    for (GenTreeCall::Use& use : call->IsABIExpandedLate() ? call->Args() : call->LateArgs())
     {
         GenTree* argNode = use.GetNode();
 
