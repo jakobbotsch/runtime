@@ -4053,18 +4053,42 @@ GenTree* Lowering::LowerDirectCall(GenTreeCall* call)
             GenTree* cellAddr = nullptr;
             if (hasIndirectionCell)
             {
+                fgArgTabEntry* indirectionCellArg = nullptr;
                 for (unsigned i = 0; i < call->fgArgInfo->ArgCount(); i++)
                 {
                     fgArgTabEntry* entry = call->fgArgInfo->GetArgEntry(i);
                     if (entry->isIndirectionCellArg())
                     {
-                        assert(entry->isTmp);
-                        cellAddr = comp->gtNewLclvNode(entry->tmpNum, TYP_I_IMPL);
+                        indirectionCellArg = entry;
                         break;
                     }
                 }
 
-                assert(cellAddr != nullptr && "Could not find indirection cell for direct call");
+                assert(indirectionCellArg != nullptr && "Could not find indirection cell for direct call");
+
+                // Indirection cell is always in a register so is always a late arg.
+                assert(indirectionCellArg->isLateArg());
+
+                // We will create an indir off of this arg. To avoid reloading the cell
+                // address we copy it into a local. We do this here instead of morph
+                // because otherwise we would evaluate it in early arg and the longer
+                // lifetime yields much worse diffs.
+                assert(indirectionCellArg->lateUse->GetNode()->OperIsPutArgReg());
+                GenTree*& slot = indirectionCellArg->lateUse->GetNode()->AsUnOp()->gtOp1;
+
+                if (!slot->OperIsLocal())
+                {
+                    unsigned lcl = comp->lvaGrabTemp(true, "Indirection cell address");
+                    LIR::Use use(BlockRange(), &slot, indirectionCellArg->lateUse->GetNode());
+                    ReplaceWithLclVar(use, lcl);
+
+                    cellAddr = comp->gtNewLclvNode(lcl, TYP_I_IMPL);
+                }
+                else
+                {
+                    cellAddr = comp->gtClone(slot);
+                    assert(cellAddr != nullptr);
+                }
             }
             else
             {
@@ -5119,9 +5143,30 @@ GenTree* Lowering::LowerVirtualStubCall(GenTreeCall* call)
         // This is ensured by VM.
         noway_assert(call->IsVirtualStubRelativeIndir());
 
-        // We expect that morph create a temp for this that we can indirect off.
-        assert(indirectionCellArg->isTmp);
-        GenTree* addr = comp->gtNewLclvNode(indirectionCellArg->tmpNum, TYP_I_IMPL);
+        // Indirection cell is always in a register so is always a late arg.
+        assert(indirectionCellArg->isLateArg());
+
+        // We will create an indir off of this arg. To avoid reloading the cell
+        // address we copy it into a local. We do this here instead of morph
+        // because otherwise we would evaluate it in early arg and the longer
+        // lifetime yields much worse diffs.
+        assert(indirectionCellArg->lateUse->GetNode()->OperIsPutArgReg());
+        GenTree*& slot = indirectionCellArg->lateUse->GetNode()->AsUnOp()->gtOp1;
+
+        GenTree* addr;
+        if (!slot->OperIsLocal())
+        {
+            unsigned lcl = comp->lvaGrabTemp(true, "Indirection cell address");
+            LIR::Use use(BlockRange(), &slot, indirectionCellArg->lateUse->GetNode());
+            ReplaceWithLclVar(use, lcl);
+
+            addr = comp->gtNewLclvNode(lcl, TYP_I_IMPL);
+        }
+        else
+        {
+            addr = comp->gtClone(slot);
+            assert(addr != nullptr);
+        }
 
         // On x86, for tailcall via helper, the JIT_TailCall helper takes the stubAddr as
         // the target address, and we set a flag that it's a VSD call. The helper then

@@ -1135,14 +1135,14 @@ void fgArgInfo::ArgsComplete()
             }
         }
 
-        // Create a temp for cell addresses. Lowering will create the call
-        // target as an indirection from this temp to avoid materializing the
-        // cell address unnecessarily, which can be expensive.
-        if (curArgTabEntry->isIndirectionCellArg())
-        {
-            curArgTabEntry->needTmp = true;
-            needsTemps = true;
-        }
+        //// Create a temp for cell addresses. Lowering will create the call
+        //// target as an indirection from this temp to avoid materializing the
+        //// cell address unnecessarily, which can be expensive.
+        //if (curArgTabEntry->isIndirectionCellArg())
+        //{
+        //    curArgTabEntry->needTmp = true;
+        //    needsTemps = true;
+        //}
 
         /* If the argument tree contains an assignment (GTF_ASG) then the argument and
            and every earlier argument (except constants) must be evaluated into temps
