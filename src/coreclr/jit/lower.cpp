@@ -4047,20 +4047,32 @@ GenTree* Lowering::LowerDirectCall(GenTreeCall* call)
         {
             // If we are using an indirection cell for a direct call then apply
             // an optimization that loads the call target directly from the
-            // indirection cell, instead of duplicating the tree.
+            // indirection cell that is already in an argument.
             bool hasIndirectionCell = call->GetIndirectionCellArgKind() != NonStandardArgKind::None;
 
-            if (!hasIndirectionCell)
+            GenTree* cellAddr = nullptr;
+            if (hasIndirectionCell)
             {
-                // Non-virtual direct calls to addresses accessed by
-                // a single indirection.
-                GenTree* cellAddr = AddrGen(addr);
-#ifdef DEBUG
-                cellAddr->AsIntCon()->gtTargetHandle = (size_t)call->gtCallMethHnd;
-#endif
-                GenTree* indir = Ind(cellAddr);
-                result         = indir;
+                for (unsigned i = 0; i < call->fgArgInfo->ArgCount(); i++)
+                {
+                    fgArgTabEntry* entry = call->fgArgInfo->GetArgEntry(i);
+                    if (entry->isIndirectionCellArg())
+                    {
+                        assert(entry->isTmp);
+                        cellAddr = comp->gtNewLclvNode(entry->tmpNum, TYP_I_IMPL);
+                        break;
+                    }
+                }
+
+                assert(cellAddr != nullptr && "Could not find indirection cell for direct call");
             }
+            else
+            {
+                cellAddr = AddrGen(addr);
+                cellAddr->AsIntCon()->gtTargetHandle = (size_t)call->gtCallMethHnd;
+            }
+
+            result         = Ind(cellAddr);
             break;
         }
 
@@ -5090,18 +5102,26 @@ GenTree* Lowering::LowerVirtualStubCall(GenTreeCall* call)
     }
     else
     {
-        // Direct stub call.
-        // Get stub addr. This will return NULL if virtual call stubs are not active
-        void* stubAddr = call->gtStubCallStubAddr;
-        noway_assert(stubAddr != nullptr);
+        fgArgTabEntry* indirectionCellArg = nullptr;
+        for (unsigned i = 0; i < call->fgArgInfo->ArgCount(); i++)
+        {
+            fgArgTabEntry* entry = call->fgArgInfo->GetArgEntry(i);
+            if (entry->isIndirectionCellArg())
+            {
+                indirectionCellArg = entry;
+                break;
+            }
+        }
+
+        assert((indirectionCellArg != nullptr) && "Expected indirection cell arg while lowering virtual stub call");
 
         // If not CT_INDIRECT,  then it should always be relative indir call.
         // This is ensured by VM.
         noway_assert(call->IsVirtualStubRelativeIndir());
 
-        // Direct stub calls, though the stubAddr itself may still need to be
-        // accessed via an indirection.
-        GenTree* addr = AddrGen(stubAddr);
+        // We expect that morph create a temp for this that we can indirect off.
+        assert(indirectionCellArg->isTmp);
+        GenTree* addr = comp->gtNewLclvNode(indirectionCellArg->tmpNum, TYP_I_IMPL);
 
         // On x86, for tailcall via helper, the JIT_TailCall helper takes the stubAddr as
         // the target address, and we set a flag that it's a VSD call. The helper then
@@ -5112,18 +5132,7 @@ GenTree* Lowering::LowerVirtualStubCall(GenTreeCall* call)
         }
         else
         {
-            bool shouldOptimizeVirtualStubCall = false;
-#if defined(TARGET_ARMARCH) || defined(TARGET_AMD64)
-            // Skip inserting the indirection node to load the address that is already
-            // computed in the VSD stub arg register as a hidden parameter. Instead during the
-            // codegen, just load the call target from there.
-            shouldOptimizeVirtualStubCall = !comp->opts.IsCFGEnabled();
-#endif
-
-            if (!shouldOptimizeVirtualStubCall)
-            {
-                result = Ind(addr);
-            }
+            result = Ind(addr);
         }
     }
 

@@ -5648,7 +5648,7 @@ void CodeGen::genCallInstruction(GenTreeCall* call X86_ARG(target_ssize_t stackA
         // which is more efficent than
         // lea r11, [addr of cell]
         // call [addr of cell]
-        regNumber indirCellReg = getCallIndirectionCellReg(call);
+        regNumber indirCellReg = REG_NA; //getCallIndirectionCellReg(call);
         if (indirCellReg != REG_NA)
         {
             // clang-format off
