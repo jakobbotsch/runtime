@@ -1135,6 +1135,15 @@ void fgArgInfo::ArgsComplete()
             }
         }
 
+        // Create a temp for cell addresses. Lowering will create the call
+        // target as an indirection from this temp to avoid materializing the
+        // cell address unnecessarily, which can be expensive.
+        if (curArgTabEntry->isIndirectionCellArg() && !argx->OperIsLocal())
+        {
+            curArgTabEntry->needTmp = true;
+            needsTemps = true;
+        }
+
         /* If the argument tree contains an assignment (GTF_ASG) then the argument and
            and every earlier argument (except constants) must be evaluated into temps
            since there may be other arguments that follow and they may use the value being assigned.
@@ -2022,6 +2031,12 @@ void fgArgInfo::EvalArgsToTemps()
                     curArgTabEntry->isTmp  = true;
                     curArgTabEntry->tmpNum = tmpVarNum;
 
+                    if (curArgTabEntry->isIndirectionCellArg())
+                    {
+                        // Avoid constant prop into late args where LSRA spills aggressively.
+                        defArg->gtFlags |= GTF_DONT_CSE;
+                    }
+
 #ifdef TARGET_ARM
                     // Previously we might have thought the local was promoted, and thus the 'COPYBLK'
                     // might have left holes in the used registers (see
@@ -2536,7 +2551,7 @@ void Compiler::fgInitArgInfo(GenTreeCall* call)
             call->gtCallArgs = gtPrependNewCallArg(stubAddrArg, call->gtCallArgs);
 
             numArgs++;
-            nonStandardArgs.Add(stubAddrArg, stubAddrArg->GetRegNum(), NonStandardArgKind::VirtualStubCell);
+            nonStandardArgs.Add(stubAddrArg, virtualStubParamInfo->GetReg(), NonStandardArgKind::VirtualStubCell);
         }
         else
         {
@@ -2596,7 +2611,7 @@ void Compiler::fgInitArgInfo(GenTreeCall* call)
 #ifdef DEBUG
         indirectCellAddress->AsIntCon()->gtTargetHandle = (size_t)call->gtCallMethHnd;
 #endif
-        indirectCellAddress->SetRegNum(REG_R2R_INDIRECT_PARAM);
+
 #ifdef TARGET_ARM
         // Issue #xxxx : Don't attempt to CSE this constant on ARM32
         //
@@ -2609,7 +2624,7 @@ void Compiler::fgInitArgInfo(GenTreeCall* call)
         call->gtCallArgs = gtPrependNewCallArg(indirectCellAddress, call->gtCallArgs);
 
         numArgs++;
-        nonStandardArgs.Add(indirectCellAddress, indirectCellAddress->GetRegNum(),
+        nonStandardArgs.Add(indirectCellAddress, REG_R2R_INDIRECT_PARAM,
                             NonStandardArgKind::R2RIndirectionCell);
     }
 #endif
@@ -8723,7 +8738,7 @@ void Compiler::fgMorphTailCallViaJitHelper(GenTreeCall* call)
 //    call - a call that needs virtual stub dispatching.
 //
 // Return Value:
-//    addr tree with set resister requirements.
+//    addr tree
 //
 GenTree* Compiler::fgGetStubAddrArg(GenTreeCall* call)
 {
@@ -8743,7 +8758,6 @@ GenTree* Compiler::fgGetStubAddrArg(GenTreeCall* call)
 #endif
     }
     assert(stubAddrArg != nullptr);
-    stubAddrArg->SetRegNum(virtualStubParamInfo->GetReg());
     return stubAddrArg;
 }
 

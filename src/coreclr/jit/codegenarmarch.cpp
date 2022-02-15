@@ -3404,10 +3404,10 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
         // CORINFO_HELP_DISPATCH_INDIRECT_CALL in which case we still have the
         // indirection cell but we should not try to optimize.
         regNumber callThroughIndirReg = REG_NA;
-        if (!call->IsHelperCall(compiler, CORINFO_HELP_DISPATCH_INDIRECT_CALL))
-        {
-            callThroughIndirReg = getCallIndirectionCellReg(call);
-        }
+        //if (!call->IsHelperCall(compiler, CORINFO_HELP_DISPATCH_INDIRECT_CALL))
+        //{
+        //    callThroughIndirReg = getCallIndirectionCellReg(call);
+        //}
 
         if (callThroughIndirReg != REG_NA)
         {
