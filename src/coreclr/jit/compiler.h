@@ -3556,6 +3556,7 @@ protected:
     int impBoxPatternMatch(CORINFO_RESOLVED_TOKEN* pResolvedToken,
                            const BYTE*             codeAddr,
                            const BYTE*             codeEndp,
+                           bool                    isByRefLike,
                            bool                    makeInlineObservation = false);
     void impImportAndPushBox(CORINFO_RESOLVED_TOKEN* pResolvedToken);
 

@@ -6902,6 +6902,7 @@ GenTree* Compiler::impImportLdvirtftn(GenTree*                thisPtr,
 int Compiler::impBoxPatternMatch(CORINFO_RESOLVED_TOKEN* pResolvedToken,
                                  const BYTE*             codeAddr,
                                  const BYTE*             codeEndp,
+                                 bool                    isByRefLike,
                                  bool                    makeInlineObservation)
 {
     if (codeAddr >= codeEndp)
@@ -6959,6 +6960,8 @@ int Compiler::impBoxPatternMatch(CORINFO_RESOLVED_TOKEN* pResolvedToken,
                 // Can the thing being boxed cause a side effect?
                 if ((treeToBox->gtFlags & GTF_SIDE_EFFECT) != 0)
                 {
+                    assert(!isByRefLike); // we expect caller to spill before this.
+
                     // Is this a side effect we can replicate cheaply?
                     if (((treeToBox->gtFlags & GTF_SIDE_EFFECT) == GTF_EXCEPT) &&
                         treeToBox->OperIs(GT_OBJ, GT_BLK, GT_IND))
@@ -6978,8 +6981,7 @@ int Compiler::impBoxPatternMatch(CORINFO_RESOLVED_TOKEN* pResolvedToken,
 
                 if (canOptimize)
                 {
-                    CorInfoHelpFunc boxHelper = info.compCompHnd->getBoxHelper(pResolvedToken->hClass);
-                    if (boxHelper == CORINFO_HELP_BOX)
+                    if (isByRefLike || (info.compCompHnd->getBoxHelper(pResolvedToken->hClass) == CORINFO_HELP_BOX))
                     {
                         JITDUMP("\n Importing BOX; BR_TRUE/FALSE as %sconstant\n",
                                 treeToNullcheck == nullptr ? "" : "nullcheck+");
@@ -7020,10 +7022,14 @@ int Compiler::impBoxPatternMatch(CORINFO_RESOLVED_TOKEN* pResolvedToken,
                                 return 1 + sizeof(mdToken);
                             }
 
+                            assert(!isByRefLike || ((impStackTop().val->gtFlags & GTF_SIDE_EFFECT) == 0));
+
                             if (!(impStackTop().val->gtFlags & GTF_SIDE_EFFECT))
                             {
-                                CorInfoHelpFunc boxHelper = info.compCompHnd->getBoxHelper(pResolvedToken->hClass);
-                                if (boxHelper == CORINFO_HELP_BOX)
+                                CorInfoHelpFunc foldAsHelper =
+                                    isByRefLike ? CORINFO_HELP_BOX : info.compCompHnd->getBoxHelper(pResolvedToken->hClass);
+
+                                if (foldAsHelper == CORINFO_HELP_BOX)
                                 {
                                     CORINFO_RESOLVED_TOKEN isInstResolvedToken;
 
@@ -7044,7 +7050,7 @@ int Compiler::impBoxPatternMatch(CORINFO_RESOLVED_TOKEN* pResolvedToken,
                                         return 1 + sizeof(mdToken);
                                     }
                                 }
-                                else if (boxHelper == CORINFO_HELP_BOX_NULLABLE)
+                                else if (foldAsHelper == CORINFO_HELP_BOX_NULLABLE)
                                 {
                                     // For nullable we're going to fold it to "ldfld hasValue + brtrue/brfalse" or
                                     // "ldc.i4.0 + brtrue/brfalse" in case if the underlying type is not castable to
@@ -16446,8 +16452,18 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                     break;
                 }
 
+                bool isByRefLike = (info.compCompHnd->getClassAttribs(resolvedToken.hClass) & CORINFO_FLG_BYREF_LIKE) != 0;
+                if (isByRefLike)
+                {
+                    // For by-ref like types we are required to either fold the
+                    // recognized patterns in impBoxPatternMatch or otherwise
+                    // throw InvalidProgramException at runtime. In either case
+                    // we will need to spill side effects of the expression.
+                    impSpillSideEffects(false, CHECK_SPILL_ALL DEBUGARG("Required for box of by-ref like type"));
+                }
+
                 // Look ahead for box idioms
-                int matched = impBoxPatternMatch(&resolvedToken, codeAddr + sz, codeEndp);
+                int matched = impBoxPatternMatch(&resolvedToken, codeAddr + sz, codeEndp, isByRefLike);
                 if (matched >= 0)
                 {
                     // Skip the matched IL instructions
@@ -16455,10 +16471,23 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                     break;
                 }
 
-                impImportAndPushBox(&resolvedToken);
-                if (compDonotInline())
+                if (isByRefLike)
                 {
-                    return;
+                    // Not folded, so throw at runtime. We already spilled side
+                    // effects of the expression being boxed above.
+                    impPopStack();
+                    GenTree* node = gtNewMustThrowException(CORINFO_HELP_THROW_INVALID_PROGRAM_EXCEPTION, TYP_REF, NO_CLASS_HANDLE);
+                    typeInfo tiRetVal = typeInfo(TI_REF, resolvedToken.hClass);
+                    impPushOnStack(node, tiRetVal);
+                }
+                else
+                {
+                    impImportAndPushBox(&resolvedToken);
+
+                    if (compDonotInline())
+                    {
+                        return;
+                    }
                 }
             }
             break;
