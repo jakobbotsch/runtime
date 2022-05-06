@@ -12362,6 +12362,9 @@ GenTree* Compiler::gtFoldExpr(GenTree* tree)
         case GT_RETURN:
         case GT_IND:
             return tree;
+        case GT_PUTARG_TYPE:
+            tree->AsUnOp()->gtOp1 = gtFoldExpr(op1);
+            return tree;
         default:
             break;
     }

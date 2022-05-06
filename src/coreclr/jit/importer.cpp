@@ -19702,8 +19702,11 @@ void Compiler::impInlineInitVars(InlineInfo* pInlineInfo)
                 break;
         }
 
-        GenTree* actualArg = gtFoldExpr(arg.GetEarlyNode());
-        impInlineRecordArgInfo(pInlineInfo, actualArg, ilArgCnt, inlineResult);
+        GenTree* argNode = arg.GetEarlyNode();
+        GenTree* folded = gtFoldExpr(argNode);
+        GenTree* newArg = fgCheckCallArgUpdate(call, folded, argNode->TypeGet());
+        arg.SetEarlyNode(newArg != nullptr ? newArg : folded);
+        impInlineRecordArgInfo(pInlineInfo, arg.GetEarlyNode(), ilArgCnt, inlineResult);
 
         if (inlineResult->IsFailure())
         {
@@ -19801,7 +19804,7 @@ void Compiler::impInlineInitVars(InlineInfo* pInlineInfo)
 
         GenTree* inlArgNode = inlArgInfo[i].argNode;
 
-        if ((sigType != inlArgNode->gtType) || inlArgNode->OperIs(GT_PUTARG_TYPE))
+        if ((sigType != inlArgNode->gtType) || (inlArgNode->OperIs(GT_PUTARG_TYPE) && inlArgNode->AsUnOp()->gtGetOp1()->TypeGet() != sigType))
         {
             assert(impCheckImplicitArgumentCoercion(sigType, inlArgNode->gtType));
             assert(!varTypeIsStruct(inlArgNode->gtType) && !varTypeIsStruct(sigType));

@@ -1539,7 +1539,26 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
             const InlArgInfo& argInfo        = inlArgInfo[argNum];
             const bool        argIsSingleDef = !argInfo.argHasLdargaOp && !argInfo.argHasStargOp;
             GenTree*          argNode        = inlArgInfo[argNum].argNode;
-            const bool        argHasPutArg   = argNode->OperIs(GT_PUTARG_TYPE);
+            // We might have inserted a GT_PUTARG_TYPE node that is no longer
+            // necessary, in particular because the inliner may substitute
+            // single-use locals for their expressions. This happens for some
+            // small-typed nodes, e.g.:
+            //
+            // B(bool b) { ... } <- Inlinee
+            // A(bool b) { B(b); } <- Inlinee
+            // A(Vector128_op_Equality(x, y))  <- Call in root that is being jitted
+            //
+            // 1. In impPopCallArgs for the call to B, while inlining the call
+            //    to A, the JIT pops a TYP_INT LCL_VAR parameter local for the
+            //    TYP_BOOL arg. It adds a GT_PUTARG_TYPE node.
+            // 2. The inliner notices that the TYP_INT LCL_VAR argument used above is
+            //    actually only used once, and it directly substitutes the TYP_BOOL
+            //    typed GT_HWINTRINSIC op_Equality node for that local.
+            // 3. We now have a TYP_BOOL GT_PUTARG_TYPE with a TYP_BOOL child as the argument to B.
+            // 4. While inlining B, in impInlineInitVars, we would previously
+            //    insert a cast because we saw a GT_PUTARG_TYPE, and similarly we
+            //    would not allow substitution here.
+            const bool        argHasPutArg   = argNode->OperIs(GT_PUTARG_TYPE) && (argNode->AsUnOp()->gtGetOp1()->TypeGet() != argNode->TypeGet());
 
             BasicBlockFlags bbFlags = BBF_EMPTY;
             argNode                 = argNode->gtSkipPutArgType();
