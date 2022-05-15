@@ -586,18 +586,18 @@ private:
         virtual void FixupRetExpr()
         {
             // If call returns a value, we need to copy it to a temp, and
-            // bash the associated GT_RET_EXPR to refer to the temp instead
+            // change the associated GT_RET_EXPR to refer to the temp instead
             // of the call.
             //
             // Note implicit by-ref returns should have already been converted
             // so any struct copy we induce here should be cheap.
             InlineCandidateInfo* const inlineInfo = origCall->gtInlineCandidateInfo;
-            GenTree* const             retExpr    = inlineInfo->retExpr;
+            GenTreeRetExpr* const             retExpr    = inlineInfo->retExpr;
 
             // Sanity check the ret expr if non-null: it should refer to the original call.
             if (retExpr != nullptr)
             {
-                assert(retExpr->AsRetExpr()->gtInlineCandidate == origCall);
+                assert(retExpr->gtInlineCandidate == origCall);
             }
 
             if (origCall->TypeGet() != TYP_VOID)
@@ -757,20 +757,21 @@ private:
                 // we set all this up in FixupRetExpr().
                 if (oldRetExpr != nullptr)
                 {
-                    GenTree* retExpr =
+                    GenTreeRetExpr* retExpr =
                         compiler->gtNewInlineCandidateReturnExpr(call, call->TypeGet(), thenBlock->bbFlags);
                     inlineInfo->retExpr = retExpr;
 
+                    GenTree* newStmtNode = retExpr;
                     if (returnTemp != BAD_VAR_NUM)
                     {
-                        retExpr = compiler->gtNewTempAssign(returnTemp, retExpr);
+                        newStmtNode = compiler->gtNewTempAssign(returnTemp, retExpr);
                     }
                     else
                     {
                         // We should always have a return temp if we return results by value
                         assert(origCall->TypeGet() == TYP_VOID);
                     }
-                    compiler->fgNewStmtAtEnd(thenBlock, retExpr);
+                    compiler->fgNewStmtAtEnd(thenBlock, newStmtNode);
                 }
             }
         }

@@ -14268,43 +14268,6 @@ GenTree* Compiler::fgMorphTree(GenTree* tree, MorphAddrContext* mac)
         }
     }
 
-/*-------------------------------------------------------------------------
- * fgMorphTree() can potentially replace a tree with another, and the
- * caller has to store the return value correctly.
- * Turn this on to always make copy of "tree" here to shake out
- * hidden/unupdated references.
- */
-
-#ifdef DEBUG
-
-    if (compStressCompile(STRESS_GENERIC_CHECK, 0))
-    {
-        GenTree* copy;
-
-        if (GenTree::s_gtNodeSizes[tree->gtOper] == TREE_NODE_SZ_SMALL)
-        {
-            copy = gtNewLargeOperNode(GT_ADD, TYP_INT);
-        }
-        else
-        {
-            copy = new (this, GT_CALL) GenTreeCall(TYP_INT);
-        }
-
-        copy->ReplaceWith(tree, this);
-
-#if defined(LATE_DISASM)
-        // GT_CNS_INT is considered small, so ReplaceWith() won't copy all fields
-        if (tree->IsIconHandle())
-        {
-            copy->AsIntCon()->gtCompileTimeHandle = tree->AsIntCon()->gtCompileTimeHandle;
-        }
-#endif
-
-        DEBUG_DESTROY_NODE(tree);
-        tree = copy;
-    }
-#endif // DEBUG
-
     if (fgGlobalMorph)
     {
         /* Ensure that we haven't morphed this node already */
