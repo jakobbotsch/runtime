@@ -7126,7 +7126,7 @@ GenTreeLclFld* Compiler::gtNewLclFldNode(unsigned lnum, var_types type, unsigned
     return node;
 }
 
-GenTreeRetExpr* Compiler::gtNewInlineCandidateReturnExpr(GenTree* inlineCandidate, var_types type, BasicBlockFlags bbFlags)
+GenTree* Compiler::gtNewInlineCandidateReturnExpr(GenTree* inlineCandidate, var_types type, BasicBlockFlags bbFlags)
 {
     assert(GenTree::s_gtNodeSizes[GT_RET_EXPR] == TREE_NODE_SZ_LARGE);
 
@@ -7141,7 +7141,7 @@ GenTreeRetExpr* Compiler::gtNewInlineCandidateReturnExpr(GenTree* inlineCandidat
         node->gtRetClsHnd = gtGetStructHandle(inlineCandidate);
     }
 
-    // GT_RET_EXPR node eventually might be changed back to GT_CALL (when inlining is aborted for example).
+    // GT_RET_EXPR node eventually might be bashed back to GT_CALL (when inlining is aborted for example).
     // Therefore it should carry the GTF_CALL flag so that all the rules about spilling can apply to it as well.
     // For example, impImportLeave or CEE_POP need to spill GT_RET_EXPR before empty the evaluation stack.
     node->gtFlags |= GTF_CALL;
@@ -15823,59 +15823,6 @@ bool Compiler::gtHasCatchArg(GenTree* tree)
         }
     }
     return false;
-}
-
-
-//------------------------------------------------------------------------
-// gtReplaceThreadedUseWith:
-//   Given that the IR is currently threaded (but not in full LIR), replace the
-//   use of one node with another node.
-//
-// Arguments:
-//   node - The node that is used and currently threaded.
-//   newNode - The new node to take its place.
-//
-// Remarks:
-//   compCurStmt is expected to be set to the statement containing 'node'.
-//
-void Compiler::gtReplaceThreadedUseWith(GenTree* node, GenTree* newNode)
-{
-#ifdef DEBUG
-    assert((compCurStmt != nullptr) && fgStmtListThreaded);
-    bool found = false;
-    for (GenTree* stmtNode : compCurStmt->TreeList())
-    {
-        if (stmtNode == node)
-        {
-            found = true;
-            break;
-        }
-    }
-
-    assert(found && "gtReplaceThreadedUseWith did not find node in compCurStmt");
-#endif
-
-    GenTree** use = nullptr;
-    node->gtGetParent(&use);
-    if (use == nullptr)
-    {
-        assert(compCurStmt->GetRootNode() == node);
-        use = compCurStmt->GetRootNodePointer();
-    }
-
-    *use = newNode;
-    newNode->gtPrev = node->gtPrev;
-    newNode->gtNext = node->gtNext;
-
-    if (node->gtPrev != nullptr)
-    {
-        node->gtPrev->gtNext = newNode;
-    }
-
-    if (node->gtNext != nullptr)
-    {
-        node->gtNext->gtPrev = newNode;
-    }
 }
 
 //------------------------------------------------------------------------

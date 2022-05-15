@@ -528,16 +528,8 @@ Compiler::fgWalkResult Compiler::fgUpdateInlineReturnExpressionPlaceHolder(GenTr
             printf(" with ");
             printTreeID(inlineCandidate);
             printf("\n");
-            // Dump out the old return expression placeholder that is being replaced below
-            printf("RET_EXPR chain:\n");
-            GenTree* cur = tree;
-            while (cur->OperIs(GT_RET_EXPR))
-            {
-                comp->gtDispTree(cur);
-                printf("               bbFlags = %x\n", static_cast<unsigned>(cur->AsRetExpr()->bbFlags));
-                cur = cur->AsRetExpr()->gtInlineCandidate;
-            }
-            comp->gtDispTree(cur);
+            // Dump out the old return expression placeholder it will be overwritten by the ReplaceWith below
+            comp->gtDispTree(tree);
         }
 #endif // DEBUG
 
@@ -555,12 +547,8 @@ Compiler::fgWalkResult Compiler::fgUpdateInlineReturnExpressionPlaceHolder(GenTr
             }
         }
 
-        *pTree = inlineCandidate;
-        DEBUG_DESTROY_NODE(tree);
-        tree = inlineCandidate;
-
+        tree->ReplaceWith(inlineCandidate, comp);
         *madeChanges = true;
-        JITDUMP("Adding stored bbflags %x in [%06u] to " FMT_BB "\n", static_cast<unsigned>(bbFlags & BBF_SPLIT_GAINED), dspTreeID(inlineCandidate), comp->compCurBB->bbNum);
         comp->compCurBB->bbFlags |= (bbFlags & BBF_SPLIT_GAINED);
 
 #ifdef DEBUG
@@ -1416,6 +1404,8 @@ _Done:
         lvaSetVarDoNotEnregister(dummy DEBUGARG(DoNotEnregisterReason::VMNeedsStackAddr));
     }
 
+    JITDUMP("Before replacement:\n");
+    JITDUMPEXEC(fgDispBasicBlocks(true));
     // If there is non-NULL return, replace the GT_CALL with its return value expression,
     // so later it will be picked up by the GT_RET_EXPR node.
     if ((pInlineInfo->inlineCandidateInfo->fncRetType != TYP_VOID) || (iciCall->gtReturnType == TYP_STRUCT))
@@ -1435,9 +1425,12 @@ _Done:
         // but may still be referenced from a GT_RET_EXPR node. We will replace GT_RET_EXPR node
         // in fgUpdateInlineReturnExpressionPlaceHolder. At that time we will also update the flags
         // on the basic block of GT_RET_EXPR node.
-        // Save the basic block flags from the retExpr basic block.
-        JITDUMP("Setting retExpr [%06u] bbflags = %x from BB " FMT_BB "\n", dspTreeID(iciCall->gtInlineCandidateInfo->retExpr), static_cast<unsigned>(pInlineInfo->retBB->bbFlags), pInlineInfo->retBB->bbNum);
-        iciCall->gtInlineCandidateInfo->retExpr->bbFlags = pInlineInfo->retBB->bbFlags;
+        if (iciCall->gtInlineCandidateInfo->retExpr->OperGet() == GT_RET_EXPR)
+        {
+            // Save the basic block flags from the retExpr basic block.
+            iciCall->gtInlineCandidateInfo->retExpr->AsRetExpr()->bbFlags = pInlineInfo->retBB->bbFlags;
+            iciCall->gtInlineCandidateInfo->retExpr->AsRetExpr()->gtInlineCandidate = pInlineInfo->retExpr;
+        }
 
         if (bottomBlock != nullptr)
         {
@@ -1445,16 +1438,18 @@ _Done:
             // so let's update its flags with retBB's ones
             bottomBlock->bbFlags |= pInlineInfo->retBB->bbFlags & BBF_COMPACT_UPD;
         }
-
-        assert(iciCall->gtInlineCandidateInfo->retExpr->gtInlineCandidate == iciCall);
-        iciCall->gtInlineCandidateInfo->retExpr->gtInlineCandidate = pInlineInfo->retExpr;
     }
+
+    JITDUMP("In the middle of replacement:\n");
+    JITDUMPEXEC(fgDispBasicBlocks(true));
 
     //
     // Detach the GT_CALL node from the original statement by hanging a "nothing" node under it,
     // so that fgMorphStmts can remove the statement once we return from here.
     //
     iciStmt->SetRootNode(gtNewNothingNode());
+    JITDUMP("After replacement:\n");
+    JITDUMPEXEC(fgDispBasicBlocks(true));
 }
 
 //------------------------------------------------------------------------

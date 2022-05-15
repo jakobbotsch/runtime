@@ -292,9 +292,8 @@ GenTree* Compiler::optEarlyPropRewriteTree(GenTree* tree, LocalNumberToNullCheck
             actualValClone->gtType = tree->gtType;
         }
 
-        gtReplaceThreadedUseWith(tree, actualValClone);
-        DEBUG_DESTROY_NODE(tree);
-        tree = actualValClone;
+        // actualValClone has small tree node size, it is safe to use CopyFrom here.
+        tree->ReplaceWith(actualValClone, this);
 
         // Propagating a constant may create an opportunity to use a division by constant optimization
         //

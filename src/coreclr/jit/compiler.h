@@ -2580,7 +2580,7 @@ public:
     GenTree* gtNewMustThrowException(unsigned helper, var_types type, CORINFO_CLASS_HANDLE clsHnd);
 
     GenTreeLclFld* gtNewLclFldNode(unsigned lnum, var_types type, unsigned offset);
-    GenTreeRetExpr* gtNewInlineCandidateReturnExpr(GenTree* inlineCandidate, var_types type, BasicBlockFlags bbFlags);
+    GenTree* gtNewInlineCandidateReturnExpr(GenTree* inlineCandidate, var_types type, BasicBlockFlags bbFlags);
 
     GenTreeField* gtNewFieldRef(var_types type, CORINFO_FIELD_HANDLE fldHnd, GenTree* obj = nullptr, DWORD offset = 0);
 
@@ -2889,8 +2889,6 @@ public:
     typedef ArrayStack<GenTree*> GenTreeStack;
 
     static bool gtHasCallOnStack(GenTreeStack* parentStack);
-
-    void gtReplaceThreadedUseWith(GenTree* node, GenTree* newNode);
 
 //=========================================================================
 // BasicBlock functions
@@ -9325,6 +9323,7 @@ public:
         STRESS_MODE(EMITTER)                                                                    \
         STRESS_MODE(CHK_REIMPORT)                                                               \
         STRESS_MODE(FLATFP)                                                                     \
+        STRESS_MODE(GENERIC_CHECK)                                                              \
         STRESS_MODE(COUNT)
 
     enum                compStressArea

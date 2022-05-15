@@ -4314,7 +4314,7 @@ GenTree* Compiler::impIntrinsic(GenTree*                newobjThis,
                         {
                             // drop get_CurrentThread() call
                             impPopStack();
-                            call->gtBashToNOP();
+                            call->ReplaceWith(gtNewNothingNode(), this);
                             retNode = gtNewHelperCallNode(CORINFO_HELP_GETCURRENTMANAGEDTHREADID, TYP_INT);
                         }
                     }
@@ -10537,7 +10537,7 @@ DONE_CALL:
                 impAppendTree(call, (unsigned)CHECK_SPILL_ALL, impCurStmtDI, false);
 
                 // TODO: Still using the widened type.
-                GenTreeRetExpr* retExpr = gtNewInlineCandidateReturnExpr(call, genActualType(callRetTyp), compCurBB->bbFlags);
+                GenTree* retExpr = gtNewInlineCandidateReturnExpr(call, genActualType(callRetTyp), compCurBB->bbFlags);
 
                 // Link the retExpr to the call so if necessary we can manipulate it later.
                 origCall->gtInlineCandidateInfo->retExpr = retExpr;
