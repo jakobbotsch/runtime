@@ -13129,6 +13129,10 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                 if (compIsForInlining())
                 {
                     op1 = impInlineFetchArg(lclNum, impInlineInfo->inlArgInfo, impInlineInfo->lclVarInfo);
+                    if (op1->OperIs(GT_NOP))
+                    {
+                        op1 = op1->AsUnOp()->gtGetOp1();
+                    }
                     noway_assert(op1->gtOper == GT_LCL_VAR);
                     lclNum = op1->AsLclVar()->GetLclNum();
 
@@ -20862,8 +20866,7 @@ GenTree* Compiler::impInlineFetchArg(unsigned lclNum, InlArgInfo* inlArgInfo, In
             if ((!varTypeIsStruct(lclTyp) && !argInfo.argHasSideEff && !argInfo.argHasGlobRef &&
                  !argInfo.argHasCallerLocalRef))
             {
-                /* Get a *LARGE* LCL_VAR node */
-                op1 = gtNewLclLNode(tmpNum, genActualType(lclTyp) DEBUGARG(lclNum));
+                op1 = gtNewOperNode(GT_NOP, genActualType(lclTyp), gtNewLclvNode(tmpNum, genActualType(lclTyp) DEBUGARG(lclNum)));
 
                 /* Record op1 as the very first use of this argument.
                 If there are no further uses of the arg, we may be

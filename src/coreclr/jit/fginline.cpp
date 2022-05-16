@@ -1572,14 +1572,16 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
                  */
 
                 GenTree* argSingleUseNode = argInfo.argBashTmpNode;
+                assert((argSingleUseNode == nullptr) || (argSingleUseNode->OperIs(GT_NOP) && argSingleUseNode->AsUnOp()->gtGetOp1()->OperIs(GT_LCL_VAR)));
 
-                if ((argSingleUseNode != nullptr) && !(argSingleUseNode->gtFlags & GTF_VAR_CLONED) && argIsSingleDef &&
+                if ((argSingleUseNode != nullptr) && !(argSingleUseNode->AsUnOp()->gtGetOp1()->gtFlags & GTF_VAR_CLONED) && argIsSingleDef &&
                     !argHasPutArg)
                 {
-                    // Change the temp in-place to the actual argument.
+                    // Change the temp to the actual argument.
                     // We currently do not support this for struct arguments, so it must not be a GT_OBJ.
                     assert(argNode->gtOper != GT_OBJ);
-                    argSingleUseNode->ReplaceWith(argNode, this);
+                    DEBUG_DESTROY_NODE(argSingleUseNode->AsUnOp()->gtGetOp1());
+                    argSingleUseNode->AsUnOp()->gtOp1 = argNode;
                     continue;
                 }
                 else

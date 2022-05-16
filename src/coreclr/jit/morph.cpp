@@ -10754,6 +10754,14 @@ GenTree* Compiler::fgMorphSmpOp(GenTree* tree, MorphAddrContext* mac)
         }
         break;
 
+        case GT_NOP:
+        {
+            if (tree->AsUnOp()->gtGetOp1() != nullptr)
+            {
+                return fgMorphTree(tree->AsUnOp()->gtGetOp1());
+            }
+        }
+
         default:
             break;
     }

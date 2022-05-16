@@ -7904,6 +7904,22 @@ GenTree* Compiler::gtClone(GenTree* tree, bool complexOK)
             copy = gtNewLconNode(tree->AsLngCon()->gtLconVal);
             break;
 
+        case GT_NOP:
+        {
+            GenTree* oper = tree->AsUnOp()->gtGetOp1();
+            if (oper != nullptr)
+            {
+                oper = gtClone(oper, complexOK);
+                copy = oper == nullptr ? nullptr : gtNewOperNode(GT_NOP, tree->TypeGet(), oper);
+            }
+            else
+            {
+                copy = gtNewOperNode(GT_NOP, tree->TypeGet(), nullptr);
+            }
+
+            break;
+        }
+
         case GT_LCL_VAR:
             copy = gtNewLclvNode(tree->AsLclVarCommon()->GetLclNum(),
                                  tree->TypeGet() DEBUGARG(tree->AsLclVar()->gtLclILoffs));
