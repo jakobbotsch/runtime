@@ -4046,21 +4046,36 @@ GenTree* Lowering::LowerDirectCall(GenTreeCall* call)
     switch (accessType)
     {
         case IAT_VALUE:
+        {
             // Non-virtual direct call to known address.
             // For JIT helper based tailcall (only used on x86) the target
             // address is passed as an arg to the helper so we want a node for
             // it.
-            if (!IsCallTargetInRange(addr) || call->IsTailCallViaJitHelper())
-            {
-                result = AddrGen(addr);
-            }
-            else
+            bool canDirectCall = IsCallTargetInRange(addr) && !call->IsTailCallViaJitHelper();
+
+#ifdef TARGET_AMD64
+            // Compensate for the fact that the runtime can trash rax on calls
+            // that end up going through jump stub. We currently should only
+            // see this for JIT_DispatchIndirectCall, which is not a runtime
+            // supported scenario and only for test purposes. The workaround
+            // here adds significant code bloat, so if we ever need to do this
+            // in production scenarios we should teach the runtime to not
+            // clutter rax instead of compensating here.
+            canDirectCall =
+                canDirectCall && ((helperNum != CORINFO_HELP_DISPATCH_INDIRECT_CALL) || comp->opts.IsReadyToRun());
+#endif
+            if (canDirectCall)
             {
                 // a direct call within range of hardware relative call instruction
                 // stash the address for codegen
                 call->gtDirectCallAddress = addr;
             }
+            else
+            {
+                result = AddrGen(addr);
+            }
             break;
+        }
 
         case IAT_PVALUE:
         {

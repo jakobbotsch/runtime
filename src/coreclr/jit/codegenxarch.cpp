@@ -5957,6 +5957,20 @@ void CodeGen::genCallInstruction(GenTreeCall* call X86_ARG(target_ssize_t stackA
 
             assert(addr != nullptr);
 
+#if defined(DEBUG) && defined(TARGET_AMD64)
+            if (!compiler->opts.IsReadyToRun())
+            {
+                for (CallArg& arg : call->gtArgs.Args())
+                {
+                    for (unsigned i = 0; i < arg.AbiInfo.NumRegs; i++)
+                    {
+                        assert((arg.AbiInfo.GetRegNum(i) != REG_RAX) && "Direct calls on x64 may use jump stubs that "
+                                                                        "clutter RAX; cannot use RAX for an argument");
+                    }
+                }
+            }
+#endif
+
             // Non-virtual direct calls to known addresses
 
             // clang-format off

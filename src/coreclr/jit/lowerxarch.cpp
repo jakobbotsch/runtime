@@ -4472,7 +4472,7 @@ bool Lowering::IsRMWMemOpRootedAtStoreInd(GenTree* tree, GenTree** outIndirCandi
     return true;
 }
 
-// anything is in range for AMD64
+// runtime will use jump stubs on AMD64 meaning that anything is in range.
 bool Lowering::IsCallTargetInRange(void* addr)
 {
     return true;
