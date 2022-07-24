@@ -1330,6 +1330,9 @@ void Compiler::compStartup()
     compDisplayStaticSizes(jitstdout);
 }
 
+extern long long s_numNonParamTrackedLocals;
+extern long long s_numNonParamUnnecessarilyTrackedLocals;
+
 /*****************************************************************************
  *
  *  One time finalization code
@@ -1404,6 +1407,8 @@ void Compiler::compShutdown()
 
     JitTimer::Shutdown();
 #endif // FEATURE_JIT_METHOD_PERF
+
+
 
 #if COUNT_AST_OPERS
 
@@ -1641,6 +1646,9 @@ void Compiler::compShutdown()
             genFlowNodeSize, genFlowNodeSize / genMethodCnt);
 
 #endif // MEASURE_BLOCK_SIZE
+
+    fprintf(fout, "Total number of non-parameter tracked locals: %lld\n", s_numNonParamTrackedLocals);
+    fprintf(fout, "Total number of non-parameter tracked locals wholly defined and only used in a single BB: %lld (%f%%)\n", s_numNonParamUnnecessarilyTrackedLocals, s_numNonParamUnnecessarilyTrackedLocals / (double)s_numNonParamTrackedLocals * 100);
 
 #if MEASURE_MEM_ALLOC
 

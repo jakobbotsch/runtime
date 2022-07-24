@@ -1030,6 +1030,8 @@ public:
     Statement* lvDefStmt;          // Pointer to the statement with the single definition
     void       lvaDisqualifyVar(); // Call to disqualify a local variable from use in optAddCopies
 
+    unsigned lvDefBBNum;
+
     var_types TypeGet() const
     {
         return (var_types)lvType;

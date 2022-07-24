@@ -38,6 +38,27 @@ void Compiler::fgMarkUseDef(GenTreeLclVarCommon* tree)
     const bool isDef = (tree->gtFlags & GTF_VAR_DEF) != 0;
     const bool isUse = !isDef || ((tree->gtFlags & GTF_VAR_USEASG) != 0);
 
+    if (isUse)
+    {
+        if (compCurBB->bbNum != varDsc->lvDefBBNum)
+        {
+            // var was not wholly defined in this BB before a use
+            varDsc->lvDefBBNum = UINT32_MAX - 1;
+        }
+    }
+    else if (isDef)
+    {
+        if ((varDsc->lvDefBBNum == UINT32_MAX) || // first time we see this local
+            (varDsc->lvDefBBNum == compCurBB->bbNum)) // or has it only been defined in this current BB
+        {
+            varDsc->lvDefBBNum = compCurBB->bbNum; // then mark that it is always defined in this current BB
+        }
+        else
+        {
+            varDsc->lvDefBBNum = UINT32_MAX - 1; // Otherwise var is not restricted to one BB
+        }
+    }
+
     if (varDsc->lvTracked)
     {
         assert(varDsc->lvVarIndex < lvaTrackedCount);
@@ -192,6 +213,7 @@ void Compiler::fgLocalVarLivenessInit()
     for (unsigned lclNum = 0; lclNum < lvaCount; ++lclNum)
     {
         lvaTable[lclNum].lvMustInit = false;
+        lvaTable[lclNum].lvDefBBNum = UINT32_MAX;
     }
 }
 

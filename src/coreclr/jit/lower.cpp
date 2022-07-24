@@ -6342,6 +6342,9 @@ GenTree* Lowering::LowerArrElem(GenTreeArrElem* arrElem)
     return nextToLower;
 }
 
+long long s_numNonParamTrackedLocals;
+long long s_numNonParamUnnecessarilyTrackedLocals;
+
 PhaseStatus Lowering::DoPhase()
 {
     // If we have any PInvoke calls, insert the one-time prolog code. We'll insert the epilog code in the
@@ -6416,6 +6419,17 @@ PhaseStatus Lowering::DoPhase()
     {
         // If we are not optimizing, remove the dead blocks regardless.
         comp->fgRemoveDeadBlocks();
+    }
+
+    for (unsigned lclNum = 0; lclNum < comp->lvaCount; lclNum++)
+    {
+        LclVarDsc* dsc = comp->lvaGetDesc(lclNum);
+        if (dsc->lvIsParam || !dsc->lvTracked)
+            continue;
+
+        s_numNonParamTrackedLocals++;
+        if (dsc->lvDefBBNum != UINT_MAX - 1)
+            s_numNonParamUnnecessarilyTrackedLocals++;
     }
 
     // Recompute local var ref counts again after liveness to reflect
