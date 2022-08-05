@@ -9,6 +9,8 @@ class MetricsSummary
 public:
     // Number of methods successfully jitted.
     int SuccessfulCompiles = 0;
+    int SuccessfulTier0Compiles = 0;
+    int SuccessfulTier1Compiles = 0;
     // Number of methods that failed jitting.
     int FailingCompiles = 0;
     // Number of methods that failed jitting due to missing SPMI data.
@@ -20,8 +22,12 @@ public:
     // Number of executed instructions in successful compiles.
     // Requires a dynamic instrumentor to be enabled.
     long long NumExecutedInstructions = 0;
+    long long NumTier0ExecutedInstructions = 0;
+    long long NumTier1ExecutedInstructions = 0;
     // Number of executed instructions inside contexts that were successfully diffed.
     long long NumDiffExecutedInstructions = 0;
+    long long NumTier0DiffExecutedInstructions = 0;
+    long long NumTier1DiffExecutedInstructions = 0;
 
     bool SaveToFile(const char* path);
     static bool LoadFromFile(const char* path, MetricsSummary* metrics);

@@ -22,7 +22,7 @@ HANDLE MethodContextReader::OpenFile(const char* inputFile, DWORD flags)
     {
         LogError("Failed to open file '%s'. GetLastError()=%u", inputFile, GetLastError());
     }
-    return fileHandle;
+    return fileHandle;//
 }
 
 static std::string to_lower(const std::string& input)

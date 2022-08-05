@@ -547,6 +547,12 @@ int __cdecl main(int argc, char* argv[])
 
                     totalBaseMetrics.NumDiffExecutedInstructions += baseMetrics.NumExecutedInstructions;
                     totalDiffMetrics.NumDiffExecutedInstructions += diffMetrics.NumExecutedInstructions;
+
+                    totalBaseMetrics.NumTier0DiffExecutedInstructions += baseMetrics.NumTier0ExecutedInstructions;
+                    totalDiffMetrics.NumTier0DiffExecutedInstructions += diffMetrics.NumTier0ExecutedInstructions;
+
+                    totalBaseMetrics.NumTier1DiffExecutedInstructions += baseMetrics.NumTier1ExecutedInstructions;
+                    totalDiffMetrics.NumTier1DiffExecutedInstructions += diffMetrics.NumTier1ExecutedInstructions;
                 }
             }
         }

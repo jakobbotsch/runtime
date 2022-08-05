@@ -43,15 +43,21 @@ bool MetricsSummary::SaveToFile(const char* path)
     int len =
         sprintf_s(
             buffer, sizeof(buffer),
-            "Successful compiles,Failing compiles,Missing compiles,Code bytes,Diffed code bytes,Executed instructions,Diff executed instructions\n"
-            "%d,%d,%d,%lld,%lld,%lld,%lld\n",
+            "Successful compiles,Successful tier0 compiles,Successful tier1 compiles,Failing compiles,Missing compiles,Code bytes,Diffed code bytes,Executed instructions,Tier 0 executed instructions,Tier 1 executed instructions,Diff executed instructions,Diff executed instructions tier 0,Diff executed instructions tier1\n"
+            "%d,%d,%d,%d,%d,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld\n",
             SuccessfulCompiles,
+            SuccessfulTier0Compiles,
+            SuccessfulTier1Compiles,
             FailingCompiles,
             MissingCompiles,
             NumCodeBytes,
             NumDiffedCodeBytes,
             NumExecutedInstructions,
-            NumDiffExecutedInstructions);
+            NumTier0ExecutedInstructions,
+            NumTier1ExecutedInstructions,
+            NumDiffExecutedInstructions,
+            NumTier0DiffExecutedInstructions,
+            NumTier1DiffExecutedInstructions);
     DWORD numWritten;
     if (!WriteFile(file.get(), buffer, static_cast<DWORD>(len), &numWritten, nullptr) || numWritten != static_cast<DWORD>(len))
     {
@@ -104,10 +110,16 @@ bool MetricsSummary::LoadFromFile(const char* path, MetricsSummary* metrics)
 void MetricsSummary::AggregateFrom(const MetricsSummary& other)
 {
     SuccessfulCompiles += other.SuccessfulCompiles;
+    SuccessfulTier0Compiles += other.SuccessfulTier0Compiles;
+    SuccessfulTier1Compiles += other.SuccessfulTier1Compiles;
     FailingCompiles += other.FailingCompiles;
     MissingCompiles += other.MissingCompiles;
     NumCodeBytes += other.NumCodeBytes;
     NumDiffedCodeBytes += other.NumDiffedCodeBytes;
     NumExecutedInstructions += other.NumExecutedInstructions;
+    NumTier0ExecutedInstructions += other.NumTier0ExecutedInstructions;
+    NumTier1ExecutedInstructions += other.NumTier1ExecutedInstructions;
     NumDiffExecutedInstructions += other.NumDiffExecutedInstructions;
+    NumTier0DiffExecutedInstructions += other.NumTier0DiffExecutedInstructions;
+    NumTier1DiffExecutedInstructions += other.NumTier1DiffExecutedInstructions;
 }

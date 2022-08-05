@@ -309,6 +309,7 @@ JitInstance::Result JitInstance::CompileMethod(MethodContext* MethodToCompile, i
         int                 mcIndex;
         bool                collectThroughput;
         MetricsSummary*     metrics;
+        CORJIT_FLAGS        extendedFlags;
     } param;
     param.pThis             = this;
     param.result            = RESULT_SUCCESS; // assume success
@@ -335,6 +336,7 @@ JitInstance::Result JitInstance::CompileMethod(MethodContext* MethodToCompile, i
         CORINFO_OS os             = CORINFO_WINNT;
 
         pParam->pThis->mc->repCompileMethod(&pParam->info, &pParam->flags, &os);
+        pParam->pThis->mc->repGetJitFlags(&pParam->extendedFlags, sizeof(pParam->extendedFlags));
         if (pParam->collectThroughput)
         {
             pParam->pThis->lt.Start();
@@ -435,8 +437,18 @@ JitInstance::Result JitInstance::CompileMethod(MethodContext* MethodToCompile, i
     if (param.result == RESULT_SUCCESS)
     {
         metrics->SuccessfulCompiles++;
-        metrics->NumExecutedInstructions += static_cast<long long>(insCountAfter - insCountBefore);
-
+        long long numIns = static_cast<long long>(insCountAfter - insCountBefore);
+        metrics->NumExecutedInstructions += numIns;
+        if (param.extendedFlags.IsSet(CORJIT_FLAGS::CORJIT_FLAG_TIER0))
+        {
+            metrics->NumTier0ExecutedInstructions += numIns;
+            metrics->SuccessfulTier0Compiles++;
+        }
+        if (param.extendedFlags.IsSet(CORJIT_FLAGS::CORJIT_FLAG_TIER1))
+        {
+            metrics->NumTier1ExecutedInstructions += numIns;
+            metrics->SuccessfulTier1Compiles++;
+        }
     }
     else
     {
