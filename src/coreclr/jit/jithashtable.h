@@ -149,7 +149,7 @@ public:
     //    If the key does not exist *pVal is not updated. pVal may be nullptr
     //    so this function can be used to simply check if the key exists.
     //
-    bool Lookup(Key k, Value* pVal = nullptr) const
+    bool Lookup(const Key& k, Value* pVal = nullptr) const
     {
         Node* pN = FindNode(k);
 
@@ -158,6 +158,35 @@ public:
             if (pVal != nullptr)
             {
                 *pVal = pN->m_val;
+            }
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    bool LookupSaveHint(const Key& k, void** hint, Value* pVal = nullptr)
+    {
+        if (m_tableSizeInfo.prime == 0)
+        {
+            *hint = nullptr;
+            return false;
+        }
+
+        Node** slot;
+        bool found = FindNodeSlot(k, &slot);
+        intptr_t hintVal = reinterpret_cast<intptr_t>(slot);
+        hintVal |= found ? 1 : 0;
+        *hint = reinterpret_cast<void*>(hintVal);
+
+        assert(slot != nullptr);
+        if (found)
+        {
+            if (pVal != nullptr)
+            {
+                *pVal = (*slot)->m_val;
             }
             return true;
         }
@@ -182,7 +211,7 @@ public:
     //    This is similar to `Lookup` but avoids copying the value and allows
     //    updating the value without using `Set`.
     //
-    Value* LookupPointer(Key k) const
+    Value* LookupPointer(const Key& k) const
     {
         Node* pN = FindNode(k);
 
@@ -220,7 +249,7 @@ public:
         Overwrite
     };
 
-    bool Set(Key k, Value v, SetKind kind = None)
+    bool Set(const Key& k, const Value& v, SetKind kind = None)
     {
         CheckGrowth();
 
@@ -248,6 +277,36 @@ public:
         }
     }
 
+    bool SetWithHint(const Key& k, void* hint, const Value& v, SetKind kind = None)
+    {
+        bool grew = CheckGrowth();
+        if (grew || (hint == nullptr))
+        {
+            return Set(k, v, kind);
+        }
+
+        bool existing = (reinterpret_cast<intptr_t>(hint) & 1) != 0;
+        Node** slot = reinterpret_cast<Node**>(reinterpret_cast<intptr_t>(hint) & ~1);
+#ifdef DEBUG
+        Node** foundSlot;
+        assert((FindNodeSlot(k, &foundSlot) == existing) && (foundSlot == slot));
+#endif
+
+        if (existing)
+        {
+            assert(kind == Overwrite);
+            (*slot)->m_val = v;
+            return true;
+        }
+        else
+        {
+            Node* newNode = new (m_alloc) Node(*slot, k, v);
+            *slot = newNode;
+            m_tableCount++;
+            return false;
+        }
+    }
+
     //------------------------------------------------------------------------
     // Emplace: Associates the specified key with a value constructed in-place
     // using the supplied args if the key is not already present.
@@ -260,7 +319,7 @@ public:
     //    A pointer to the existing or newly constructed value.
     //
     template <class... Args>
-    Value* Emplace(Key k, Args&&... args)
+    Value* Emplace(const Key& k, Args&&... args)
     {
         CheckGrowth();
 
@@ -297,7 +356,7 @@ public:
     // Notes:
     //    Removing a inexistent key is not an error.
     //
-    bool Remove(Key k)
+    bool Remove(const Key& k)
     {
         unsigned index = GetIndexForKey(k);
 
@@ -403,7 +462,7 @@ private:
     // Return Value:
     //    A pointer to the node or `nullptr` if the key is not found.
     //
-    Node* FindNode(Key k) const
+    Node* FindNode(const Key& k) const
     {
         if (m_tableSizeInfo.prime == 0)
         {
@@ -428,6 +487,32 @@ private:
 
         // If pN != nullptr, it's the node for the key, else the key isn't mapped.
         return pN;
+    }
+
+    bool FindNodeSlot(const Key& k, Node*** pSlot) const
+    {
+        assert(m_tableSizeInfo.prime != 0);
+
+        unsigned index = GetIndexForKey(k);
+
+        Node** slot = &m_table[index];
+
+        while (true)
+        {
+            if (*slot == nullptr)
+            {
+                *pSlot = &m_table[index];
+                return false;
+            }
+
+            if (KeyFuncs::Equals(k, (*slot)->m_key))
+            {
+                *pSlot = slot;
+                return true;
+            }
+
+            slot = &(*slot)->m_next;
+        }
     }
 
     //------------------------------------------------------------------------
@@ -461,12 +546,15 @@ private:
     // CheckGrowth: Check if the maximum hashtable density has been reached
     // and increase the size of the bucket table if necessary.
     //
-    void CheckGrowth()
+    bool CheckGrowth()
     {
         if (m_tableCount == m_tableMax)
         {
             Grow();
+            return true;
         }
+
+        return false;
     }
 
 public:

@@ -247,12 +247,12 @@ public:
             ~VNMap<fromType, keyfuncs>::JitHashTable();
         }
 
-        bool Set(fromType k, ValueNum val)
+        bool Set(const fromType& k, ValueNum val)
         {
             assert(val != RecursiveVN);
             return JitHashTable<fromType, keyfuncs, ValueNum>::Set(k, val);
         }
-        bool Lookup(fromType k, ValueNum* pVal = nullptr) const
+        bool Lookup(const fromType& k, ValueNum* pVal = nullptr) const
         {
             bool result = JitHashTable<fromType, keyfuncs, ValueNum>::Lookup(k, pVal);
             assert(!result || *pVal != RecursiveVN);
