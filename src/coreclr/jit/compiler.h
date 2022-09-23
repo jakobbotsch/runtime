@@ -461,6 +461,7 @@ public:
 
     unsigned char lvMustInit : 1; // must be initialized
 
+    bool lvImplicitByRefAddrExposed : 1;
 private:
     bool m_addrExposed : 1; // The address of this variable is "exposed" -- passed as an argument, stored in a
                             // global location, etc.

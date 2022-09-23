@@ -1333,6 +1333,8 @@ void Compiler::compStartup()
  *  One time finalization code
  */
 
+extern int s_numUnnecessaryLastUseStructCopies;
+
 /* static */
 void Compiler::compShutdown()
 {
@@ -1489,6 +1491,8 @@ void Compiler::compShutdown()
     }
 
 #endif // COUNT_AST_OPERS
+
+    fprintf(fout, "Number of unnecessary struct copies: %d\n", s_numUnnecessaryLastUseStructCopies);
 
 #if DISPLAY_SIZES
 

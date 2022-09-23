@@ -5441,6 +5441,8 @@ bool CodeGen::genEmitOptimizedGCWriteBarrier(GCInfo::WriteBarrierForm writeBarri
 #endif // !defined(TARGET_X86) || !NOGC_WRITE_BARRIERS
 }
 
+int s_numUnnecessaryLastUseStructCopies;
+
 // Produce code for a GT_CALL node
 void CodeGen::genCall(GenTreeCall* call)
 {
@@ -5516,6 +5518,73 @@ void CodeGen::genCall(GenTreeCall* call)
             regNumber targetReg = compiler->getCallArgIntRegister(argNode->GetRegNum());
             inst_Mov(TYP_LONG, targetReg, srcReg, /* canSkip */ false, emitActualTypeSize(TYP_I_IMPL));
         }
+    }
+
+    for (CallArg& arg : call->gtArgs.Args())
+    {
+        assert((arg.GetEarlyNode() == nullptr) != (arg.GetLateNode() == nullptr));
+        if (!arg.AbiInfo.PassedByRef)
+            continue;
+
+        GenTree* putArg = arg.GetNode();
+        GenTree* arg = putArg->gtGetOp1();
+        if (!arg->OperIs(GT_LCL_VAR_ADDR))
+            continue;
+
+        unsigned lclNum = arg->AsLclVarCommon()->GetLclNum();
+        if ((arg->gtFlags & GTF_VAR_DEATH) != 0)
+            continue;
+
+        GenTree* curNode = arg;
+        do
+        {
+            curNode = curNode->gtPrev;
+
+            GenTree* storeData = nullptr;
+            if (curNode->OperIsStoreBlk() && curNode->AsIndir()->Addr()->OperIsLocalAddr())
+            {
+                GenTreeLclVarCommon* addr = curNode->AsIndir()->Addr()->AsLclVarCommon();
+                if (addr->AsLclVarCommon()->GetLclNum() == lclNum && addr->AsLclVarCommon()->GetLclOffs() == 0)
+                    storeData = curNode->AsIndir()->Data();
+            }
+            else if (curNode->OperIsLocalStore())
+            {
+                GenTreeLclVarCommon* addr = curNode->AsLclVarCommon();
+                if (addr->GetLclNum() == lclNum && addr->GetLclOffs() == 0)
+                    storeData = curNode->AsLclVarCommon()->Data();
+            }
+            else
+            {
+                assert(!curNode->OperIsLocal() || curNode->AsLclVarCommon()->GetLclNum() != lclNum);
+            }
+
+            if (storeData != nullptr)
+            {
+                GenTreeLclVarCommon* srcLcl = nullptr;
+                if (storeData->OperIsIndir() && storeData->AsIndir()->Addr()->OperIsLocal())
+                {
+                    GenTreeLclVarCommon* lcl = storeData->AsIndir()->Addr()->AsLclVarCommon();
+                    if (compiler->lvaGetDesc(lcl)->lvIsImplicitByRef && !compiler->lvaGetDesc(lcl)->lvImplicitByRefAddrExposed)
+                        srcLcl = lcl;
+                }
+                else if (storeData->OperIsLocal())
+                {
+                    GenTreeLclVarCommon* lcl = storeData->AsLclVarCommon();
+                    if (!compiler->lvaGetDesc(lcl)->IsAddressExposed())
+                        srcLcl = lcl;
+                }
+
+                if (srcLcl != nullptr)
+                {
+                    if ((compiler->lvaGetPromotionType(srcLcl->GetLclNum()) != Compiler::PROMOTION_TYPE_INDEPENDENT) && (srcLcl->gtFlags & GTF_VAR_DEATH) != 0)
+                    {
+                        s_numUnnecessaryLastUseStructCopies++;
+                    }
+                }
+
+                break;
+            }
+        } while (curNode != LIR::AsRange(compiler->compCurBB).FirstNode());
     }
 
 #if defined(TARGET_X86) || defined(UNIX_AMD64_ABI)

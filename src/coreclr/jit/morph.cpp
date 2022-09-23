@@ -16666,6 +16666,8 @@ PhaseStatus Compiler::fgRetypeImplicitByRefArgs()
             // Since the parameter in this position is really a pointer, its type is TYP_BYREF.
             varDsc->lvType = TYP_BYREF;
 
+            // 1 if the value of an implicit byref variable is exposed.
+            varDsc->lvImplicitByRefAddrExposed = varDsc->IsAddressExposed();
             // The struct parameter may have had its address taken, but the pointer parameter
             // cannot -- any uses of the struct parameter's address are uses of the pointer
             // parameter's value, and there's no way for the MSIL to reference the pointer
