@@ -8815,13 +8815,11 @@ GenTree* Compiler::optRemoveRangeCheck(GenTreeBoundsChk* check, GenTree* comma, 
                  (check != nullptr && check->OperIs(GT_BOUNDS_CHECK) && comma == nullptr));
     noway_assert(check->OperIs(GT_BOUNDS_CHECK));
 
-    GenTree* tree = comma != nullptr ? comma : check;
-
 #ifdef DEBUG
     if (verbose)
     {
         printf("Before optRemoveRangeCheck:\n");
-        gtDispTree(tree);
+        gtDispTree(check);
     }
 #endif
 
@@ -8829,40 +8827,51 @@ GenTree* Compiler::optRemoveRangeCheck(GenTreeBoundsChk* check, GenTree* comma, 
     GenTree* sideEffList = nullptr;
     gtExtractSideEffList(check, &sideEffList, GTF_ASG);
 
+    GenTree** edge;
+    GenTree* parent;
+
+    if (fgStmtListThreaded)
+    {
+        parent = check->gtGetParent(&edge);
+        if (edge == nullptr)
+        {
+            assert(stmt->GetRootNode() == check);
+            edge = stmt->GetRootNodePointer();
+        }
+    }
+    else
+    {
+        Compiler::FindLinkData link = gtFindLink(stmt, check);
+        parent = link.parent;
+        edge = link.result;
+    }
+
     if (sideEffList != nullptr)
     {
-        // We've got some side effects.
-        if (tree->OperIs(GT_COMMA))
-        {
-            // Make the comma handle them.
-            tree->AsOp()->gtOp1 = sideEffList;
-        }
-        else
-        {
-            // Make the statement execute them instead of the check.
-            stmt->SetRootNode(sideEffList);
-            tree = sideEffList;
-        }
+        *edge = sideEffList;
     }
     else
     {
         check->gtBashToNOP();
     }
 
-    if (tree->OperIs(GT_COMMA))
+    if (parent != nullptr)
     {
-        // TODO-CQ: We should also remove the GT_COMMA, but in any case we can no longer CSE the GT_COMMA.
-        tree->gtFlags |= GTF_DONT_CSE;
-    }
+        if (parent->OperIs(GT_COMMA))
+        {
+            // TODO-CQ: We should also remove the GT_COMMA, but in any case we can no longer CSE the GT_COMMA.
+            parent->gtFlags |= GTF_DONT_CSE;
+        }
 
-    gtUpdateSideEffects(stmt, tree);
+        gtUpdateSideEffects(stmt, parent);
+    }
 
 #ifdef DEBUG
     if (verbose)
     {
         // gtUpdateSideEffects can update the side effects for ancestors in the tree, so display the whole statement
         // tree, not just the sub-tree.
-        printf("After optRemoveRangeCheck for [%06u]:\n", dspTreeID(tree));
+        printf("After optRemoveRangeCheck for [%06u]:\n", dspTreeID(check));
         gtDispTree(stmt->GetRootNode());
     }
 #endif
@@ -8885,7 +8894,6 @@ GenTree* Compiler::optRemoveStandaloneRangeCheck(GenTreeBoundsChk* check, Statem
 {
     assert(check != nullptr);
     assert(stmt != nullptr);
-    assert(check == stmt->GetRootNode());
 
     return optRemoveRangeCheck(check, nullptr, stmt);
 }

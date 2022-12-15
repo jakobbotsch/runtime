@@ -5036,7 +5036,7 @@ GenTree* Compiler::optAssertionProp_BndsChk(ASSERT_VALARG_TP assertions, GenTree
             gtDispTree(tree, nullptr, nullptr, true);
         }
 #endif
-        if (arrBndsChk == stmt->GetRootNode())
+        //if (arrBndsChk == stmt->GetRootNode())
         {
             // We have a top-level bounds check node.
             // This can happen when trees are broken up due to inlining.
@@ -5046,11 +5046,11 @@ GenTree* Compiler::optAssertionProp_BndsChk(ASSERT_VALARG_TP assertions, GenTree
             return optAssertionProp_Update(newTree, arrBndsChk, stmt);
         }
 
-        // Defer actually removing the tree until processing reaches its parent comma, since
-        // optRemoveCommaBasedRangeCheck needs to rewrite the whole comma tree.
-        arrBndsChk->gtFlags |= GTF_CHK_INDEX_INBND;
+        //// Defer actually removing the tree until processing reaches its parent comma, since
+        //// optRemoveCommaBasedRangeCheck needs to rewrite the whole comma tree.
+        //arrBndsChk->gtFlags |= GTF_CHK_INDEX_INBND;
 
-        return nullptr;
+        //return nullptr;
     }
 
     return nullptr;
