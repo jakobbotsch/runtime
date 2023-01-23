@@ -3412,7 +3412,7 @@ void Compiler::fgDebugCheckLinkedLocals()
     {
         for (Statement* stmt : block->Statements())
         {
-            GenTree* first = stmt->GetRootNode()->gtNext;
+            GenTree* first = stmt->GetTreeList()->gtNext;
             CheckDoublyLinkedList<GenTree, &GenTree::gtPrev, &GenTree::gtNext>(first);
 
             seq.Sequence(stmt);
