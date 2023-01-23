@@ -860,11 +860,11 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     GenTreeLclVarCommon* useLcl = (*use)->AsLclVarCommon();
     *use                        = fwdSubNode;
 
+    GenTreeLclVarCommon* firstLcl = *stmt->LocalsTreeList().begin();
+
     // We expect the last local in the statement is the defined local and
     // replace the use of it with the rest from the statement.
-    assert(lhsNode->gtNext == nullptr);
-
-    GenTreeLclVarCommon* firstLcl = *stmt->LocalsTreeList().begin();
+    assert(lhsNode->gtNext == firstLcl);
 
     if (firstLcl == lhsNode)
     {

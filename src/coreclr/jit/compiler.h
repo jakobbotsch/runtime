@@ -4806,7 +4806,13 @@ public:
                                      GenTreeLclVarCommon* lclVarNode);
     bool fgComputeLifeLocal(VARSET_TP& life, VARSET_VALARG_TP keepAliveVars, GenTree* lclVarNode);
 
-    GenTree* fgTryRemoveDeadStoreEarly(Statement* stmt, GenTreeLclVarCommon* dst);
+    enum class RemoveDeadStoreResult
+    {
+        None,
+        RemovedStatement,
+        ExtractedSideEffects,
+    };
+    RemoveDeadStoreResult fgTryRemoveDeadStoreEarly(Statement* stmt, GenTreeLclVarCommon* dst);
 
     void fgComputeLife(VARSET_TP&       life,
                        GenTree*         startNode,

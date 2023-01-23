@@ -3412,23 +3412,38 @@ void Compiler::fgDebugCheckLinkedLocals()
     {
         for (Statement* stmt : block->Statements())
         {
-            GenTree* first = stmt->GetRootNode()->gtNext;
-            CheckDoublyLinkedList<GenTree, &GenTree::gtPrev, &GenTree::gtNext>(first);
-
             seq.Sequence(stmt);
 
             ArrayStack<GenTree*>* expected = seq.GetSequence();
 
-            bool success   = true;
-            int  nodeIndex = 0;
-            for (GenTree* cur = first; cur != nullptr; cur = cur->gtNext)
+            bool     success = true;
+            GenTree* cur     = stmt->GetTreeList();
+
+            if (expected->Height() == 0)
             {
-                success &= cur->OperIsLocal() || cur->OperIsLocalAddr();
-                success &= (nodeIndex < expected->Height()) && (cur == expected->Bottom(nodeIndex));
-                nodeIndex++;
+                success &= cur == nullptr;
             }
 
-            success &= nodeIndex == expected->Height();
+            for (int nodeIndex = 0; nodeIndex < expected->Height(); nodeIndex++)
+            {
+                if (cur == nullptr)
+                {
+                    success = false;
+                    break;
+                }
+
+                success &= cur->OperIsLocal() || cur->OperIsLocalAddr();
+                success &= cur == expected->Bottom(nodeIndex);
+
+                GenTree* expectedPrev = (nodeIndex == 0) ? expected->Top(0) : expected->Bottom(nodeIndex - 1);
+                success &= cur->gtPrev == expectedPrev;
+
+                GenTree* expectedNext =
+                    (nodeIndex == expected->Height() - 1) ? expected->Bottom(0) : expected->Bottom(nodeIndex + 1);
+                success &= cur->gtNext == expectedNext;
+
+                cur = cur->gtNext;
+            }
 
             if (!success && verbose)
             {
@@ -3445,7 +3460,7 @@ void Compiler::fgDebugCheckLinkedLocals()
 
                 printf("\n\nActual:\n");
                 pref = "  ";
-                for (GenTree* cur = first; cur != nullptr; cur = cur->gtNext)
+                for (GenTree* cur : stmt->LocalsTreeList())
                 {
                     printf("%s[%06u]", pref, dspTreeID(cur));
                     pref = " -> ";

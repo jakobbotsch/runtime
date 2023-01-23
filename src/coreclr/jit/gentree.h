@@ -7383,12 +7383,22 @@ class LocalsGenTreeList
     Statement* m_stmt;
 
 public:
+    struct end_iterator
+    {
+        const GenTreeLclVarCommon* First;
+
+        end_iterator(GenTreeLclVarCommon* first) : First(first)
+        {
+        }
+    };
+
     class iterator
     {
         GenTreeLclVarCommon* m_tree;
+        bool                 m_first;
 
     public:
-        explicit iterator(GenTreeLclVarCommon* tree) : m_tree(tree)
+        explicit iterator(GenTreeLclVarCommon* tree, bool first) : m_tree(tree), m_first(first)
         {
         }
 
@@ -7400,20 +7410,14 @@ public:
         iterator& operator++()
         {
             assert((m_tree->gtNext == nullptr) || m_tree->gtNext->OperIsLocal() || m_tree->gtNext->OperIsLocalAddr());
-            m_tree = static_cast<GenTreeLclVarCommon*>(m_tree->gtNext);
+            m_tree  = static_cast<GenTreeLclVarCommon*>(m_tree->gtNext);
+            m_first = false;
             return *this;
         }
 
-        iterator& operator--()
+        bool operator!=(const end_iterator& i) const
         {
-            assert((m_tree->gtPrev == nullptr) || m_tree->gtPrev->OperIsLocal() || m_tree->gtPrev->OperIsLocalAddr());
-            m_tree = static_cast<GenTreeLclVarCommon*>(m_tree->gtPrev);
-            return *this;
-        }
-
-        bool operator!=(const iterator& i) const
-        {
-            return m_tree != i.m_tree;
+            return m_first || (m_tree != i.First);
         }
     };
 
@@ -7421,12 +7425,8 @@ public:
     {
     }
 
-    iterator begin() const;
-
-    iterator end() const
-    {
-        return iterator(nullptr);
-    }
+    iterator     begin() const;
+    end_iterator end() const;
 
     void Remove(GenTreeLclVarCommon* node);
     void Replace(GenTreeLclVarCommon* firstNode,

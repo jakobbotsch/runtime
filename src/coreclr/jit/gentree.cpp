@@ -562,9 +562,22 @@ void GenTree::DumpNodeSizes(FILE* fp)
 //
 LocalsGenTreeList::iterator LocalsGenTreeList::begin() const
 {
-    GenTree* first = m_stmt->GetRootNode()->gtNext;
+    GenTree* first = m_stmt->GetTreeList();
     assert((first == nullptr) || first->OperIsLocal() || first->OperIsLocalAddr());
-    return iterator(static_cast<GenTreeLclVarCommon*>(first));
+    return iterator(static_cast<GenTreeLclVarCommon*>(first), first != nullptr);
+}
+
+//-----------------------------------------------------------
+// end: Get the end iterator for the locals list.
+//
+// Return Value:
+//     Iterator representing the end.
+//
+LocalsGenTreeList::end_iterator LocalsGenTreeList::end() const
+{
+    GenTree* first = m_stmt->GetTreeList();
+    assert((first == nullptr) || first->OperIsLocal() || first->OperIsLocalAddr());
+    return end_iterator(static_cast<GenTreeLclVarCommon*>(first));
 }
 
 //-----------------------------------------------------------
@@ -626,6 +639,9 @@ void LocalsGenTreeList::Remove(GenTreeLclVarCommon* node)
 
     *forwardEdge  = node->gtNext;
     *backwardEdge = node->gtPrev;
+
+    if (m_stmt->GetTreeList() == node)
+        m_stmt->SetTreeList(node->gtNext);
 }
 
 //-----------------------------------------------------------
@@ -654,6 +670,9 @@ void LocalsGenTreeList::Replace(GenTreeLclVarCommon* firstNode,
     *backwardEdge        = newLastNode;
     newFirstNode->gtPrev = prev;
     newLastNode->gtNext  = next;
+
+    if (m_stmt->GetTreeList() == firstNode)
+        m_stmt->SetTreeList(newFirstNode);
 }
 
 //-----------------------------------------------------------

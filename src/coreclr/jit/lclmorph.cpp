@@ -28,10 +28,7 @@ public:
     //
     void Start(Statement* stmt)
     {
-        // We use the root node as a 'sentinel' node that will keep the head
-        // and tail of the sequenced list.
         m_rootNode = stmt->GetRootNode();
-        assert(!m_rootNode->OperIsLocal() && !m_rootNode->OperIsLocalAddr());
 
         m_rootNode->gtPrev = nullptr;
         m_rootNode->gtNext = nullptr;
@@ -58,15 +55,12 @@ public:
         {
             GenTree* lastNode = m_prevNode;
 
-            // We only sequence leaf nodes that we shouldn't see as standalone
-            // statements here.
-            assert(m_rootNode != firstNode);
-            assert((m_rootNode->gtPrev == nullptr) && (lastNode->gtNext == nullptr));
-
             assert(lastNode->OperIsLocal() || lastNode->OperIsLocalAddr());
-            firstNode->gtPrev  = nullptr;
-            m_rootNode->gtPrev = lastNode;
+            firstNode->gtPrev = lastNode;
+            lastNode->gtNext  = firstNode;
         }
+
+        stmt->SetTreeList(firstNode);
     }
 
     fgWalkResult PostOrderVisit(GenTree** use, GenTree* user)
