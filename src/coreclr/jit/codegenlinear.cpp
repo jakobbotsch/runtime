@@ -1651,7 +1651,7 @@ void CodeGen::genConsumeRegs(GenTree* tree)
         {
             genConsumeRegs(tree->gtGetOp1());
         }
-        else if (tree->OperIs(GT_MUL))
+        else if (tree->OperIs(GT_MUL, GT_AND, GT_OR, GT_XOR, GT_ADD, GT_SUB))
         {
             genConsumeRegs(tree->gtGetOp1());
             genConsumeRegs(tree->gtGetOp2());

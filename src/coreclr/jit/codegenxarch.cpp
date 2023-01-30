@@ -589,7 +589,7 @@ void CodeGen::genCodeForNegNot(GenTree* tree)
     {
         GenTree* operand = tree->gtGetOp1();
         assert(operand->isUsedFromReg());
-        regNumber operandReg = genConsumeReg(operand);
+        regNumber operandReg = operand->GetRegNum();
 
         inst_Mov(targetType, targetReg, operandReg, /* canSkip */ true);
 
@@ -927,8 +927,8 @@ void CodeGen::genCodeForBinary(GenTreeOp* treeNode)
 
     instruction ins = genGetInsForOper(treeNode->OperGet(), targetType);
 
-    // The arithmetic node must be sitting in a register (since it's not contained)
-    noway_assert(targetReg != REG_NA);
+    // The arithmetic node must be sitting in a register (if it's not contained)
+    assert(targetReg != REG_NA);
 
     regNumber op1reg = op1->isUsedFromReg() ? op1->GetRegNum() : REG_NA;
     regNumber op2reg = op2->isUsedFromReg() ? op2->GetRegNum() : REG_NA;
@@ -1026,6 +1026,7 @@ void CodeGen::genCodeForBinary(GenTreeOp* treeNode)
 #endif
         genCheckOverflow(treeNode);
     }
+
     genProduceReg(treeNode);
 }
 
@@ -1377,7 +1378,50 @@ void CodeGen::genCodeForSelect(GenTreeOp* select)
         if (cond->isContained())
         {
             assert(cond->OperIsCompare());
-            genCodeForCompare(cond->AsOp());
+
+            GenTree* condSource = cond->gtGetOp1();
+            if (condSource->isContained() &&
+                condSource->OperIs(GT_AND, GT_OR, GT_XOR, GT_ADD, GT_SUB, GT_NEG, GT_HWINTRINSIC))
+            {
+                assert(cond->OperIs(GT_EQ, GT_NE));
+                assert(cond->gtGetOp2()->isContained() && cond->gtGetOp2()->IsIntegralConst(0));
+                regNumber   targetReg = condSource->GetSingleTempReg();
+                instruction ins       = genGetInsForOper(condSource->OperGet(), condSource->TypeGet());
+                if (condSource->OperIs(GT_NEG))
+                {
+                    inst_Mov(condSource->TypeGet(), targetReg, condSource->gtGetOp1()->GetRegNum(), /* canSkip */ true);
+                    inst_RV(ins, targetReg, condSource->TypeGet());
+                }
+                else
+                {
+                    assert(condSource->OperIsBinary());
+
+                    GenTree*  op1    = condSource->gtGetOp1();
+                    GenTree*  op2    = condSource->gtGetOp2();
+                    regNumber op1Reg = op1->isUsedFromReg() ? op1->GetRegNum() : REG_NA;
+                    regNumber op2Reg = op2->isUsedFromReg() ? op2->GetRegNum() : REG_NA;
+
+                    if (op1Reg == targetReg)
+                    {
+                        inst_RV_TT(ins, emitTypeSize(condSource), targetReg, condSource->gtGetOp2());
+                    }
+                    else if (op2Reg == targetReg)
+                    {
+                        assert(GenTree::OperIsCommutative(condSource->OperGet()));
+                        inst_RV_TT(ins, emitTypeSize(condSource), targetReg, condSource->gtGetOp1());
+                    }
+                    else
+                    {
+                        inst_Mov(condSource->TypeGet(), targetReg, op1Reg, true);
+                        inst_RV_TT(ins, emitTypeSize(condSource), targetReg, condSource->gtGetOp2());
+                    }
+                }
+            }
+            else
+            {
+                genCodeForCompare(cond->AsOp());
+            }
+
             cc = GenCondition::FromRelop(cond);
 
             if (cc.PreferSwap())
@@ -1720,6 +1764,7 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
 
         case GT_NOT:
         case GT_NEG:
+            genConsumeRegs(treeNode->gtGetOp1());
             genCodeForNegNot(treeNode);
             break;
 
@@ -7526,7 +7571,7 @@ int CodeGenInterface::genCallerSPtoInitialSPdelta() const
 void CodeGen::genSSE2BitwiseOp(GenTree* treeNode)
 {
     regNumber targetReg  = treeNode->GetRegNum();
-    regNumber operandReg = genConsumeReg(treeNode->gtGetOp1());
+    regNumber operandReg = treeNode->gtGetOp1()->GetRegNum();
     emitAttr  size       = emitTypeSize(treeNode);
 
     assert(varTypeIsFloating(treeNode->TypeGet()));

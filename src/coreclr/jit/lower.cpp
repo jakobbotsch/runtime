@@ -3065,7 +3065,7 @@ GenTree* Lowering::OptimizeConstCompare(GenTree* cmp)
         LIR::Use cmpUse;
 
         if (lsh->OperIs(GT_LSH) && varTypeIsIntOrI(lsh->TypeGet()) && lsh->gtGetOp1()->IsIntegralConst(1) &&
-            BlockRange().TryGetUse(cmp, &cmpUse))
+            BlockRange().TryGetUse(cmp, &cmpUse) && !cmpUse.User()->OperIs(GT_SELECT))
         {
             GenCondition condition = cmp->OperIs(GT_TEST_NE) ? GenCondition::C : GenCondition::NC;
 
@@ -3124,44 +3124,51 @@ GenTree* Lowering::OptimizeConstCompare(GenTree* cmp)
 #endif
                 )
         {
-            op1->gtFlags |= GTF_SET_FLAGS;
-            op1->SetUnusedValue();
+            GenTree* next = cmp->gtNext;
 
-            BlockRange().Remove(op2);
-
-            GenTree*   next = cmp->gtNext;
-            GenTree*   cc;
-            genTreeOps ccOp;
-            LIR::Use   cmpUse;
-
+            GenTree* user = nullptr;
+            LIR::Use cmpUse;
             // Fast check for the common case - relop used by a JTRUE that immediately follows it.
             if ((next != nullptr) && next->OperIs(GT_JTRUE) && (next->gtGetOp1() == cmp))
             {
-                cc   = next;
-                ccOp = GT_JCC;
-                next = nullptr;
-                BlockRange().Remove(cmp);
+                user = next;
             }
-            else if (BlockRange().TryGetUse(cmp, &cmpUse) && cmpUse.User()->OperIs(GT_JTRUE))
+            else if (BlockRange().TryGetUse(cmp, &cmpUse))
             {
-                cc   = cmpUse.User();
-                ccOp = GT_JCC;
-                next = nullptr;
-                BlockRange().Remove(cmp);
-            }
-            else // The relop is not used by a JTRUE or it is not used at all.
-            {
-                // Transform the relop node it into a SETCC. If it's not used we could remove
-                // it completely but that means doing more work to handle a rare case.
-                cc   = cmp;
-                ccOp = GT_SETCC;
+                user = cmpUse.User();
             }
 
-            GenCondition condition = GenCondition::FromIntegralRelop(cmp);
-            cc->ChangeOper(ccOp);
-            cc->AsCC()->gtCondition = condition;
+            if ((user == nullptr) || !user->OperIs(GT_SELECT))
+            {
+                op1->gtFlags |= GTF_SET_FLAGS;
+                op1->SetUnusedValue();
 
-            return next;
+                BlockRange().Remove(op2);
+
+                GenTree*   cc;
+                genTreeOps ccOp;
+
+                if ((user != nullptr) && user->OperIs(GT_JTRUE))
+                {
+                    cc   = user;
+                    ccOp = GT_JCC;
+                    next = nullptr;
+                    BlockRange().Remove(cmp);
+                }
+                else // The relop is not used by a JTRUE or it is not used at all.
+                {
+                    // Transform the relop node it into a SETCC. If it's not used we could remove
+                    // it completely but that means doing more work to handle a rare case.
+                    cc   = cmp;
+                    ccOp = GT_SETCC;
+                }
+
+                GenCondition condition = GenCondition::FromIntegralRelop(cmp);
+                cc->ChangeOper(ccOp);
+                cc->AsCC()->gtCondition = condition;
+
+                return next;
+            }
         }
     }
 #endif // defined(TARGET_XARCH) || defined(TARGET_ARM64)

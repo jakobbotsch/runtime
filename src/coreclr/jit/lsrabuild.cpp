@@ -2751,7 +2751,7 @@ void LinearScan::validateIntervals()
 //    This may be called for multiple uses, in which case 'interval' will only get preferenced at most
 //    to the first one (if it didn't already have a 'relatedInterval'.
 //
-void setTgtPref(Interval* interval, RefPosition* tgtPrefUse)
+void LinearScan::setTgtPref(Interval* interval, RefPosition* tgtPrefUse)
 {
     if (tgtPrefUse != nullptr)
     {
@@ -3243,6 +3243,18 @@ int LinearScan::BuildOperandUses(GenTree* node, regMaskTP candidates)
         // NEG can be contained for mneg on arm64
         // CAST and LSH for ADD with sign/zero extension
         // LSH, RSH, and RSZ for various "shifted register" instructions on arm64
+        return BuildOperandUses(node->gtGetOp1(), candidates);
+    }
+#endif
+#ifdef TARGET_XARCH
+    if (node->OperIs(GT_AND, GT_OR, GT_XOR, GT_ADD, GT_SUB))
+    {
+        // These can be contained directly into some compares/selects to produce values in flags.
+        return BuildBinaryUses(node->AsOp(), candidates);
+    }
+    if (node->OperIs(GT_NEG))
+    {
+        // Like above.
         return BuildOperandUses(node->gtGetOp1(), candidates);
     }
 #endif

@@ -917,7 +917,34 @@ int LinearScan::BuildSelect(GenTreeOp* select)
         if (cond->isContained())
         {
             assert(cond->OperIsCompare());
-            srcCount += BuildCmpOperands(cond);
+            GenTree* condSource = cond->gtGetOp1();
+            if (cond->OperIs(GT_EQ, GT_NE) && condSource->isContained() &&
+                condSource->OperIs(GT_AND, GT_OR, GT_XOR, GT_ADD, GT_SUB, GT_NEG))
+            {
+                assert(!varTypeIsFloating(condSource));
+
+                if (condSource->OperIsBinary())
+                {
+                    srcCount += BuildBinaryUses(condSource->AsOp());
+                }
+                else
+                {
+                    assert(condSource->OperIsUnary());
+                    srcCount += BuildOperandUses(condSource->gtGetOp1());
+                }
+
+                currentLoc += 2;
+                RefPosition* def = buildInternalIntRegisterDefForNode(condSource);
+                setTgtPref(def->getInterval(), tgtPrefUse);
+                setTgtPref(def->getInterval(), tgtPrefUse2);
+                tgtPrefUse  = nullptr;
+                tgtPrefUse2 = nullptr;
+            }
+            else
+            {
+                srcCount += BuildCmpOperands(cond);
+            }
+
             cc = GenCondition::FromRelop(cond);
         }
         else

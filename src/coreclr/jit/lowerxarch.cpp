@@ -5912,6 +5912,29 @@ void Lowering::ContainCheckSelect(GenTreeOp* select)
                 default:
                     break;
             }
+
+            // For equality checks against 0 there are many sources from which
+            // we can directly use the flags.
+            if ((cc.GetCode() == GenCondition::EQ) ||
+                (cc.GetCode() == GenCondition::NE) && cond->gtGetOp2()->IsIntegralConst(0))
+            {
+                GenTree* compareSource = cond->gtGetOp1();
+
+                bool writesZF = compareSource->OperIs(GT_AND, GT_OR, GT_XOR, GT_ADD, GT_SUB, GT_NEG);
+#ifdef FEATURE_HW_INTRINSICS
+                if (compareSource->OperIs(GT_HWINTRINSIC) &&
+                    emitter::DoesWriteZeroFlag(HWIntrinsicInfo::lookupIns(compareSource->AsHWIntrinsic())))
+                {
+                    writesZF = true;
+                }
+#endif
+
+                if (writesZF)
+                {
+                    MakeSrcContained(cond, compareSource);
+                    MakeSrcContained(cond, cond->gtGetOp2());
+                }
+            }
         }
     }
 
