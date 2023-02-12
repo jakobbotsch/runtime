@@ -191,14 +191,7 @@ public:
 
     ForwardSubVisitor(Compiler* compiler, unsigned lclNum, bool livenessBased)
         : GenTreeVisitor(compiler)
-        , m_use(nullptr)
-        , m_node(nullptr)
-        , m_parentNode(nullptr)
         , m_lclNum(lclNum)
-        , m_parentLclNum(BAD_VAR_NUM)
-        , m_useFlags(GTF_EMPTY)
-        , m_accumulatedFlags(GTF_EMPTY)
-        , m_treeSize(0)
         , m_livenessBased(livenessBased)
     {
         LclVarDsc* dsc = compiler->lvaGetDesc(m_lclNum);
@@ -241,6 +234,7 @@ public:
                     m_node       = node;
                     m_use        = use;
                     m_useFlags   = m_accumulatedFlags;
+                    m_useExceptions = m_accumulatedExceptions;
                     m_parentNode = parent;
                 }
             }
@@ -274,6 +268,20 @@ public:
         }
 
         m_accumulatedFlags |= (node->gtFlags & GTF_GLOB_EFFECT);
+        if ((node->gtFlags & GTF_CALL) != 0)
+        {
+            m_accumulatedExceptions = ExceptionSetFlags::All;
+        }
+        else if ((node->gtFlags & GTF_EXCEPT) != 0)
+        {
+            // We can never reorder in the face of different exception types,
+            // so stop calling 'OperExceptions' once we've seen more than one
+            // different exception type.
+            if (genCountBits(static_cast<uint32_t>(m_accumulatedExceptions)) <= 1)
+            {
+                m_accumulatedExceptions |= node->OperExceptions(m_compiler);
+            }
+        }
 
         return fgWalkResult::WALK_CONTINUE;
     }
@@ -303,6 +311,11 @@ public:
     GenTreeFlags GetFlags() const
     {
         return m_useFlags;
+    }
+
+    ExceptionSetFlags GetExceptions() const
+    {
+        return m_useExceptions;
     }
 
     bool IsCallArg() const
@@ -366,17 +379,19 @@ public:
     }
 
 private:
-    GenTree** m_use;
-    GenTree*  m_node;
-    GenTree*  m_parentNode;
+    GenTree** m_use = nullptr;
+    GenTree* m_node = nullptr;
+    GenTree* m_parentNode = nullptr;
     unsigned  m_lclNum;
-    unsigned  m_parentLclNum;
+    unsigned  m_parentLclNum = BAD_VAR_NUM;
 #ifdef DEBUG
     unsigned m_useCount = 0;
 #endif
-    GenTreeFlags m_useFlags;
-    GenTreeFlags m_accumulatedFlags;
-    unsigned     m_treeSize;
+    GenTreeFlags m_useFlags = GTF_EMPTY;
+    GenTreeFlags m_accumulatedFlags = GTF_EMPTY;
+    ExceptionSetFlags m_useExceptions = ExceptionSetFlags::None;
+    ExceptionSetFlags m_accumulatedExceptions = ExceptionSetFlags::None;
+    unsigned     m_treeSize = 0;
     bool         m_livenessBased;
 };
 
@@ -556,7 +571,8 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     bool found = false;
     for (GenTreeLclVarCommon* lcl : nextStmt->LocalsTreeList())
     {
-        if (lcl->OperIs(GT_LCL_VAR) && (lcl->GetLclNum() == lclNum))
+        bool isUse = ((lcl->gtFlags) & GTF_VAR_DEF) == 0;
+        if (lcl->OperIs(GT_LCL_VAR) && (lcl->GetLclNum() == lclNum) && isUse)
         {
             if (fsv.IsLastUse(lcl->AsLclVar()))
             {
@@ -597,9 +613,34 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     gtUpdateStmtSideEffects(nextStmt);
     gtUpdateStmtSideEffects(stmt);
 
-    // Scan for the (last) use.
-    //
-    fsv.WalkTree(nextStmt->GetRootNodePointer(), nullptr);
+    GenTree* nextStmtRoot = nextStmt->GetRootNode();
+    //if (nextStmtRoot->OperIs(GT_ASG) && ((nextStmtRoot->gtFlags & GTF_REVERSE_OPS) == 0))
+    //{
+    //    GenTree* op1 = nextStmtRoot->gtGetOp1();
+    //    GenTree* op2 = nextStmtRoot->gtGetOp2();
+    //    // Visit order: op1Operands -> op2 tree -> op1
+    //    // No location should have GTF_REVERSE_OPS.
+    //    assert(!op1->IsReverseOp());
+    //    if (op1->OperIsLocal() || (op1->OperIs(GT_FIELD) && op1->AsField()->IsStatic()))
+    //    {
+    //        // leaf
+    //    }
+    //    else
+    //    {
+    //        assert(op1->OperIs(GT_IND, GT_BLK, GT_OBJ, GT_FIELD));
+    //        fsv.WalkTree(&op1->AsUnOp()->gtOp1, op1);
+    //    }
+
+    //    fsv.WalkTree(&nextStmtRoot->AsOp()->gtOp2, nextStmtRoot);
+    //    fsv.PostOrderVisit(&nextStmtRoot->AsOp()->gtOp1, nextStmtRoot);
+    //    fsv.PostOrderVisit(nextStmt->GetRootNodePointer(), nullptr);
+    //}
+    //else
+    {
+        // Scan for the (last) use.
+        //
+        fsv.WalkTree(nextStmt->GetRootNodePointer(), nullptr);
+    }
 
     if (!livenessBased)
     {
@@ -692,15 +733,57 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     //
     // if the next tree can't change the value of fwdSubNode or be impacted by fwdSubNode effects
     //
-    const bool fwdSubNodeInvariant   = ((fwdSubNode->gtFlags & GTF_ALL_EFFECT) == 0);
-    const bool nextTreeIsPureUpToUse = ((fsv.GetFlags() & (GTF_EXCEPT | GTF_GLOB_REF | GTF_CALL)) == 0);
-    if (!fwdSubNodeInvariant && !nextTreeIsPureUpToUse)
+    if (((fwdSubNode->gtFlags & GTF_CALL) != 0) && ((fsv.GetFlags() & GTF_ALL_EFFECT) != 0))
     {
-        // Fwd sub may impact global values and or reorder exceptions...
-        //
-        JITDUMP(" potentially interacting effects\n");
+        JITDUMP(" cannot reorder; call interferes with side effect in next statement");
         return false;
     }
+    if (((fwdSubNode->gtFlags & GTF_GLOB_REF) != 0) && ((fsv.GetFlags() & GTF_PERSISTENT_SIDE_EFFECTS) != 0))
+    {
+        JITDUMP(" cannot reorder; candidate has a global reference and next statement has persistent side effects");
+        return false;
+    }
+    if (((fwdSubNode->gtFlags & GTF_ORDER_SIDEEFF) != 0) && ((fsv.GetFlags() & (GTF_GLOB_REF/* | GTF_ORDER_SIDEEFF*/)) != 0))
+    {
+        JITDUMP(" cannot reorder; candidate has an ordering side effect and next statement has a global reference");
+        return false;
+    }
+    if ((fwdSubNode->gtFlags & GTF_EXCEPT) != 0)
+    {
+        if ((fsv.GetFlags() & GTF_PERSISTENT_SIDE_EFFECTS) != 0)
+        {
+            JITDUMP(" cannot reorder exception with persistent side effect\n");
+            return false;
+        }
+
+        if ((fsv.GetFlags() & GTF_EXCEPT) != 0)
+        {
+            assert(fsv.GetExceptions() != ExceptionSetFlags::None);
+            if (genCountBits(static_cast<uint32_t>(fsv.GetExceptions())) > 1)
+            {
+                JITDUMP(" cannot reorder due to different thrown exceptions");
+                return false;
+            }
+
+            ExceptionSetFlags fwdSubNodeExceptions = gtCollectExceptions(fwdSubNode);
+            assert(fwdSubNodeExceptions != ExceptionSetFlags::None);
+            if (fwdSubNodeExceptions != fsv.GetExceptions())
+            {
+                JITDUMP(" cannot reorder due to different thrown exceptions");
+                return false;
+            }
+        }
+    }
+
+    //const bool fwdSubNodeInvariant   = ((fwdSubNode->gtFlags & GTF_ALL_EFFECT) == 0);
+    //const bool nextTreeIsPureUpToUse = ((fsv.GetFlags() & (GTF_EXCEPT | GTF_GLOB_REF | GTF_CALL)) == 0);
+    //if (!fwdSubNodeInvariant && !nextTreeIsPureUpToUse)
+    //{
+    //    // Fwd sub may impact global values and or reorder exceptions...
+    //    //
+    //    JITDUMP(" potentially interacting effects\n");
+    //    return false;
+    //}
 
     // If we're relying on purity of fwdSubNode for legality of forward sub,
     // do some extra checks for global uses that might not be reflected in the flags.
@@ -708,7 +791,7 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     // TODO: remove this once we can trust upstream phases and/or gtUpdateStmtSideEffects
     // to set GTF_GLOB_REF properly.
     //
-    if (fwdSubNodeInvariant && ((fsv.GetFlags() & (GTF_CALL | GTF_ASG)) != 0))
+    if ((fsv.GetFlags() & GTF_PERSISTENT_SIDE_EFFECTS) != 0)
     {
         EffectsVisitor ev(this);
         ev.WalkTree(&fwdSubNode, nullptr);
@@ -877,7 +960,7 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
         fgForwardSubUpdateLiveness(firstLcl, lhsNode->gtPrev);
     }
 
-    if (!fwdSubNodeInvariant)
+    if ((fwdSubNode->gtFlags & GTF_ALL_EFFECT) != 0)
     {
         gtUpdateStmtSideEffects(nextStmt);
     }
