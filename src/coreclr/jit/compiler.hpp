@@ -819,6 +819,8 @@ inline GenTree::GenTree(genTreeOps oper, var_types type DEBUGARG(bool largeNode)
     gtVNPair.SetBoth(ValueNumStore::NoVN);
     gtRegTag   = GT_REGTAG_NONE;
     gtOperSave = GT_NONE;
+
+    //assert(gtTreeID != 193);
 #endif
 }
 
@@ -849,10 +851,12 @@ inline GenTree* Compiler::gtNewOperNode(genTreeOps oper, var_types type, GenTree
         switch (op1->OperGet())
         {
             case GT_LCL_VAR:
-                return gtNewLclVarAddrNode(op1->AsLclVar()->GetLclNum(), type);
+                assert((type == TYP_I_IMPL) || (type == TYP_BYREF));
+                return gtNewLclVarAddrNode(op1->AsLclVar()->GetLclNum());
 
             case GT_LCL_FLD:
-                return gtNewLclFldAddrNode(op1->AsLclFld()->GetLclNum(), op1->AsLclFld()->GetLclOffs(), type);
+                assert((type == TYP_I_IMPL) || (type == TYP_BYREF));
+                return gtNewLclFldAddrNode(op1->AsLclFld()->GetLclNum(), op1->AsLclFld()->GetLclOffs());
 
             case GT_BLK:
             case GT_OBJ:

@@ -939,6 +939,8 @@ GenTree* Compiler::impAssignStruct(GenTree*         dest,
         assert(ClassLayout::AreCompatible(dest->GetLayout(this), src->GetLayout(this)));
     }
 
+    var_types addrType = impIsAddressInLocal(dest) ? TYP_I_IMPL : TYP_BYREF;
+
     DebugInfo usedDI = di;
     if (!usedDI.IsValid())
     {
@@ -958,7 +960,8 @@ GenTree* Compiler::impAssignStruct(GenTree*         dest,
             WellKnownArg wellKnownArgType =
                 srcCall->ShouldHaveRetBufArg() ? WellKnownArg::RetBuffer : WellKnownArg::None;
 
-            GenTree*   destAddr = gtNewOperNode(GT_ADDR, TYP_BYREF, dest);
+            GenTree*   destAddr = gtNewOperNode(GT_ADDR, impIsAddressInLocal(dest) ? TYP_I_IMPL : TYP_BYREF, dest);
+
             NewCallArg newArg   = NewCallArg::Primitive(destAddr).WellKnown(wellKnownArgType);
 
 #if !defined(TARGET_ARM)
@@ -1203,7 +1206,7 @@ GenTree* Compiler::impGetStructAddr(GenTree*             structVal,
         impAssignTempGen(tmpNum, structVal, structHnd, curLevel);
 
         // The 'return value' is now address of the temp itself.
-        return gtNewLclVarAddrNode(tmpNum, TYP_BYREF);
+        return gtNewLclVarAddrNode(tmpNum);
     }
     if (oper == GT_COMMA)
     {
@@ -2604,26 +2607,6 @@ CORINFO_CLASS_HANDLE Compiler::impGetObjectClass()
     CORINFO_CLASS_HANDLE objectClass = info.compCompHnd->getBuiltinClass(CLASSID_SYSTEM_OBJECT);
     assert(objectClass != (CORINFO_CLASS_HANDLE) nullptr);
     return objectClass;
-}
-
-/*****************************************************************************
- *  "&var" can be used either as TYP_BYREF or TYP_I_IMPL, but we
- *  set its type to TYP_BYREF when we create it. We know if it can be
- *  changed to TYP_I_IMPL only at the point where we use it
- */
-
-/* static */
-void Compiler::impBashVarAddrsToI(GenTree* tree1, GenTree* tree2)
-{
-    if (tree1->IsLocalAddrExpr() != nullptr)
-    {
-        tree1->gtType = TYP_I_IMPL;
-    }
-
-    if (tree2 && (tree2->IsLocalAddrExpr() != nullptr))
-    {
-        tree2->gtType = TYP_I_IMPL;
-    }
 }
 
 /*****************************************************************************
@@ -6874,13 +6857,6 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                     (varTypeIsFloating(lclTyp) && varTypeIsFloating(op1->TypeGet())) ||
                     ((genActualType(lclTyp) == TYP_BYREF) && genActualType(op1->TypeGet()) == TYP_REF));
 
-                // If op1 is "&var" then its type is the transient "*" and it can
-                // be used either as BYREF or TYP_I_IMPL.
-                if (genActualType(lclTyp) == TYP_I_IMPL)
-                {
-                    impBashVarAddrsToI(op1);
-                }
-
                 // If this is a local and the local is a ref type, see
                 // if we can improve type information based on the
                 // value being assigned.
@@ -6956,7 +6932,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                     lclNum = impInlineFetchLocal(lclNum DEBUGARG("Inline ldloca(s) first use temp"));
 
                     assert(!lvaGetDesc(lclNum)->lvNormalizeOnLoad());
-                    op1 = gtNewLclVarAddrNode(lclNum, TYP_BYREF);
+                    op1 = gtNewLclVarAddrNode(lclNum);
                     goto _PUSH_ADRVAR;
                 }
 
@@ -6986,7 +6962,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                         return;
                     }
 
-                    op1->ChangeType(TYP_BYREF);
+                    op1->ChangeType(TYP_I_IMPL);
                     op1->SetOper(GT_LCL_VAR_ADDR);
                     goto _PUSH_ADRVAR;
                 }
@@ -7002,14 +6978,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                 goto ADRVAR;
 
             ADRVAR:
-                // Note that this is supposed to create the transient type "*"
-                // which may be used as a TYP_I_IMPL. However we catch places
-                // where it is used as a TYP_I_IMPL and change the node if needed.
-                // Thus we are pessimistic and may report byrefs in the GC info
-                // where it was not absolutely needed, but doing otherwise would
-                // require careful rethinking of the importer routines which use
-                // the IL validity model (e. g. "impGetByRefResultType").
-                op1 = gtNewLclVarAddrNode(lclNum, TYP_BYREF);
+                op1 = gtNewLclVarAddrNode(lclNum);
 
             _PUSH_ADRVAR:
                 assert(op1->OperIs(GT_LCL_VAR_ADDR));
@@ -7030,7 +6999,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                 // The ARGLIST cookie is a hidden 'last' parameter, we have already
                 // adjusted the arg count cos this is like fetching the last param.
                 assertImp(numArgs > 0);
-                op1 = gtNewLclVarAddrNode(lvaVarargsHandleArg, TYP_BYREF);
+                op1 = gtNewLclVarAddrNode(lvaVarargsHandleArg);
                 impPushOnStack(op1, tiRetVal);
                 break;
 
@@ -7359,7 +7328,6 @@ void Compiler::impImportBlockCode(BasicBlock* block)
 
                 // Pull the new value from the stack.
                 op2 = impPopStack().val;
-                impBashVarAddrsToI(op2);
 
                 // Pull the index value.
                 op1 = impPopStack().val;
@@ -7496,10 +7464,6 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                 /* Can't do arithmetic with references */
                 assertImp(genActualType(op1->TypeGet()) != TYP_REF && genActualType(op2->TypeGet()) != TYP_REF);
 
-                // Change both to TYP_I_IMPL (impBashVarAddrsToI won't change if its a true byref, only
-                // if it is in the stack)
-                impBashVarAddrsToI(op1, op2);
-
                 type = impGetByRefResultType(oper, uns, &op1, &op2);
 
                 assert(!ovfl || !varTypeIsFloating(op1->gtType));
@@ -7580,7 +7544,6 @@ void Compiler::impImportBlockCode(BasicBlock* block)
             CEE_SH_OP2:
                 op2 = impPopStack().val;
                 op1 = impPopStack().val; // operand to be shifted
-                impBashVarAddrsToI(op1, op2);
 
                 type = genActualType(op1->TypeGet());
                 op1  = gtNewOperNode(oper, type, op1, op2);
@@ -7589,8 +7552,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                 break;
 
             case CEE_NOT:
-                op1 = impPopStack().val;
-                impBashVarAddrsToI(op1, nullptr);
+                op1  = impPopStack().val;
                 type = genActualType(op1->TypeGet());
                 impPushOnStack(gtNewOperNode(GT_NOT, type, op1), tiRetVal);
                 break;
@@ -8145,8 +8107,6 @@ void Compiler::impImportBlockCode(BasicBlock* block)
 
                 op1 = impPopStack().val;
 
-                impBashVarAddrsToI(op1);
-
                 // Casts from floating point types must not have GTF_UNSIGNED set.
                 if (varTypeIsFloating(op1))
                 {
@@ -8240,7 +8200,6 @@ void Compiler::impImportBlockCode(BasicBlock* block)
 
             case CEE_NEG:
                 op1 = impPopStack().val;
-                impBashVarAddrsToI(op1, nullptr);
                 impPushOnStack(gtNewOperNode(GT_NEG, genActualType(op1->gtType), op1), tiRetVal);
                 break;
 
@@ -8434,8 +8393,6 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                 // you can indirect off of a TYP_I_IMPL (if we are in C) or a BYREF
                 assertImp(genActualType(op1->gtType) == TYP_I_IMPL || op1->gtType == TYP_BYREF);
 
-                impBashVarAddrsToI(op1, op2);
-
                 // Allow a downcast of op2 from TYP_I_IMPL into a 32-bit Int for x86 JIT compatibility.
                 // Allow an upcast of op2 from a 32-bit Int into TYP_I_IMPL for x86 JIT compatibility.
                 op2 = impImplicitIorI4Cast(op2, lclTyp);
@@ -8522,7 +8479,6 @@ void Compiler::impImportBlockCode(BasicBlock* block)
             LDIND:
 
                 op1 = impPopStack().val; // address to load from
-                impBashVarAddrsToI(op1);
 
 #ifdef TARGET_64BIT
                 // Allow an upcast of op1 from a 32-bit Int into TYP_I_IMPL for x86 JIT compatibility
@@ -8920,7 +8876,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                         lclDsc->lvHasLdAddrOp = true;
 
                         // Obtain the address of the temp
-                        newObjThisPtr = gtNewLclVarAddrNode(lclNum, TYP_BYREF);
+                        newObjThisPtr = gtNewLclVarAddrNode(lclNum);
                     }
                     else
                     {
@@ -10054,7 +10010,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                     op1 = impGetStructAddr(op1, impGetRefAnyClass(), CHECK_SPILL_ALL, /* willDeref */ true);
 
                     // Fetch the type from the correct slot
-                    op1 = gtNewOperNode(GT_ADD, TYP_BYREF, op1,
+                    op1 = gtNewOperNode(GT_ADD, op1->TypeGet(), op1,
                                         gtNewIconNode(OFFSETOF__CORINFO_TypedReference__type, TYP_I_IMPL));
                     op1 = gtNewOperNode(GT_IND, TYP_BYREF, op1);
                 }
@@ -10324,11 +10280,11 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                         assert(op1->gtType == TYP_VOID); // We must be assigning the return struct to the temp.
 
                         op2 = gtNewLclvNode(tmp, TYP_STRUCT);
-                        op2 = gtNewOperNode(GT_ADDR, TYP_BYREF, op2);
-                        op1 = gtNewOperNode(GT_COMMA, TYP_BYREF, op1, op2);
+                        op2 = gtNewOperNode(GT_ADDR, TYP_I_IMPL, op2);
+                        op1 = gtNewOperNode(GT_COMMA, TYP_I_IMPL, op1, op2);
                     }
 
-                    assert(op1->gtType == TYP_BYREF);
+                    assert(op1->TypeIs(TYP_I_IMPL, TYP_BYREF));
                 }
                 else
                 {
@@ -10362,8 +10318,8 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                         assert(op1->gtType == TYP_VOID); // We must be assigning the return struct to the temp.
 
                         op2 = gtNewLclvNode(tmp, TYP_STRUCT);
-                        op2 = gtNewOperNode(GT_ADDR, TYP_BYREF, op2);
-                        op1 = gtNewOperNode(GT_COMMA, TYP_BYREF, op1, op2);
+                        op2 = gtNewOperNode(GT_ADDR, TYP_I_IMPL, op2);
+                        op1 = gtNewOperNode(GT_COMMA, TYP_I_IMPL, op1, op2);
 
                         // In this case the return value of the unbox helper is TYP_BYREF.
                         // Make sure the right type is placed on the operand type stack.
@@ -10372,7 +10328,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                         // Load the struct.
                         oper = GT_OBJ;
 
-                        assert(op1->gtType == TYP_BYREF);
+                        assert(op1->TypeIs(TYP_I_IMPL, TYP_BYREF));
 
                         goto OBJ;
                     }
@@ -11064,7 +11020,6 @@ bool Compiler::impReturnInstruction(int prefixFlags, OPCODE& opcode)
 
         if (!compIsForInlining())
         {
-            impBashVarAddrsToI(op2);
             op2 = impImplicitIorI4Cast(op2, info.compRetType);
             op2 = impImplicitR4orR8Cast(op2, info.compRetType);
 
@@ -13485,18 +13440,9 @@ void Compiler::impInlineInitVars(InlineInfo* pInlineInfo)
             {
                 assert(varTypeIsIntOrI(sigType));
 
-                /* If possible bash the BYREF to an int */
-                if (inlArgNode->IsLocalAddrExpr() != nullptr)
-                {
-                    inlArgNode->gtType           = TYP_I_IMPL;
-                    lclVarInfo[i].lclVerTypeInfo = typeInfo(varType2tiType(TYP_I_IMPL));
-                }
-                else
-                {
-                    // Arguments 'int <- byref' cannot be changed
-                    inlineResult->NoteFatal(InlineObservation::CALLSITE_ARG_NO_BASH_TO_INT);
-                    return;
-                }
+                // Arguments 'int <- byref' cannot be changed
+                inlineResult->NoteFatal(InlineObservation::CALLSITE_ARG_NO_BASH_TO_INT);
+                return;
             }
             else if (genTypeSize(sigType) < TARGET_POINTER_SIZE)
             {
@@ -13779,7 +13725,7 @@ GenTree* Compiler::impInlineFetchArg(unsigned lclNum, InlArgInfo* inlArgInfo, In
         //
         // Note argument type mismatches that prevent inlining should
         // have been caught in impInlineInitVars.
-        if (op1->TypeGet() != lclTyp)
+        if ((op1->TypeGet() != lclTyp) && (!op1->TypeIs(TYP_I_IMPL) || (lclTyp != TYP_BYREF)))
         {
             op1->gtType = genActualType(lclTyp);
         }

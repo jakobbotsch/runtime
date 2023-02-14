@@ -7567,15 +7567,15 @@ GenTreeLclVar* Compiler::gtNewLclLNode(unsigned lnum, var_types type DEBUGARG(IL
     return node;
 }
 
-GenTreeLclVar* Compiler::gtNewLclVarAddrNode(unsigned lclNum, var_types type)
+GenTreeLclVar* Compiler::gtNewLclVarAddrNode(unsigned lclNum)
 {
-    GenTreeLclVar* node = new (this, GT_LCL_VAR_ADDR) GenTreeLclVar(GT_LCL_VAR_ADDR, type, lclNum);
+    GenTreeLclVar* node = new (this, GT_LCL_VAR_ADDR) GenTreeLclVar(GT_LCL_VAR_ADDR, TYP_I_IMPL, lclNum);
     return node;
 }
 
-GenTreeLclFld* Compiler::gtNewLclFldAddrNode(unsigned lclNum, unsigned lclOffs, var_types type)
+GenTreeLclFld* Compiler::gtNewLclFldAddrNode(unsigned lclNum, unsigned lclOffs)
 {
-    GenTreeLclFld* node = new (this, GT_LCL_FLD_ADDR) GenTreeLclFld(GT_LCL_FLD_ADDR, type, lclNum, lclOffs);
+    GenTreeLclFld* node = new (this, GT_LCL_FLD_ADDR) GenTreeLclFld(GT_LCL_FLD_ADDR, TYP_I_IMPL, lclNum, lclOffs);
     return node;
 }
 
@@ -14237,10 +14237,10 @@ GenTree* Compiler::gtTryRemoveBoxUpstreamEffects(GenTree* op, BoxRemovalOptions 
         asg->gtBashToNOP();
 
         // Update the copy from the value to be boxed to the box temp
-        copyDst->AsOp()->gtOp1 = gtNewLclVarAddrNode(boxTempLcl, TYP_BYREF);
+        copyDst->AsOp()->gtOp1 = gtNewLclVarAddrNode(boxTempLcl);
 
         // Return the address of the now-struct typed box temp
-        GenTree* retValue = gtNewLclVarAddrNode(boxTempLcl, TYP_BYREF);
+        GenTree* retValue = gtNewLclVarAddrNode(boxTempLcl);
 
         return retValue;
     }
@@ -15718,11 +15718,6 @@ GenTree* Compiler::gtNewTempAssign(
     }
 
     LclVarDsc* varDsc = lvaGetDesc(tmp);
-
-    if (varDsc->TypeGet() == TYP_I_IMPL && val->TypeGet() == TYP_BYREF)
-    {
-        impBashVarAddrsToI(val);
-    }
 
     var_types valTyp = val->TypeGet();
     if (val->OperGet() == GT_LCL_VAR && lvaTable[val->AsLclVar()->GetLclNum()].lvNormalizeOnLoad())

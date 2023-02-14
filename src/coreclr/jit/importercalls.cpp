@@ -1766,7 +1766,6 @@ void Compiler::impPopArgsForUnmanagedCall(GenTreeCall* call, CORINFO_SIG_INFO* s
     if (call->unmgdCallConv == CorInfoCallConvExtension::Thiscall)
     {
         GenTree* thisPtr = call->gtArgs.GetArgByIndex(0)->GetNode();
-        impBashVarAddrsToI(thisPtr);
         assert(thisPtr->TypeGet() == TYP_I_IMPL || thisPtr->TypeGet() == TYP_BYREF);
     }
 
@@ -2862,7 +2861,7 @@ GenTree* Compiler::impIntrinsic(GenTree*                newobjThis,
                 GenTree* indexClone     = nullptr;
                 GenTree* ptrToSpanClone = nullptr;
                 assert(genActualType(index) == TYP_INT);
-                assert(ptrToSpan->TypeGet() == TYP_BYREF);
+                assert(ptrToSpan->TypeIs(TYP_I_IMPL, TYP_BYREF));
 
 #if defined(DEBUG)
                 if (verbose)
@@ -3913,7 +3912,6 @@ GenTree* Compiler::impSRCSUnsafeIntrinsic(NamedIntrinsic        intrinsic,
 
             GenTree* op2 = impPopStack().val;
             GenTree* op1 = impPopStack().val;
-            impBashVarAddrsToI(op1, op2);
 
             op2 = impImplicitIorI4Cast(op2, TYP_I_IMPL);
 
@@ -3940,7 +3938,6 @@ GenTree* Compiler::impSRCSUnsafeIntrinsic(NamedIntrinsic        intrinsic,
 
             GenTree* op2 = impPopStack().val;
             GenTree* op1 = impPopStack().val;
-            impBashVarAddrsToI(op1, op2);
 
             var_types type = impGetByRefResultType(GT_ADD, /* uns */ false, &op1, &op2);
             return gtNewOperNode(GT_ADD, type, op1, op2);
@@ -3981,7 +3978,6 @@ GenTree* Compiler::impSRCSUnsafeIntrinsic(NamedIntrinsic        intrinsic,
             // ret
 
             GenTree* op1 = impPopStack().val;
-            impBashVarAddrsToI(op1);
 
             return gtNewCastNode(TYP_I_IMPL, op1, /* uns */ false, TYP_I_IMPL);
         }
@@ -4010,7 +4006,6 @@ GenTree* Compiler::impSRCSUnsafeIntrinsic(NamedIntrinsic        intrinsic,
 
             GenTree* op2 = impPopStack().val;
             GenTree* op1 = impPopStack().val;
-            impBashVarAddrsToI(op1, op2);
 
             var_types type = impGetByRefResultType(GT_SUB, /* uns */ false, &op2, &op1);
             return gtNewOperNode(GT_SUB, type, op2, op1);
@@ -4210,7 +4205,6 @@ GenTree* Compiler::impSRCSUnsafeIntrinsic(NamedIntrinsic        intrinsic,
 
             GenTree* op2 = impPopStack().val;
             GenTree* op1 = impPopStack().val;
-            impBashVarAddrsToI(op1, op2);
 
             op2 = impImplicitIorI4Cast(op2, TYP_I_IMPL);
 
@@ -4237,7 +4231,6 @@ GenTree* Compiler::impSRCSUnsafeIntrinsic(NamedIntrinsic        intrinsic,
 
             GenTree* op2 = impPopStack().val;
             GenTree* op1 = impPopStack().val;
-            impBashVarAddrsToI(op1, op2);
 
             var_types type = impGetByRefResultType(GT_SUB, /* uns */ false, &op1, &op2);
             return gtNewOperNode(GT_SUB, type, op1, op2);
@@ -4992,8 +4985,7 @@ GenTree* Compiler::impTransformThis(GenTree*                thisPtr,
         {
             GenTree* obj = thisPtr;
 
-            // This does a LDIND on the obj, which should be a byref. pointing to a ref
-            impBashVarAddrsToI(obj);
+            // This does a LDIND on the obj, which should be an address pointing to a ref
             assert(genActualType(obj->gtType) == TYP_I_IMPL || obj->gtType == TYP_BYREF);
             CorInfoType constraintTyp = info.compCompHnd->asCorInfoType(pConstrainedResolvedToken->hClass);
 

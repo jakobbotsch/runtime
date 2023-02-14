@@ -2241,14 +2241,6 @@ void CallArgs::AddFinalArgsAndDetermineABIInfo(Compiler* comp, GenTreeCall* call
         assert(arg.GetEarlyNode() != nullptr);
         GenTree* argx = arg.GetEarlyNode();
 
-        // Change the node to TYP_I_IMPL so we don't report GC info
-        // NOTE: We deferred this from the importer because of the inliner.
-
-        if (argx->IsLocalAddrExpr() != nullptr)
-        {
-            argx->gtType = TYP_I_IMPL;
-        }
-
         // Note we must use the signature types for making ABI decisions. This is especially important for structs,
         // where the "argx" node can legally have a type that is not ABI-compatible with the one in the signature.
         const var_types            argSigType  = arg.GetSignatureType();
@@ -3172,13 +3164,6 @@ GenTreeCall* Compiler::fgMorphArgs(GenTreeCall* call)
             continue;
         }
         assert(arg.AbiInfo.ByteSize > 0);
-
-        // For pointers to locals we can skip reporting GC info and also skip
-        // zero initialization.
-        if (argx->IsLocalAddrExpr() != nullptr)
-        {
-            argx->gtType = TYP_I_IMPL;
-        }
 
         // Struct arguments may be morphed into a node that is not a struct type.
         // In such case the CallArgABIInformation keeps track of whether the original node (before morphing)
@@ -15000,8 +14985,8 @@ PhaseStatus Compiler::fgRetypeImplicitByRefArgs()
                 assert(varDsc->lvFieldLclStart == 0);
             }
 
-            // Since the parameter in this position is really a pointer, its type is TYP_BYREF.
-            varDsc->lvType = TYP_BYREF;
+            // Since the parameter in this position is really a pointer, its type is TYP_I_IMPL.
+            varDsc->lvType = TYP_I_IMPL;
 
             // The struct parameter may have had its address taken, but the pointer parameter
             // cannot -- any uses of the struct parameter's address are uses of the pointer

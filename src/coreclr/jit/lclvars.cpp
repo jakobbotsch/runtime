@@ -2839,7 +2839,7 @@ bool Compiler::lvaIsImplicitByRefLocal(unsigned lclNum) const
     {
         assert(varDsc->lvIsParam);
 
-        assert(varTypeIsStruct(varDsc) || (varDsc->TypeGet() == TYP_BYREF));
+        assert(varTypeIsStruct(varDsc) || (varDsc->TypeGet() == TYP_I_IMPL));
         return true;
     }
 #endif // FEATURE_IMPLICIT_BYREFS
