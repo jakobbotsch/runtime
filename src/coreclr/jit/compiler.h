@@ -4860,7 +4860,7 @@ public:
         return !opts.MinOpts() || m_pLinearScan->willEnregisterLocalVars();
     }
 
-    void fgLocalVarLiveness();
+    void fgLocalVarLiveness(bool partielDefsAreUses = false);
 
     void fgLocalVarLivenessInit();
 
@@ -9255,6 +9255,7 @@ public:
 
     bool fgLocalVarLivenessDone; // Note that this one is used outside of debug.
     bool fgLocalVarLivenessChanged;
+    bool fgLocalVarLivenessPartialDefsAreUses;
     bool fgIsDoingEarlyLiveness;
     bool fgDidEarlyLiveness;
     bool compPostImportationCleanupDone;
