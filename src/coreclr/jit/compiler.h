@@ -4874,6 +4874,9 @@ public:
 
     void fgLocalVarLivenessInit();
 
+    void fgLocalVarLivenessFindSCCs();
+    void fgLocalVarLivenessFindSCC(struct SCCNode* nodes, SCCNode& node, int& index, ArrayStack<struct SCCNode*>& sccStack);
+
     void fgPerNodeLocalVarLiveness(GenTree* node);
     void fgPerBlockLocalVarLiveness();
 
@@ -9203,6 +9206,7 @@ public:
 
     bool fgLocalVarLivenessDone; // Note that this one is used outside of debug.
     bool fgLocalVarLivenessChanged;
+    ArrayStack<struct SCCNode*>* m_sccs;
     bool fgIsDoingEarlyLiveness;
     bool fgDidEarlyLiveness;
     bool compPostImportationCleanupDone;

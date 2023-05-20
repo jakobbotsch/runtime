@@ -139,6 +139,12 @@ void Compiler::fgLocalVarLiveness()
     // Initialize the per-block var sets.
     fgInitBlockVarSets();
 
+    // Compute SCCs for fixpoint computation.
+    if (backendRequiresLocalVarLifetimes())
+    {
+        fgLocalVarLivenessFindSCCs();
+    }
+
     fgLocalVarLivenessChanged = false;
     do
     {
@@ -184,6 +190,420 @@ void Compiler::fgLocalVarLivenessInit()
     for (unsigned lclNum = 0; lclNum < lvaCount; ++lclNum)
     {
         lvaTable[lclNum].lvMustInit = false;
+    }
+}
+
+struct SCCNode
+{
+    BasicBlock* Block;
+    int Index = -1;
+    int LowLink = -1;
+    bool OnStack = false;
+    SCCNode* Next = nullptr;
+    bool SelfReachable = false;
+
+    SCCNode(BasicBlock* block, Compiler* comp)
+        : Block(block)
+    {
+    }
+};
+
+void Compiler::fgLocalVarLivenessFindSCCs()
+{
+    SCCNode* bbNodes = reinterpret_cast<SCCNode*>(new (this, CMK_BasicBlock) char[sizeof(SCCNode) * (fgBBNumMax + 1)]);
+    for (BasicBlock* bb : Blocks())
+    {
+        new (&bbNodes[bb->bbNum], jitstd::placement_t()) SCCNode(bb, this);
+    }
+
+    ArrayStack<SCCNode*> sccStack(getAllocator(CMK_BasicBlock));
+
+    m_sccs = new (this, CMK_BasicBlock) ArrayStack<SCCNode*>(getAllocator(CMK_BasicBlock));
+    int index = 0;
+
+    for (BasicBlock* bb : Blocks())
+    {
+        SCCNode& node = bbNodes[bb->bbNum];
+        if (node.Index == -1)
+        {
+            fgLocalVarLivenessFindSCC(bbNodes, node, index, sccStack);
+        }
+    }
+
+#ifdef DEBUG
+    if (verbose)
+    {
+        printf("Computed %d SCCs for liveness.\n", m_sccs->Height());
+        for (int i = 0; i < m_sccs->Height(); i++)
+        {
+            SCCNode* firstNode = m_sccs->Bottom(i);
+
+            SCCNode* cur = firstNode;
+            const char* sep = "  ";
+            do
+            {
+                printf("%s" FMT_BB, sep, cur->Block->bbNum);
+                sep = " ";
+                cur = cur->Next;
+            } while (cur != firstNode);
+
+            printf("\n");
+        }
+    }
+#endif
+}
+
+template<typename TFunc>
+static void VisitEHSuccessors(Compiler* comp, BasicBlock* block, TFunc func)
+{
+    EHblkDsc* eh = comp->ehGetBlockExnFlowDsc(block);
+    if (eh == nullptr)
+        return;
+
+    while (true)
+    {
+        func(eh->ExFlowBlock());
+        if (eh->ebdEnclosingTryIndex == EHblkDsc::NO_ENCLOSING_INDEX)
+            break;
+
+        eh = comp->ehGetDsc(eh->ebdEnclosingTryIndex);
+    }
+}
+
+template<typename TFunc>
+static void VisitSuccessorsEHSuccessors(Compiler* comp, BasicBlock* block, BasicBlock* succ, TFunc func)
+{
+    if (!comp->bbIsTryBeg(succ))
+    {
+        return;
+    }
+
+    unsigned tryIndex = succ->getTryIndex();
+    if (comp->bbInExnFlowRegions(tryIndex, block))
+    {
+        // Already yielded as an EH successor of block itself
+        return;
+    }
+
+    EHblkDsc* eh = comp->ehGetDsc(tryIndex);
+
+    do
+    {
+        func(eh->ExFlowBlock());
+
+        if (eh->ebdEnclosingTryIndex == EHblkDsc::NO_ENCLOSING_INDEX)
+            break;
+
+        eh = comp->ehGetDsc(eh->ebdEnclosingTryIndex);
+    } while (eh->ebdTryBeg == succ);
+}
+
+template<typename TFunc>
+static void VisitAllSuccessors(Compiler* comp, BasicBlock* bb, TFunc func)
+{
+    switch (bb->bbJumpKind)
+    {
+        case BBJ_EHFILTERRET:
+            func(bb->bbJumpDest);
+            VisitEHSuccessors(comp, bb, func);
+            VisitSuccessorsEHSuccessors(comp, bb, bb->bbJumpDest, func);
+            break;
+
+        case BBJ_EHFINALLYRET:
+        {
+            EHblkDsc* ehDsc = comp->ehGetDsc(bb->getHndIndex());
+            assert(ehDsc->HasFinallyHandler());
+
+            BasicBlock* begBlk;
+            BasicBlock* endBlk;
+            comp->ehGetCallFinallyBlockRange(bb->getHndIndex(), &begBlk, &endBlk);
+
+            BasicBlock* finBeg = ehDsc->ebdHndBeg;
+
+            unsigned numSuccs = 0;
+            for (BasicBlock* bcall = begBlk; bcall != endBlk; bcall = bcall->bbNext)
+            {
+                if ((bcall->bbJumpKind != BBJ_CALLFINALLY) || (bcall->bbJumpDest != finBeg))
+                {
+                    continue;
+                }
+
+                assert(bcall->isBBCallAlwaysPair());
+                func(bcall->bbNext);
+                numSuccs++;
+            }
+
+            VisitEHSuccessors(comp, bb, func);
+
+            for (BasicBlock* bcall = begBlk; bcall != endBlk; bcall = bcall->bbNext)
+            {
+                if ((bcall->bbJumpKind != BBJ_CALLFINALLY) || (bcall->bbJumpDest != finBeg))
+                {
+                    continue;
+                }
+
+                assert(bcall->isBBCallAlwaysPair());
+                VisitSuccessorsEHSuccessors(comp, bb, bcall->bbNext, func);
+            }
+
+            break;
+        }
+
+        case BBJ_CALLFINALLY:
+        case BBJ_EHCATCHRET:
+        case BBJ_LEAVE:
+            func(bb->bbJumpDest);
+            VisitEHSuccessors(comp, bb, func);
+            VisitSuccessorsEHSuccessors(comp, bb, bb->bbJumpDest, func);
+            break;
+
+        case BBJ_ALWAYS:
+            func(bb->bbJumpDest);
+            if (!bb->isBBCallAlwaysPairTail())
+            {
+                VisitEHSuccessors(comp, bb, func);
+            }
+            VisitSuccessorsEHSuccessors(comp, bb, bb->bbJumpDest, func);
+            break;
+
+        case BBJ_NONE:
+            func(bb->bbNext);
+            VisitEHSuccessors(comp, bb, func);
+            VisitSuccessorsEHSuccessors(comp, bb, bb->bbNext, func);
+            break;
+
+        case BBJ_COND:
+            func(bb->bbNext);
+            func(bb->bbJumpDest);
+            VisitEHSuccessors(comp, bb, func);
+            VisitSuccessorsEHSuccessors(comp, bb, bb->bbJumpDest, func);
+            VisitSuccessorsEHSuccessors(comp, bb, bb->bbNext, func);
+            break;
+
+        case BBJ_SWITCH:
+        {
+            Compiler::SwitchUniqueSuccSet sd = comp->GetDescriptorForSwitch(bb);
+            for (unsigned i = 0; i < sd.numDistinctSuccs; i++)
+                func(sd.nonDuplicates[i]);
+
+            VisitEHSuccessors(comp, bb, func);
+
+            for (unsigned i = sd.numDistinctSuccs; i > 0; i--)
+                VisitSuccessorsEHSuccessors(comp, bb, sd.nonDuplicates[i - 1], func);
+            
+            break;
+        }
+
+        case BBJ_THROW:
+        case BBJ_RETURN:
+        case BBJ_EHFAULTRET:
+            VisitEHSuccessors(comp, bb, func);
+            break;
+
+        default:
+            unreached();
+    }
+}
+
+static void Validate(Compiler* comp, BasicBlock* block)
+{
+    BasicBlock* succs[1024];
+    unsigned index = 0;
+    VisitAllSuccessors(comp, block, [&index, &succs](BasicBlock* succ) {
+        if (index < ArrLen(succs))
+        {
+            succs[index] = succ;
+        }
+
+        index++;
+        });
+
+    unsigned index2 = 0;
+    for (BasicBlock* succ : block->GetAllSuccs(comp))
+    {
+        if (index2 < ArrLen(succs))
+        {
+            if (succs[index2] != succ)
+            {
+                printf("Succs of " FMT_BB "\n", block->bbNum);
+                printf("Visitor: ");
+                for (unsigned i = 0; i < min(index, ArrLen(succs)); i++)
+                    printf(" " FMT_BB, succs[i]->bbNum);
+
+                printf("\nIterator:");
+                for (BasicBlock* succ : block->GetAllSuccs(comp))
+                {
+                    printf(" " FMT_BB, succ->bbNum);
+                }
+
+                printf("\n");
+                assert(!"failure");
+                break;
+            }
+        }
+
+        index2++;
+    }
+
+    assert(index == index2);
+}
+
+template<typename TFunc>
+static void VisitLivenessSuccessors(Compiler* comp, SCCNode* bbNodes, SCCNode& node, TFunc func)
+{
+    BasicBlock* bb = node.Block;
+    VisitAllSuccessors(comp, bb, func);
+
+#ifdef DEBUG
+    Validate(comp, node.Block);
+#endif
+
+    if (comp->ehBlockHasExnFlowDsc(bb))
+    {
+        EHblkDsc* HBtab = comp->ehGetBlockExnFlowDsc(bb);
+
+        do
+        {
+            // Either we enter the filter first or the catch/finally
+            if (HBtab->HasFilter())
+            {
+                func(HBtab->ebdFilter);
+    #if defined(FEATURE_EH_FUNCLETS)
+                // The EH subsystem can trigger a stack walk after the filter
+                // has returned, but before invoking the handler, and the only
+                // IP address reported from this method will be the original
+                // faulting instruction, thus everything in the try body
+                // must report as live any variables live-out of the filter
+                // (which is the same as those live-in to the handler)
+                func(HBtab->ebdHndBeg);
+    #endif // FEATURE_EH_FUNCLETS
+            }
+            else
+            {
+                func(HBtab->ebdHndBeg);
+            }
+
+            /* If we have nested try's edbEnclosing will provide them */
+            noway_assert((HBtab->ebdEnclosingTryIndex == EHblkDsc::NO_ENCLOSING_INDEX) ||
+                         (HBtab->ebdEnclosingTryIndex > comp->ehGetIndex(HBtab)));
+
+            unsigned outerIndex = HBtab->ebdEnclosingTryIndex;
+            if (outerIndex == EHblkDsc::NO_ENCLOSING_INDEX)
+            {
+                break;
+            }
+            HBtab = comp->ehGetDsc(outerIndex);
+
+        } while (true);
+
+        // If this block is within a filter, we also need to report as live
+        // any vars live into enclosed finally or fault handlers, since the
+        // filter will run during the first EH pass, and enclosed or enclosing
+        // handlers will run during the second EH pass. So all these handlers
+        // are "exception flow" successors of the filter.
+        //
+        // Note we are relying on ehBlockHasExnFlowDsc to return true
+        // for any filter block that we should examine here.
+        if (bb->hasHndIndex())
+        {
+            const unsigned thisHndIndex   = bb->getHndIndex();
+            EHblkDsc*      enclosingHBtab = comp->ehGetDsc(thisHndIndex);
+
+            if (enclosingHBtab->InFilterRegionBBRange(bb))
+            {
+                assert(enclosingHBtab->HasFilter());
+
+                // Search the EH table for enclosed regions.
+                //
+                // All the enclosed regions will be lower numbered and
+                // immediately prior to and contiguous with the enclosing
+                // region in the EH tab.
+                unsigned index = thisHndIndex;
+
+                while (index > 0)
+                {
+                    index--;
+                    unsigned enclosingIndex = comp->ehGetEnclosingTryIndex(index);
+                    bool     isEnclosed     = false;
+
+                    // To verify this is an enclosed region, search up
+                    // through the enclosing regions until we find the
+                    // region associated with the filter.
+                    while (enclosingIndex != EHblkDsc::NO_ENCLOSING_INDEX)
+                    {
+                        if (enclosingIndex == thisHndIndex)
+                        {
+                            isEnclosed = true;
+                            break;
+                        }
+
+                        enclosingIndex = comp->ehGetEnclosingTryIndex(enclosingIndex);
+                    }
+
+                    // If we found an enclosed region, check if the region
+                    // is a try fault or try finally, and if so, add any
+                    // locals live into the enclosed region's handler into this
+                    // block's live-in set.
+                    if (isEnclosed)
+                    {
+                        EHblkDsc* enclosedHBtab = comp->ehGetDsc(index);
+
+                        if (enclosedHBtab->HasFinallyOrFaultHandler())
+                        {
+                            func(enclosedHBtab->ebdHndBeg);
+                        }
+                    }
+                    // Once we run across a non-enclosed region, we can stop searching.
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void Compiler::fgLocalVarLivenessFindSCC(SCCNode* nodes, SCCNode& node, int& index, ArrayStack<SCCNode*>& sccStack)
+{
+    node.Index = index;
+    node.LowLink = index;
+    index++;
+    sccStack.Push(&node);
+    node.OnStack = true;
+
+    VisitLivenessSuccessors(this, nodes, node,
+        [this, nodes, &node, &index, &sccStack](BasicBlock* succ) {
+            SCCNode& nei = nodes[succ->bbNum];
+            if (&nei == &node)
+            {
+                node.SelfReachable = true;
+            }
+
+            if (nei.Index == -1)
+            {
+                fgLocalVarLivenessFindSCC(nodes, nei, index, sccStack);
+                node.LowLink = min(node.LowLink, nei.LowLink);
+            }
+            else if (nei.OnStack)
+            {
+                node.LowLink = min(node.LowLink, nei.Index);
+            }
+        });
+
+    if (node.LowLink == node.Index)
+    {
+        SCCNode* prev = &node;
+        do
+        {
+            SCCNode* cur = sccStack.Pop();
+            assert(cur->OnStack);
+            cur->OnStack = false;
+            prev->Next = cur;
+            prev = cur;
+        } while (prev != &node);
+
+        m_sccs->Push(&node);
     }
 }
 
@@ -1203,8 +1623,6 @@ class LiveVarAnalysis
 {
     Compiler* m_compiler;
 
-    bool m_hasPossibleBackEdge;
-
     unsigned  m_memoryLiveIn;
     unsigned  m_memoryLiveOut;
     VARSET_TP m_liveIn;
@@ -1212,7 +1630,6 @@ class LiveVarAnalysis
 
     LiveVarAnalysis(Compiler* compiler)
         : m_compiler(compiler)
-        , m_hasPossibleBackEdge(false)
         , m_memoryLiveIn(emptyMemoryKindSet)
         , m_memoryLiveOut(emptyMemoryKindSet)
         , m_liveIn(VarSetOps::MakeEmpty(compiler))
@@ -1256,10 +1673,6 @@ class LiveVarAnalysis
             // state index variable may be live at this point without appearing
             // as an explicit use anywhere.
             VarSetOps::UnionD(m_compiler, m_liveOut, m_compiler->fgEntryBB->bbLiveIn);
-            if (m_compiler->fgEntryBB->bbNum <= block->bbNum)
-            {
-                m_hasPossibleBackEdge = true;
-            }
         }
 
         // Additionally, union in all the live-in tracked vars of successors.
@@ -1267,10 +1680,6 @@ class LiveVarAnalysis
         {
             VarSetOps::UnionD(m_compiler, m_liveOut, succ->bbLiveIn);
             m_memoryLiveOut |= succ->bbMemoryLiveIn;
-            if (succ->bbNum <= block->bbNum)
-            {
-                m_hasPossibleBackEdge = true;
-            }
         }
 
         /* For lvaKeepAliveAndReportThis methods, "this" has to be kept alive everywhere
@@ -1296,10 +1705,6 @@ class LiveVarAnalysis
             const VARSET_TP& liveVars(m_compiler->fgGetHandlerLiveVars(block));
             VarSetOps::UnionD(m_compiler, m_liveIn, liveVars);
             VarSetOps::UnionD(m_compiler, m_liveOut, liveVars);
-
-            // Implicit eh edges can induce loop-like behavior,
-            // so make sure we iterate to closure.
-            m_hasPossibleBackEdge = true;
         }
 
         /* Has there been any change in either live set? */
@@ -1350,57 +1755,57 @@ class LiveVarAnalysis
 
     void Run(bool updateInternalOnly)
     {
+        assert(!updateInternalOnly);
+
         const bool keepAliveThis =
             m_compiler->lvaKeepAliveAndReportThis() && m_compiler->lvaTable[m_compiler->info.compThisArg].lvTracked;
 
-        /* Live Variable Analysis - Backward dataflow */
-        bool changed;
-        do
+        for (int i = 0; i < m_compiler->m_sccs->Height(); i++)
         {
-            changed = false;
+            SCCNode* firstNode = m_compiler->m_sccs->Bottom(i);
 
-            /* Visit all blocks and compute new data flow values */
-
-            VarSetOps::ClearD(m_compiler, m_liveIn);
-            VarSetOps::ClearD(m_compiler, m_liveOut);
-
-            m_memoryLiveIn  = emptyMemoryKindSet;
-            m_memoryLiveOut = emptyMemoryKindSet;
-
-            for (BasicBlock* block = m_compiler->fgLastBB; block; block = block->bbPrev)
+            bool changed;
+            do
             {
-                // sometimes block numbers are not monotonically increasing which
-                // would cause us not to identify backedges
-                if (block->bbNext && block->bbNext->bbNum <= block->bbNum)
+                changed = false;
+
+                /* Visit all blocks and compute new data flow values */
+
+                VarSetOps::ClearD(m_compiler, m_liveIn);
+                VarSetOps::ClearD(m_compiler, m_liveOut);
+
+                m_memoryLiveIn = emptyMemoryKindSet;
+                m_memoryLiveOut = emptyMemoryKindSet;
+
+                SCCNode* cur = firstNode;
+                do
                 {
-                    m_hasPossibleBackEdge = true;
-                }
-
-                if (updateInternalOnly)
-                {
-                    /* Only update BBF_INTERNAL blocks as they may be
-                       syntactically out of sequence. */
-
-                    noway_assert(m_compiler->opts.compDbgCode && (m_compiler->info.compVarScopesCount > 0));
-
-                    if (!(block->bbFlags & BBF_INTERNAL))
+                    BasicBlock* block = cur->Block;
+                    if (updateInternalOnly)
                     {
-                        continue;
-                    }
-                }
+                        /* Only update BBF_INTERNAL blocks as they may be
+                           syntactically out of sequence. */
 
-                if (PerBlockAnalysis(block, updateInternalOnly, keepAliveThis))
-                {
-                    changed = true;
-                }
-            }
-            // if there is no way we could have processed a block without seeing all of its predecessors
-            // then there is no need to iterate
-            if (!m_hasPossibleBackEdge)
-            {
-                break;
-            }
-        } while (changed);
+                        noway_assert(m_compiler->opts.compDbgCode && (m_compiler->info.compVarScopesCount > 0));
+
+                        if (!(block->bbFlags & BBF_INTERNAL))
+                        {
+                            cur = cur->Next;
+                            continue;
+                        }
+                    }
+
+                    if (PerBlockAnalysis(block, updateInternalOnly, keepAliveThis))
+                    {
+                        changed = true;
+                        if ((firstNode == firstNode->Next) && !firstNode->SelfReachable)
+                            changed = false;
+                    }
+
+                    cur = cur->Next;
+                } while (cur != firstNode);
+            } while (changed);
+        }
     }
 
 public:
@@ -2831,6 +3236,12 @@ PhaseStatus Compiler::fgEarlyLiveness()
 
     // Initialize the per-block var sets.
     fgInitBlockVarSets();
+
+    // Compute SCCs for fixpoint computation.
+    if (backendRequiresLocalVarLifetimes())
+    {
+        fgLocalVarLivenessFindSCCs();
+    }
 
     fgLocalVarLivenessChanged = false;
     do
