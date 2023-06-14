@@ -753,6 +753,11 @@ bool Compiler::optValnumCSE_Locate()
             bool stmtHasArrLenCandidate = false;
             for (GenTree* const tree : stmt->TreeList())
             {
+                if (ISMETHOD("Test") && tree->gtTreeID == 7)
+                {
+                    printf("here\n");
+                }
+
                 if (tree->OperIsCompare() && stmtHasArrLenCandidate)
                 {
                     // Check if this compare is a function of (one of) the checked
@@ -2176,7 +2181,10 @@ public:
             }
             else
             {
-                m_Cost     = Expr()->GetCostEx();   // the estimated execution cost
+                if (ISMETHOD("Test") && Expr()->gtTreeID == 7)
+                    m_Cost = 50;
+                else
+                    m_Cost     = Expr()->GetCostEx();   // the estimated execution cost
                 m_defCount = m_CseDsc->csdDefWtCnt; // weighted def count
                 m_useCount = m_CseDsc->csdUseWtCnt; // weighted use count (excluding the implicit uses at defs)
             }
@@ -3276,7 +3284,7 @@ public:
             }
 
 #ifdef DEBUG
-            if (m_pCompiler->verbose)
+            if (m_pCompiler->verbose || ISMETHOD("Test"))
             {
                 if (!Compiler::Is_Shared_Const_CSE(dsc->csdHashKey))
                 {
@@ -3437,7 +3445,7 @@ bool Compiler::optIsCSEcandidate(GenTree* tree)
     }
 
     /* Don't bother if the potential savings are very low */
-    if (cost < MIN_CSE_COST)
+    if (cost < MIN_CSE_COST && (!ISMETHOD("Test") || tree->gtTreeID != 7))
     {
         return false;
     }
@@ -3517,6 +3525,7 @@ bool Compiler::optIsCSEcandidate(GenTree* tree)
             return true;
 
         case GT_LCL_VAR:
+            return ISMETHOD("Test") && tree->gtTreeID == 7;
             return false; // Can't CSE a volatile LCL_VAR
 
         case GT_NEG:

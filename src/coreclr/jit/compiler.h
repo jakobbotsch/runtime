@@ -10770,7 +10770,7 @@ public:
     CORINFO_CLASS_HANDLE m_refAnyClass;
     CORINFO_FIELD_HANDLE GetRefanyDataField()
     {
-        if (m_refAnyClass == nullptr)
+        if (m_refAnyClass == NO_CLASS_HANDLE)
         {
             m_refAnyClass = info.compCompHnd->getBuiltinClass(CLASSID_TYPED_BYREF);
         }
@@ -10778,11 +10778,71 @@ public:
     }
     CORINFO_FIELD_HANDLE GetRefanyTypeField()
     {
-        if (m_refAnyClass == nullptr)
+        if (m_refAnyClass == NO_CLASS_HANDLE)
         {
             m_refAnyClass = info.compCompHnd->getBuiltinClass(CLASSID_TYPED_BYREF);
         }
         return info.compCompHnd->getFieldInClass(m_refAnyClass, 1);
+    }
+
+    CORINFO_CLASS_HANDLE m_delegateClass;
+    CORINFO_FIELD_HANDLE m_delegateInstanceField;
+    CORINFO_FIELD_HANDLE m_delegateFirstTargetField;
+
+    CORINFO_CLASS_HANDLE GetDelegateClass()
+    {
+        if (m_delegateClass == NO_CLASS_HANDLE)
+        {
+            m_delegateClass = info.compCompHnd->getBuiltinClass(CLASSID_SYSTEM_DELEGATE);
+        }
+
+        return m_delegateClass;
+    }
+
+    CORINFO_FIELD_HANDLE GetDelegateInstanceField()
+    {
+        if (m_delegateInstanceField == NO_FIELD_HANDLE)
+        {
+            CORINFO_CLASS_HANDLE dlgClass = GetDelegateClass();
+            unsigned numFields = info.compCompHnd->getClassNumInstanceFields(dlgClass);
+            unsigned offset = eeGetEEInfo()->offsetOfDelegateInstance;
+            for (unsigned i = 0; i < numFields; i++)
+            {
+                CORINFO_FIELD_HANDLE field = info.compCompHnd->getFieldInClass(dlgClass, (int32_t)i);
+                if (info.compCompHnd->getFieldOffset(field) == offset)
+                {
+                    m_delegateInstanceField = field;
+                    break;
+                }
+            }
+
+            assert(m_delegateInstanceField != NO_FIELD_HANDLE);
+        }
+
+        return m_delegateInstanceField;
+    }
+
+    CORINFO_FIELD_HANDLE GetDelegateFirstTargetField()
+    {
+        if (m_delegateFirstTargetField == NO_FIELD_HANDLE)
+        {
+            CORINFO_CLASS_HANDLE dlgClass = GetDelegateClass();
+            unsigned numFields = info.compCompHnd->getClassNumInstanceFields(dlgClass);
+            unsigned offset = eeGetEEInfo()->offsetOfDelegateFirstTarget;
+            for (unsigned i = 0; i < numFields; i++)
+            {
+                CORINFO_FIELD_HANDLE field = info.compCompHnd->getFieldInClass(dlgClass, (int32_t)i);
+                if (info.compCompHnd->getFieldOffset(field) == offset)
+                {
+                    m_delegateFirstTargetField = field;
+                    break;
+                }
+            }
+
+            assert(m_delegateFirstTargetField != NO_FIELD_HANDLE);
+        }
+
+        return m_delegateFirstTargetField;
     }
 
 #if VARSET_COUNTOPS

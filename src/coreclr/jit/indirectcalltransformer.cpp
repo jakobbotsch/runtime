@@ -678,10 +678,11 @@ private:
                 }
                 else
                 {
-                    GenTree* offset =
-                        compiler->gtNewIconNode((ssize_t)compiler->eeGetEEInfo()->offsetOfDelegateFirstTarget,
-                                                TYP_I_IMPL);
-                    GenTree* tarTree = compiler->gtNewOperNode(GT_ADD, TYP_BYREF, thisTree, offset);
+                    CORINFO_FIELD_HANDLE field = compiler->GetDelegateFirstTargetField();
+                    unsigned offset = compiler->eeGetEEInfo()->offsetOfDelegateFirstTarget;
+                    FieldSeq* fieldSeq = compiler->GetFieldSeqStore()->Create(field, (ssize_t)offset, FieldSeq::FieldKind::Instance);
+                    GenTree* offsetNode = compiler->gtNewIconNode(offset, fieldSeq);
+                    GenTree* tarTree = compiler->gtNewOperNode(GT_ADD, TYP_BYREF, thisTree, offsetNode);
                     tarTree          = compiler->gtNewIndir(TYP_I_IMPL, tarTree, GTF_IND_INVARIANT);
 
                     CORINFO_METHOD_HANDLE methHnd = guardedInfo->guardedMethodHandle;
@@ -818,9 +819,12 @@ private:
             GenTree*       newThisObj;
             if (origCall->IsDelegateInvoke())
             {
-                GenTree* offset =
-                    compiler->gtNewIconNode((ssize_t)compiler->eeGetEEInfo()->offsetOfDelegateInstance, TYP_I_IMPL);
-                newThisObj = compiler->gtNewOperNode(GT_ADD, TYP_BYREF, clonedObj, offset);
+                CORINFO_FIELD_HANDLE field = compiler->GetDelegateInstanceField();
+                unsigned offset = compiler->eeGetEEInfo()->offsetOfDelegateInstance;
+                FieldSeq* fieldSeq = compiler->GetFieldSeqStore()->Create(field, (ssize_t)offset, FieldSeq::FieldKind::Instance);
+                GenTree* offsetNode = compiler->gtNewIconNode(offset, fieldSeq);
+
+                newThisObj = compiler->gtNewOperNode(GT_ADD, TYP_BYREF, clonedObj, offsetNode);
                 newThisObj = compiler->gtNewIndir(TYP_REF, newThisObj);
             }
             else

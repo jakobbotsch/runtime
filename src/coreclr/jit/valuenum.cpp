@@ -10670,6 +10670,10 @@ bool Compiler::fgValueNumberConstLoad(GenTreeIndir* tree)
 
 void Compiler::fgValueNumberTree(GenTree* tree)
 {
+    if (ISMETHOD("Test") && tree->gtTreeID == 42)
+    {
+        printf("here\n");
+    }
     genTreeOps oper = tree->OperGet();
     var_types  typ  = tree->TypeGet();
 
@@ -10872,21 +10876,30 @@ void Compiler::fgValueNumberTree(GenTree* tree)
                     }
                     else // TODO-VNTypes: this code needs to encode the types of the indirections.
                     {
-                        // Is this invariant indirect expected to always return a non-null value?
-                        VNFunc loadFunc =
-                            ((tree->gtFlags & GTF_IND_NONNULL) != 0) ? VNF_InvariantNonNullLoad : VNF_InvariantLoad;
-
-                        // Special case: for initialized non-null 'static readonly' fields we want to keep field
-                        // sequence to be able to fold their value
-                        if ((loadFunc == VNF_InvariantNonNullLoad) && addr->IsIconHandle(GTF_ICON_CONST_PTR) &&
-                            (addr->AsIntCon()->gtFieldSeq != nullptr) &&
-                            (addr->AsIntCon()->gtFieldSeq->GetOffset() == addr->AsIntCon()->IconValue()))
+                        ssize_t offset = 0;
+                        if (addr->IsFieldAddr(this, &baseAddr, &fldSeq, &offset) && (fldSeq->GetKind() == FieldSeq::FieldKind::Instance))
                         {
-                            addrNvnp.SetBoth(vnStore->VNForFieldSeq(addr->AsIntCon()->gtFieldSeq));
+                            assert(fldSeq != nullptr);
+                            fgValueNumberFieldLoad(tree, baseAddr, fldSeq, offset);
                         }
+                        else
+                        {
+                            // Is this invariant indirect expected to always return a non-null value?
+                            VNFunc loadFunc =
+                                ((tree->gtFlags & GTF_IND_NONNULL) != 0) ? VNF_InvariantNonNullLoad : VNF_InvariantLoad;
 
-                        tree->gtVNPair = vnStore->VNPairForFunc(tree->TypeGet(), loadFunc, addrNvnp);
-                        tree->gtVNPair = vnStore->VNPWithExc(tree->gtVNPair, addrXvnp);
+                            // Special case: for initialized non-null 'static readonly' fields we want to keep field
+                            // sequence to be able to fold their value
+                            if ((loadFunc == VNF_InvariantNonNullLoad) && addr->IsIconHandle(GTF_ICON_CONST_PTR) &&
+                                (addr->AsIntCon()->gtFieldSeq != nullptr) &&
+                                (addr->AsIntCon()->gtFieldSeq->GetOffset() == addr->AsIntCon()->IconValue()))
+                            {
+                                addrNvnp.SetBoth(vnStore->VNForFieldSeq(addr->AsIntCon()->gtFieldSeq));
+                            }
+
+                            tree->gtVNPair = vnStore->VNPairForFunc(tree->TypeGet(), loadFunc, addrNvnp);
+                            tree->gtVNPair = vnStore->VNPWithExc(tree->gtVNPair, addrXvnp);
+                        }
                     }
                 }
             }
