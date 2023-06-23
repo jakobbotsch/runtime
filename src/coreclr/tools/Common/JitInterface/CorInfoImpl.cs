@@ -2011,18 +2011,7 @@ namespace Internal.JitInterface
                     result |= CorInfoFlag.CORINFO_FLG_CONTAINS_GC_PTR;
 
                 if (metadataType.IsBeforeFieldInit)
-                {
-                    bool makeBeforeFieldInit = true;
-
-#if READYTORUN
-                    makeBeforeFieldInit &= _compilation.CompilationModuleGroup.VersionsWithType(type);
-#endif
-
-                    if (makeBeforeFieldInit)
-                    {
-                        result |= CorInfoFlag.CORINFO_FLG_BEFOREFIELDINIT;
-                    }
-                }
+                    result |= CorInfoFlag.CORINFO_FLG_BEFOREFIELDINIT;
 
                 // Assume overlapping fields for explicit layout.
                 if (metadataType.IsExplicitLayout)
@@ -2031,6 +2020,15 @@ namespace Internal.JitInterface
                 if (metadataType.IsAbstract)
                     result |= CorInfoFlag.CORINFO_FLG_ABSTRACT;
             }
+
+#if READYTORUN
+            if (!_compilation.CompilationModuleGroup.VersionsWithType(type))
+            {
+                // Prevent the JIT from drilling into types outside of the current versioning bubble
+                result |= CorInfoFlag.CORINFO_FLG_DONT_DIG_FIELDS;
+                result &= ~CorInfoFlag.CORINFO_FLG_BEFOREFIELDINIT;
+            }
+#endif
 
             return (uint)result;
         }

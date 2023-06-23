@@ -3624,11 +3624,17 @@ public:
             structPromotionInfo.typeHnd = NO_CLASS_HANDLE;
         }
 
+        bool OldPromotion(CORINFO_CLASS_HANDLE typeHnd);
+
     private:
         bool CanPromoteStructVar(unsigned lclNum);
         bool ShouldPromoteStructVar(unsigned lclNum);
         void PromoteStructVar(unsigned lclNum);
         void SortStructFields();
+
+        bool CanConstructAndPromoteField(lvaStructPromotionInfo* structPromotionInfo);
+        lvaStructFieldInfo GetFieldInfo(CORINFO_FIELD_HANDLE fieldHnd, BYTE ordinal);
+        bool TryPromoteStructField(lvaStructFieldInfo& outerFieldInfo, CORINFO_FIELD_HANDLE fldHnd, CORINFO_CLASS_HANDLE fldTypeHnd);
 
         var_types TryPromoteValueClassAsPrimitive(CORINFO_TYPE_LAYOUT_NODE* treeNodes, size_t maxTreeNodes, size_t index);
         void AdvanceSubTree(CORINFO_TYPE_LAYOUT_NODE* treeNodes, size_t maxTreeNodes, size_t* index);
