@@ -359,9 +359,10 @@ void MorphInitBlockHelper::TryInitFieldByField()
         return;
     }
 
-    if (destLclVar->lvAnySignificantPadding)
+    if (destLclVar->lvCustomLayout && destLclVar->lvContainsHoles)
     {
-        JITDUMP(" dest has significant padding.\n");
+        // TODO-1stClassStructs: there are no reasons for this pessimization, delete it.
+        JITDUMP(" dest has custom layout and contains holes.\n");
         return;
     }
 
@@ -775,17 +776,17 @@ void MorphCopyBlockHelper::MorphStructCases()
     }
 
     // Can we use field by field assignment for the dest?
-    if (m_dstDoFldStore && m_dstVarDsc->lvAnySignificantPadding)
+    if (m_dstDoFldStore && m_dstVarDsc->lvCustomLayout && m_dstVarDsc->lvContainsHoles)
     {
-        JITDUMP(" dest has significant padding");
+        JITDUMP(" dest contains custom layout and contains holes");
         // C++ style CopyBlock with holes
         requiresCopyBlock = true;
     }
 
     // Can we use field by field assignment for the src?
-    if (m_srcDoFldStore && m_srcVarDsc->lvAnySignificantPadding)
+    if (m_srcDoFldStore && m_srcVarDsc->lvCustomLayout && m_srcVarDsc->lvContainsHoles)
     {
-        JITDUMP(" src has significant padding");
+        JITDUMP(" src contains custom layout and contains holes");
         // C++ style CopyBlock with holes
         requiresCopyBlock = true;
     }

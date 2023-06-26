@@ -288,7 +288,7 @@ private:
 #ifdef DEBUG
         if (m_compiler->verbose)
         {
-            printf("  Block op remainder: ");
+            printf("  Remainder: ");
             segments.Dump();
             printf("\n");
         }
