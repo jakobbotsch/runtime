@@ -3809,6 +3809,13 @@ uint32_t CEEInfo::getClassAttribsInternal (CORINFO_CLASS_HANDLE clsHnd)
             if (pMT->IsByRefLike())
                 ret |= CORINFO_FLG_BYREF_LIKE;
 
+            if ((pClass->IsNotTightlyPacked() && (!pClass->IsManagedSequential() || pClass->HasExplicitSize())) ||
+                pMT == g_TypedReferenceMT ||
+                VMClsHnd.IsNativeValueType())
+            {
+                ret |= CORINFO_FLG_CUSTOMLAYOUT;
+            }
+
             if (pClass->IsUnsafeValueClass())
                 ret |= CORINFO_FLG_UNSAFE_VALUECLASS;
         }
