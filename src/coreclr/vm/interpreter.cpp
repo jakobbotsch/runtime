@@ -6720,7 +6720,7 @@ void Interpreter::InitializeCompilerStatics(CEEInfo* info)
         // before any access to the initialized static variables; if several threads do
         // so, they perform idempotent initializing writes to the statics.
         GCX_PREEMP();
-        s_TypedRefClsHnd = info->getBuiltinClass(CLASSID_TYPED_BYREF);
+        s_TypedRefClsHnd = info->getBuiltin(BUILTIN_CLASS_TYPED_BYREF);
         s_TypedRefIT = InterpreterType(info, s_TypedRefClsHnd);
         s_TypedRefSize = getClassSize(s_TypedRefClsHnd);
         s_compilerStaticsInitialized = true;

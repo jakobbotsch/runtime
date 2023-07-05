@@ -2276,35 +2276,35 @@ static bool impOpcodeIsCallSiteBoundary(OPCODE opcode)
 // encapsulate an individual method context.
 CORINFO_CLASS_HANDLE Compiler::impGetRefAnyClass()
 {
-    CORINFO_CLASS_HANDLE refAnyClass = info.compCompHnd->getBuiltinClass(CLASSID_TYPED_BYREF);
+    CORINFO_CLASS_HANDLE refAnyClass = (CORINFO_CLASS_HANDLE)info.compCompHnd->getBuiltin(BUILTIN_CLASS_TYPED_BYREF);
     assert(refAnyClass != (CORINFO_CLASS_HANDLE) nullptr);
     return refAnyClass;
 }
 
 CORINFO_CLASS_HANDLE Compiler::impGetTypeHandleClass()
 {
-    CORINFO_CLASS_HANDLE typeHandleClass = info.compCompHnd->getBuiltinClass(CLASSID_TYPE_HANDLE);
+    CORINFO_CLASS_HANDLE typeHandleClass = (CORINFO_CLASS_HANDLE)info.compCompHnd->getBuiltin(BUILTIN_CLASS_TYPE_HANDLE);
     assert(typeHandleClass != (CORINFO_CLASS_HANDLE) nullptr);
     return typeHandleClass;
 }
 
 CORINFO_CLASS_HANDLE Compiler::impGetRuntimeArgumentHandle()
 {
-    CORINFO_CLASS_HANDLE argIteratorClass = info.compCompHnd->getBuiltinClass(CLASSID_ARGUMENT_HANDLE);
+    CORINFO_CLASS_HANDLE argIteratorClass = (CORINFO_CLASS_HANDLE)info.compCompHnd->getBuiltin(BUILTIN_CLASS_ARGUMENT_HANDLE);
     assert(argIteratorClass != (CORINFO_CLASS_HANDLE) nullptr);
     return argIteratorClass;
 }
 
 CORINFO_CLASS_HANDLE Compiler::impGetStringClass()
 {
-    CORINFO_CLASS_HANDLE stringClass = info.compCompHnd->getBuiltinClass(CLASSID_STRING);
+    CORINFO_CLASS_HANDLE stringClass = (CORINFO_CLASS_HANDLE)info.compCompHnd->getBuiltin(BUILTIN_CLASS_STRING);
     assert(stringClass != (CORINFO_CLASS_HANDLE) nullptr);
     return stringClass;
 }
 
 CORINFO_CLASS_HANDLE Compiler::impGetObjectClass()
 {
-    CORINFO_CLASS_HANDLE objectClass = info.compCompHnd->getBuiltinClass(CLASSID_SYSTEM_OBJECT);
+    CORINFO_CLASS_HANDLE objectClass = (CORINFO_CLASS_HANDLE)info.compCompHnd->getBuiltin(BUILTIN_CLASS_SYSTEM_OBJECT);
     assert(objectClass != (CORINFO_CLASS_HANDLE) nullptr);
     return objectClass;
 }

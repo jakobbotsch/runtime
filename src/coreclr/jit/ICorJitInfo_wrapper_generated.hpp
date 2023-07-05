@@ -756,12 +756,12 @@ void WrapICorJitInfo::classMustBeLoadedBeforeCodeIsRun(
     API_LEAVE(classMustBeLoadedBeforeCodeIsRun);
 }
 
-CORINFO_CLASS_HANDLE WrapICorJitInfo::getBuiltinClass(
-          CorInfoClassId classId)
+CORINFO_GENERIC_HANDLE WrapICorJitInfo::getBuiltin(
+          CorInfoBuiltinId builtinId)
 {
-    API_ENTER(getBuiltinClass);
-    CORINFO_CLASS_HANDLE temp = wrapHnd->getBuiltinClass(classId);
-    API_LEAVE(getBuiltinClass);
+    API_ENTER(getBuiltin);
+    CORINFO_GENERIC_HANDLE temp = wrapHnd->getBuiltin(builtinId);
+    API_LEAVE(getBuiltin);
     return temp;
 }
 

@@ -74,13 +74,13 @@ CorJitResult interceptor_ICJC::compileMethod(ICorJitInfo*                comp,  
 
     // force some extra data into our tables..
     // data probably not needed with RyuJIT, but needed in 4.5 and 4.5.1 to help with catching cached values
-    our_ICorJitInfo.getBuiltinClass(CLASSID_SYSTEM_OBJECT);
-    our_ICorJitInfo.getBuiltinClass(CLASSID_TYPED_BYREF);
-    our_ICorJitInfo.getBuiltinClass(CLASSID_TYPE_HANDLE);
-    our_ICorJitInfo.getBuiltinClass(CLASSID_FIELD_HANDLE);
-    our_ICorJitInfo.getBuiltinClass(CLASSID_METHOD_HANDLE);
-    our_ICorJitInfo.getBuiltinClass(CLASSID_STRING);
-    our_ICorJitInfo.getBuiltinClass(CLASSID_RUNTIME_TYPE);
+    our_ICorJitInfo.getBuiltin(BUILTIN_CLASS_SYSTEM_OBJECT);
+    our_ICorJitInfo.getBuiltin(BUILTIN_CLASS_TYPED_BYREF);
+    our_ICorJitInfo.getBuiltin(BUILTIN_CLASS_TYPE_HANDLE);
+    our_ICorJitInfo.getBuiltin(BUILTIN_CLASS_FIELD_HANDLE);
+    our_ICorJitInfo.getBuiltin(BUILTIN_CLASS_METHOD_HANDLE);
+    our_ICorJitInfo.getBuiltin(BUILTIN_CLASS_STRING);
+    our_ICorJitInfo.getBuiltin(BUILTIN_CLASS_RUNTIME_TYPE);
 
 #ifdef fatMC
     // to build up a fat mc

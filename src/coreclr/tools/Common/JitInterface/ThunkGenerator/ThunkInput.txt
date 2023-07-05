@@ -105,7 +105,7 @@ ICorJitInfo::PgoInstrumentationSchema*,PgoInstrumentationSchema*
 AllocMemArgs*, ref AllocMemArgs
 
 ; Enums
-CorInfoClassId
+CorInfoBuiltinId
 CorInfoHelpFunc
 CorInfoInitClassResult
 CorInfoInlineTypeCheck
@@ -147,6 +147,7 @@ CORINFO_ARG_LIST_HANDLE,CORINFO_ARG_LIST_STRUCT_*
 CORINFO_VARARGS_HANDLE,IntPtr
 CORINFO_CONTEXT_HANDLE,CORINFO_CONTEXT_STRUCT*
 SYSTEMV_AMD64_CORINFO_STRUCT_REG_PASSING_DESCRIPTOR*,SYSTEMV_AMD64_CORINFO_STRUCT_REG_PASSING_DESCRIPTOR*
+CORINFO_GENERIC_HANDLE,void*
 
 ICorDebugInfo::OffsetMapping*,OffsetMapping*
 ICorDebugInfo::ILVarInfo**,ILVarInfo**
@@ -235,7 +236,7 @@ FUNCTIONS
     void getReadyToRunDelegateCtorHelper(CORINFO_RESOLVED_TOKEN * pTargetMethod, mdToken targetConstraint, CORINFO_CLASS_HANDLE delegateType, CORINFO_LOOKUP *pLookup)
     CorInfoInitClassResult initClass(CORINFO_FIELD_HANDLE field, CORINFO_METHOD_HANDLE method, CORINFO_CONTEXT_HANDLE context)
     void classMustBeLoadedBeforeCodeIsRun(CORINFO_CLASS_HANDLE cls)
-    CORINFO_CLASS_HANDLE getBuiltinClass(CorInfoClassId classId)
+    CORINFO_GENERIC_HANDLE getBuiltin(CorInfoBuiltinId builtinId)
     CorInfoType getTypeForPrimitiveValueClass(CORINFO_CLASS_HANDLE cls)
     CorInfoType getTypeForPrimitiveNumericClass(CORINFO_CLASS_HANDLE cls)
     bool canCast(CORINFO_CLASS_HANDLE child, CORINFO_CLASS_HANDLE parent)

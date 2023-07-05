@@ -859,11 +859,11 @@ void interceptor_ICJI::classMustBeLoadedBeforeCodeIsRun(CORINFO_CLASS_HANDLE cls
 }
 
 // returns the class handle for the special builtin classes
-CORINFO_CLASS_HANDLE interceptor_ICJI::getBuiltinClass(CorInfoClassId classId)
+CORINFO_GENERIC_HANDLE interceptor_ICJI::getBuiltin(CorInfoBuiltinId builtinId)
 {
-    mc->cr->AddCall("getBuiltinClass");
-    CORINFO_CLASS_HANDLE temp = original_ICorJitInfo->getBuiltinClass(classId);
-    mc->recGetBuiltinClass(classId, temp);
+    mc->cr->AddCall("getBuiltin");
+    CORINFO_GENERIC_HANDLE temp = original_ICorJitInfo->getBuiltin(builtinId);
+    mc->recGetBuiltin(builtinId, temp);
     return temp;
 }
 

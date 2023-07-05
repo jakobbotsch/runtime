@@ -1955,10 +1955,6 @@ void Compiler::compInit(ArenaAllocator*       pAlloc,
     m_switchDescMap  = nullptr;
     m_blockToEHPreds = nullptr;
     m_fieldSeqStore  = nullptr;
-    m_refAnyClass    = NO_CLASS_HANDLE;
-    m_delegateClass = NO_CLASS_HANDLE;
-    m_delegateInstanceField = NO_FIELD_HANDLE;
-    m_delegateFirstTargetField = NO_FIELD_HANDLE;
 
     for (MemoryKind memoryKind : allMemoryKinds())
     {

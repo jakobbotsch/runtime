@@ -2008,26 +2008,26 @@ CorInfoHelpFunc MethodContext::repGetBoxHelper(CORINFO_CLASS_HANDLE cls)
     return result;
 }
 
-void MethodContext::recGetBuiltinClass(CorInfoClassId classId, CORINFO_CLASS_HANDLE result)
+void MethodContext::recGetBuiltin(CorInfoBuiltinId builtinId, CORINFO_GENERIC_HANDLE result)
 {
-    if (GetBuiltinClass == nullptr)
-        GetBuiltinClass = new LightWeightMap<DWORD, DWORDLONG>();
+    if (GetBuiltin == nullptr)
+        GetBuiltin = new LightWeightMap<DWORD, DWORDLONG>();
 
-    DWORD key = (DWORD)classId;
+    DWORD key = (DWORD)builtinId;
     DWORDLONG value = CastHandle(result);
-    GetBuiltinClass->Add(key, value);
-    DEBUG_REC(dmpGetBuiltinClass(key, value));
+    GetBuiltin->Add(key, value);
+    DEBUG_REC(dmpGetBuiltin(key, value));
 }
-void MethodContext::dmpGetBuiltinClass(DWORD key, DWORDLONG value)
+void MethodContext::dmpGetBuiltin(DWORD key, DWORDLONG value)
 {
-    printf("GetBuiltinClass key cls-%08X, value cls-%016" PRIX64 "", key, value);
+    printf("GetBuiltin key cls-%08X, value cls-%016" PRIX64 "", key, value);
 }
-CORINFO_CLASS_HANDLE MethodContext::repGetBuiltinClass(CorInfoClassId classId)
+CORINFO_GENERIC_HANDLE MethodContext::repGetBuiltin(CorInfoBuiltinId builtinId)
 {
-    DWORD key = (DWORD)classId;
-    DWORDLONG value = LookupByKeyOrMiss(GetBuiltinClass, key, ": key %08X", key);
-    DEBUG_REP(dmpGetBuiltinClass(key, value));
-    CORINFO_CLASS_HANDLE result = (CORINFO_CLASS_HANDLE)value;
+    DWORD key = (DWORD)builtinId;
+    DWORDLONG value = LookupByKeyOrMiss(GetBuiltin, key, ": key %08X", key);
+    DEBUG_REP(dmpGetBuiltin(key, value));
+    CORINFO_GENERIC_HANDLE result = (CORINFO_GENERIC_HANDLE)value;
     return result;
 }
 

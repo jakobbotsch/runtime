@@ -1136,12 +1136,12 @@ namespace Internal.JitInterface
         }
 
         [UnmanagedCallersOnly]
-        private static CORINFO_CLASS_STRUCT_* _getBuiltinClass(IntPtr thisHandle, IntPtr* ppException, CorInfoClassId classId)
+        private static void* _getBuiltin(IntPtr thisHandle, IntPtr* ppException, CorInfoBuiltinId builtinId)
         {
             var _this = GetThis(thisHandle);
             try
             {
-                return _this.getBuiltinClass(classId);
+                return _this.getBuiltin(builtinId);
             }
             catch (Exception ex)
             {
@@ -2735,7 +2735,7 @@ namespace Internal.JitInterface
             callbacks[73] = (delegate* unmanaged<IntPtr, IntPtr*, CORINFO_RESOLVED_TOKEN*, mdToken, CORINFO_CLASS_STRUCT_*, CORINFO_LOOKUP*, void>)&_getReadyToRunDelegateCtorHelper;
             callbacks[74] = (delegate* unmanaged<IntPtr, IntPtr*, CORINFO_FIELD_STRUCT_*, CORINFO_METHOD_STRUCT_*, CORINFO_CONTEXT_STRUCT*, CorInfoInitClassResult>)&_initClass;
             callbacks[75] = (delegate* unmanaged<IntPtr, IntPtr*, CORINFO_CLASS_STRUCT_*, void>)&_classMustBeLoadedBeforeCodeIsRun;
-            callbacks[76] = (delegate* unmanaged<IntPtr, IntPtr*, CorInfoClassId, CORINFO_CLASS_STRUCT_*>)&_getBuiltinClass;
+            callbacks[76] = (delegate* unmanaged<IntPtr, IntPtr*, CorInfoBuiltinId, void*>)&_getBuiltin;
             callbacks[77] = (delegate* unmanaged<IntPtr, IntPtr*, CORINFO_CLASS_STRUCT_*, CorInfoType>)&_getTypeForPrimitiveValueClass;
             callbacks[78] = (delegate* unmanaged<IntPtr, IntPtr*, CORINFO_CLASS_STRUCT_*, CorInfoType>)&_getTypeForPrimitiveNumericClass;
             callbacks[79] = (delegate* unmanaged<IntPtr, IntPtr*, CORINFO_CLASS_STRUCT_*, CORINFO_CLASS_STRUCT_*, byte>)&_canCast;

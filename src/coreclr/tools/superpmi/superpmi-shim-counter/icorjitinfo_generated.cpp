@@ -621,11 +621,11 @@ void interceptor_ICJI::classMustBeLoadedBeforeCodeIsRun(
     original_ICorJitInfo->classMustBeLoadedBeforeCodeIsRun(cls);
 }
 
-CORINFO_CLASS_HANDLE interceptor_ICJI::getBuiltinClass(
-          CorInfoClassId classId)
+CORINFO_GENERIC_HANDLE interceptor_ICJI::getBuiltin(
+          CorInfoBuiltinId builtinId)
 {
-    mcs->AddCall("getBuiltinClass");
-    return original_ICorJitInfo->getBuiltinClass(classId);
+    mcs->AddCall("getBuiltin");
+    return original_ICorJitInfo->getBuiltin(builtinId);
 }
 
 CorInfoType interceptor_ICJI::getTypeForPrimitiveValueClass(

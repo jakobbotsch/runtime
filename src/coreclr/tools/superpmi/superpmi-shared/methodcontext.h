@@ -267,9 +267,9 @@ public:
     void dmpGetBoxHelper(DWORDLONG key, DWORD value);
     CorInfoHelpFunc repGetBoxHelper(CORINFO_CLASS_HANDLE cls);
 
-    void recGetBuiltinClass(CorInfoClassId classId, CORINFO_CLASS_HANDLE result);
-    void dmpGetBuiltinClass(DWORD key, DWORDLONG value);
-    CORINFO_CLASS_HANDLE repGetBuiltinClass(CorInfoClassId classId);
+    void recGetBuiltin(CorInfoBuiltinId builtinId, CORINFO_GENERIC_HANDLE result);
+    void dmpGetBuiltin(DWORD key, DWORDLONG value);
+    CORINFO_GENERIC_HANDLE repGetBuiltin(CorInfoBuiltinId builtinId);
 
     void recGetTypeForPrimitiveValueClass(CORINFO_CLASS_HANDLE cls, CorInfoType result);
     void dmpGetTypeForPrimitiveValueClass(DWORDLONG key, DWORD value);
@@ -1013,7 +1013,7 @@ enum mcPackets
     //Packet_GetMethodBlockCounts = 33,
     Packet_GetBoundaries = 34,
     Packet_GetBoxHelper = 35,
-    Packet_GetBuiltinClass = 36,
+    Packet_GetBuiltin = 36,
     Packet_GetCallInfo = 37,
     Packet_GetCastingHelper = 38,
     Packet_GetChildType = 39,

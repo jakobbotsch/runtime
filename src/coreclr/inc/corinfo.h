@@ -954,17 +954,19 @@ enum CorInfoGCType
     TYPE_GC_OTHER   // requires type-specific treatment
 };
 
-enum CorInfoClassId
+enum CorInfoBuiltinId
 {
-    CLASSID_SYSTEM_OBJECT,
-    CLASSID_TYPED_BYREF,
-    CLASSID_TYPE_HANDLE,
-    CLASSID_FIELD_HANDLE,
-    CLASSID_METHOD_HANDLE,
-    CLASSID_STRING,
-    CLASSID_ARGUMENT_HANDLE,
-    CLASSID_RUNTIME_TYPE,
-    CLASSID_SYSTEM_DELEGATE,
+    BUILTIN_CLASS_SYSTEM_OBJECT,
+    BUILTIN_CLASS_TYPED_BYREF,
+    BUILTIN_CLASS_TYPE_HANDLE,
+    BUILTIN_CLASS_FIELD_HANDLE,
+    BUILTIN_CLASS_METHOD_HANDLE,
+    BUILTIN_CLASS_STRING,
+    BUILTIN_CLASS_ARGUMENT_HANDLE,
+    BUILTIN_CLASS_RUNTIME_TYPE,
+    BUILTIN_CLASS_SYSTEM_DELEGATE,
+    BUILTIN_FIELD_DELEGATE_INSTANCE,
+    BUILTIN_FIELD_DELEGATE_FIRST_TARGET,
 };
 
 enum CorInfoInline
@@ -2585,9 +2587,9 @@ public:
             CORINFO_CLASS_HANDLE        cls
             ) = 0;
 
-    // returns the class handle for the special builtin classes
-    virtual CORINFO_CLASS_HANDLE getBuiltinClass (
-            CorInfoClassId              classId
+    // returns the handle for special builtin metadata entities
+    virtual CORINFO_GENERIC_HANDLE getBuiltin (
+            CorInfoBuiltinId              builtinId
             ) = 0;
 
     // "System.Int32" ==> CORINFO_TYPE_INT..

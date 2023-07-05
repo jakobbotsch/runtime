@@ -4038,7 +4038,7 @@ CORINFO_METHOD_HANDLE CEEInfo::mapMethodDeclToMethodImpl(CORINFO_METHOD_HANDLE m
 }
 
 /*********************************************************************/
-CORINFO_CLASS_HANDLE CEEInfo::getBuiltinClass(CorInfoClassId classId)
+CORINFO_GENERIC_HANDLE CEEInfo::getBuiltin(CorInfoBuiltinId builtinId)
 {
     CONTRACTL {
         THROWS;
@@ -4046,35 +4046,41 @@ CORINFO_CLASS_HANDLE CEEInfo::getBuiltinClass(CorInfoClassId classId)
         MODE_PREEMPTIVE;
     } CONTRACTL_END;
 
-    CORINFO_CLASS_HANDLE result = (CORINFO_CLASS_HANDLE) 0;
+    CORINFO_GENERIC_HANDLE result = (CORINFO_GENERIC_HANDLE) 0;
 
     JIT_TO_EE_TRANSITION();
 
-    switch (classId)
+    switch (builtinId)
     {
-    case CLASSID_SYSTEM_OBJECT:
-        result = CORINFO_CLASS_HANDLE(g_pObjectClass);
+    case BUILTIN_CLASS_SYSTEM_OBJECT:
+        result = CORINFO_GENERIC_HANDLE(g_pObjectClass);
         break;
-    case CLASSID_TYPED_BYREF:
-        result = CORINFO_CLASS_HANDLE(g_TypedReferenceMT);
+    case BUILTIN_CLASS_TYPED_BYREF:
+        result = CORINFO_GENERIC_HANDLE(g_TypedReferenceMT);
         break;
-    case CLASSID_TYPE_HANDLE:
-        result = CORINFO_CLASS_HANDLE(CoreLibBinder::GetClass(CLASS__TYPE_HANDLE));
+    case BUILTIN_CLASS_TYPE_HANDLE:
+        result = CORINFO_GENERIC_HANDLE(CoreLibBinder::GetClass(CLASS__TYPE_HANDLE));
         break;
-    case CLASSID_FIELD_HANDLE:
-        result = CORINFO_CLASS_HANDLE(CoreLibBinder::GetClass(CLASS__FIELD_HANDLE));
+    case BUILTIN_CLASS_FIELD_HANDLE:
+        result = CORINFO_GENERIC_HANDLE(CoreLibBinder::GetClass(CLASS__FIELD_HANDLE));
         break;
-    case CLASSID_METHOD_HANDLE:
-        result = CORINFO_CLASS_HANDLE(CoreLibBinder::GetClass(CLASS__METHOD_HANDLE));
+    case BUILTIN_CLASS_METHOD_HANDLE:
+        result = CORINFO_GENERIC_HANDLE(CoreLibBinder::GetClass(CLASS__METHOD_HANDLE));
         break;
-    case CLASSID_ARGUMENT_HANDLE:
-        result = CORINFO_CLASS_HANDLE(CoreLibBinder::GetClass(CLASS__ARGUMENT_HANDLE));
+    case BUILTIN_CLASS_ARGUMENT_HANDLE:
+        result = CORINFO_GENERIC_HANDLE(CoreLibBinder::GetClass(CLASS__ARGUMENT_HANDLE));
         break;
-    case CLASSID_STRING:
-        result = CORINFO_CLASS_HANDLE(g_pStringClass);
+    case BUILTIN_CLASS_STRING:
+        result = CORINFO_GENERIC_HANDLE(g_pStringClass);
         break;
-    case CLASSID_RUNTIME_TYPE:
-        result = CORINFO_CLASS_HANDLE(g_pRuntimeTypeClass);
+    case BUILTIN_CLASS_RUNTIME_TYPE:
+        result = CORINFO_GENERIC_HANDLE(g_pRuntimeTypeClass);
+        break;
+    case BUILTIN_FIELD_DELEGATE_INSTANCE:
+        result = CORINFO_GENERIC_HANDLE(CoreLibBinder::GetField(FIELD__DELEGATE__TARGET));
+        break;
+    case BUILTIN_FIELD_DELEGATE_FIRST_TARGET:
+        result = CORINFO_GENERIC_HANDLE(CoreLibBinder::GetField(FIELD__DELEGATE__METHOD_PTR));
         break;
     default:
         _ASSERTE(!"NYI: unknown classId");

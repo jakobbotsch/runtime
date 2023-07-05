@@ -326,8 +326,8 @@ CorInfoInitClassResult initClass(
 void classMustBeLoadedBeforeCodeIsRun(
           CORINFO_CLASS_HANDLE cls) override;
 
-CORINFO_CLASS_HANDLE getBuiltinClass(
-          CorInfoClassId classId) override;
+CORINFO_GENERIC_HANDLE getBuiltin(
+          CorInfoBuiltinId builtinId) override;
 
 CorInfoType getTypeForPrimitiveValueClass(
           CORINFO_CLASS_HANDLE cls) override;

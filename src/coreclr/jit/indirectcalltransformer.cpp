@@ -678,7 +678,7 @@ private:
                 }
                 else
                 {
-                    CORINFO_FIELD_HANDLE field = compiler->GetDelegateFirstTargetField();
+                    CORINFO_FIELD_HANDLE field = (CORINFO_FIELD_HANDLE)compiler->info.compCompHnd->getBuiltin(BUILTIN_FIELD_DELEGATE_FIRST_TARGET);
                     unsigned offset = compiler->eeGetEEInfo()->offsetOfDelegateFirstTarget;
                     FieldSeq* fieldSeq = compiler->GetFieldSeqStore()->Create(field, (ssize_t)offset, FieldSeq::FieldKind::Instance);
                     GenTree* offsetNode = compiler->gtNewIconNode(offset, fieldSeq);
@@ -819,7 +819,7 @@ private:
             GenTree*       newThisObj;
             if (origCall->IsDelegateInvoke())
             {
-                CORINFO_FIELD_HANDLE field = compiler->GetDelegateInstanceField();
+                CORINFO_FIELD_HANDLE field = (CORINFO_FIELD_HANDLE)compiler->info.compCompHnd->getBuiltin(BUILTIN_FIELD_DELEGATE_INSTANCE);
                 unsigned offset = compiler->eeGetEEInfo()->offsetOfDelegateInstance;
                 FieldSeq* fieldSeq = compiler->GetFieldSeqStore()->Create(field, (ssize_t)offset, FieldSeq::FieldKind::Instance);
                 GenTree* offsetNode = compiler->gtNewIconNode(offset, fieldSeq);

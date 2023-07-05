@@ -466,16 +466,18 @@ namespace Internal.JitInterface
         TYPE_GC_OTHER   // requires type-specific treatment
     }
 
-    public enum CorInfoClassId
+    public enum CorInfoBuiltinId
     {
-        CLASSID_SYSTEM_OBJECT,
-        CLASSID_TYPED_BYREF,
-        CLASSID_TYPE_HANDLE,
-        CLASSID_FIELD_HANDLE,
-        CLASSID_METHOD_HANDLE,
-        CLASSID_STRING,
-        CLASSID_ARGUMENT_HANDLE,
-        CLASSID_RUNTIME_TYPE,
+        BUILTIN_CLASS_SYSTEM_OBJECT,
+        BUILTIN_CLASS_TYPED_BYREF,
+        BUILTIN_CLASS_TYPE_HANDLE,
+        BUILTIN_CLASS_FIELD_HANDLE,
+        BUILTIN_CLASS_METHOD_HANDLE,
+        BUILTIN_CLASS_STRING,
+        BUILTIN_CLASS_ARGUMENT_HANDLE,
+        BUILTIN_CLASS_RUNTIME_TYPE,
+        BUILTIN_FIELD_DELEGATE_INSTANCE,
+        BUILTIN_FIELD_DELEGATE_FIRST_TARGET,
     }
     public enum CorInfoInline
     {

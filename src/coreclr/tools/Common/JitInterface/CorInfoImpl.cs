@@ -2512,34 +2512,46 @@ namespace Internal.JitInterface
             return CorInfoInitClassResult.CORINFO_INITCLASS_USE_HELPER;
         }
 
-        private CORINFO_CLASS_STRUCT_* getBuiltinClass(CorInfoClassId classId)
+        private void* getBuiltin(CorInfoBuiltinId builtinId)
         {
-            switch (classId)
+            switch (builtinId)
             {
-                case CorInfoClassId.CLASSID_SYSTEM_OBJECT:
+                case CorInfoBuiltinId.BUILTIN_CLASS_SYSTEM_OBJECT:
                     return ObjectToHandle(_compilation.TypeSystemContext.GetWellKnownType(WellKnownType.Object));
 
-                case CorInfoClassId.CLASSID_TYPED_BYREF:
+                case CorInfoBuiltinId.BUILTIN_CLASS_TYPED_BYREF:
                     return ObjectToHandle(_compilation.TypeSystemContext.GetWellKnownType(WellKnownType.TypedReference));
 
-                case CorInfoClassId.CLASSID_TYPE_HANDLE:
+                case CorInfoBuiltinId.BUILTIN_CLASS_TYPE_HANDLE:
                     return ObjectToHandle(_compilation.TypeSystemContext.GetWellKnownType(WellKnownType.RuntimeTypeHandle));
 
-                case CorInfoClassId.CLASSID_FIELD_HANDLE:
+                case CorInfoBuiltinId.BUILTIN_CLASS_FIELD_HANDLE:
                     return ObjectToHandle(_compilation.TypeSystemContext.GetWellKnownType(WellKnownType.RuntimeFieldHandle));
 
-                case CorInfoClassId.CLASSID_METHOD_HANDLE:
+                case CorInfoBuiltinId.BUILTIN_CLASS_METHOD_HANDLE:
                     return ObjectToHandle(_compilation.TypeSystemContext.GetWellKnownType(WellKnownType.RuntimeMethodHandle));
 
-                case CorInfoClassId.CLASSID_ARGUMENT_HANDLE:
+                case CorInfoBuiltinId.BUILTIN_CLASS_ARGUMENT_HANDLE:
                     ThrowHelper.ThrowTypeLoadException("System", "RuntimeArgumentHandle", _compilation.TypeSystemContext.SystemModule);
                     return null;
 
-                case CorInfoClassId.CLASSID_STRING:
+                case CorInfoBuiltinId.BUILTIN_CLASS_STRING:
                     return ObjectToHandle(_compilation.TypeSystemContext.GetWellKnownType(WellKnownType.String));
 
-                case CorInfoClassId.CLASSID_RUNTIME_TYPE:
+                case CorInfoBuiltinId.BUILTIN_CLASS_RUNTIME_TYPE:
                     return ObjectToHandle(_compilation.TypeSystemContext.SystemModule.GetKnownType("System", "RuntimeType"));
+
+                case CorInfoBuiltinId.BUILTIN_FIELD_DELEGATE_INSTANCE:
+                    {
+                        DefType delType = _compilation.TypeSystemContext.GetWellKnownType(WellKnownType.MulticastDelegate).BaseType;
+                        return ObjectToHandle(delType.GetKnownField("_target"));
+                    }
+
+                case CorInfoBuiltinId.BUILTIN_FIELD_DELEGATE_FIRST_TARGET:
+                    {
+                        DefType delType = _compilation.TypeSystemContext.GetWellKnownType(WellKnownType.MulticastDelegate).BaseType;
+                        return ObjectToHandle(delType.GetKnownField("_methodPtr"));
+                    }
 
                 default:
                     throw new NotImplementedException();

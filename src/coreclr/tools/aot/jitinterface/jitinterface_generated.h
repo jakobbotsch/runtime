@@ -87,7 +87,7 @@ struct JitInterfaceCallbacks
     void (* getReadyToRunDelegateCtorHelper)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_RESOLVED_TOKEN* pTargetMethod, unsigned int targetConstraint, CORINFO_CLASS_HANDLE delegateType, CORINFO_LOOKUP* pLookup);
     CorInfoInitClassResult (* initClass)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_FIELD_HANDLE field, CORINFO_METHOD_HANDLE method, CORINFO_CONTEXT_HANDLE context);
     void (* classMustBeLoadedBeforeCodeIsRun)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_CLASS_HANDLE cls);
-    CORINFO_CLASS_HANDLE (* getBuiltinClass)(void * thisHandle, CorInfoExceptionClass** ppException, CorInfoClassId classId);
+    CORINFO_GENERIC_HANDLE (* getBuiltin)(void * thisHandle, CorInfoExceptionClass** ppException, CorInfoBuiltinId builtinId);
     CorInfoType (* getTypeForPrimitiveValueClass)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_CLASS_HANDLE cls);
     CorInfoType (* getTypeForPrimitiveNumericClass)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_CLASS_HANDLE cls);
     bool (* canCast)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_CLASS_HANDLE child, CORINFO_CLASS_HANDLE parent);
@@ -949,11 +949,11 @@ public:
     if (pException != nullptr) throw pException;
 }
 
-    virtual CORINFO_CLASS_HANDLE getBuiltinClass(
-          CorInfoClassId classId)
+    virtual CORINFO_GENERIC_HANDLE getBuiltin(
+          CorInfoBuiltinId builtinId)
 {
     CorInfoExceptionClass* pException = nullptr;
-    CORINFO_CLASS_HANDLE temp = _callbacks->getBuiltinClass(_thisHandle, &pException, classId);
+    CORINFO_GENERIC_HANDLE temp = _callbacks->getBuiltin(_thisHandle, &pException, builtinId);
     if (pException != nullptr) throw pException;
     return temp;
 }

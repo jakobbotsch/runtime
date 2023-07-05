@@ -727,11 +727,10 @@ void MyICJI::classMustBeLoadedBeforeCodeIsRun(CORINFO_CLASS_HANDLE cls)
     jitInstance->mc->cr->recClassMustBeLoadedBeforeCodeIsRun(cls);
 }
 
-// returns the class handle for the special builtin classes
-CORINFO_CLASS_HANDLE MyICJI::getBuiltinClass(CorInfoClassId classId)
+CORINFO_GENERIC_HANDLE MyICJI::getBuiltin(CorInfoBuiltinId builtinId)
 {
-    jitInstance->mc->cr->AddCall("getBuiltinClass");
-    return jitInstance->mc->repGetBuiltinClass(classId);
+    jitInstance->mc->cr->AddCall("getBuiltin");
+    return jitInstance->mc->repGetBuiltin(builtinId);
 }
 
 // "System.Int32" ==> CORINFO_TYPE_INT..
