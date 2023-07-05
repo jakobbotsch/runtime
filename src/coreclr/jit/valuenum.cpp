@@ -10670,10 +10670,6 @@ bool Compiler::fgValueNumberConstLoad(GenTreeIndir* tree)
 
 void Compiler::fgValueNumberTree(GenTree* tree)
 {
-    if (ISMETHOD("Test") && tree->gtTreeID == 42)
-    {
-        printf("here\n");
-    }
     genTreeOps oper = tree->OperGet();
     var_types  typ  = tree->TypeGet();
 

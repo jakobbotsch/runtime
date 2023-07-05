@@ -753,11 +753,6 @@ bool Compiler::optValnumCSE_Locate()
             bool stmtHasArrLenCandidate = false;
             for (GenTree* const tree : stmt->TreeList())
             {
-                if (ISMETHOD("Test") && tree->gtTreeID == 7)
-                {
-                    printf("here\n");
-                }
-
                 if (tree->OperIsCompare() && stmtHasArrLenCandidate)
                 {
                     // Check if this compare is a function of (one of) the checked
