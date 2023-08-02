@@ -21,13 +21,9 @@ public:
 // (see code:ICorJitInfo.allocMem), so really the EE already knows where the method starts and how big
 // it is (in fact, it could be in more than one chunk).
 //
-// * In the 32 bit jit this is implemented by code:CILJit.compileMethod
-// * For the 64 bit jit this is implemented by code:PreJit.compileMethod
-//
 // Note: setTargetOS must be called before this api is used.
 CorJitResult compileMethod(ICorJitInfo*                comp,     /* IN */
                            struct CORINFO_METHOD_INFO* info,     /* IN */
-                           unsigned /* code:CorJitFlag */ flags, /* IN */
                            uint8_t** nativeEntry,                /* OUT */
                            uint32_t* nativeSizeOfCode            /* OUT */
                            );

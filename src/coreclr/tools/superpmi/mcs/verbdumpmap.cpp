@@ -24,10 +24,9 @@ void DumpMapHeader()
 void DumpMap(int index, MethodContext* mc)
 {
     CORINFO_METHOD_INFO cmi;
-    unsigned int        flags = 0;
     CORINFO_OS          os;
 
-    mc->repCompileMethod(&cmi, &flags, &os);
+    mc->repCompileMethod(&cmi, &os);
 
     char methodName[256];
     mc->repPrintMethodName(cmi.ftn, methodName, sizeof(methodName));

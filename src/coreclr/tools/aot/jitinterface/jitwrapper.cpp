@@ -16,7 +16,6 @@ DLL_EXPORT int JitCompileMethod(
     void * thisHandle,
     void ** callbacks,
     CORINFO_METHOD_INFO* methodInfo,
-    unsigned flags,
     uint8_t** entryAddress,
     uint32_t* nativeSizeOfCode)
 {
@@ -33,7 +32,7 @@ DLL_EXPORT int JitCompileMethod(
     try
     {
         JitInterfaceWrapper jitInterfaceWrapper(thisHandle, callbacks);
-        return pJit->compileMethod(&jitInterfaceWrapper, methodInfo, flags, entryAddress, nativeSizeOfCode);
+        return pJit->compileMethod(&jitInterfaceWrapper, methodInfo, entryAddress, nativeSizeOfCode);
     }
     catch (CorInfoExceptionClass *pException)
     {

@@ -45,7 +45,6 @@ static void printInFull(TPrinter print)
 
 CorJitResult interceptor_ICJC::compileMethod(ICorJitInfo*                comp,     /* IN */
                                              struct CORINFO_METHOD_INFO* info,     /* IN */
-                                             unsigned /* code:CorJitFlag */ flags, /* IN */
                                              uint8_t** nativeEntry,                /* OUT */
                                              uint32_t* nativeSizeOfCode            /* OUT */
                                              )
@@ -61,7 +60,7 @@ CorJitResult interceptor_ICJC::compileMethod(ICorJitInfo*                comp,  
         collect |= (className != nullptr) && strstr(className, g_collectionFilter) != nullptr;
         if (!collect)
         {
-            return original_ICorJitCompiler->compileMethod(comp, info, flags, nativeEntry, nativeSizeOfCode);
+            return original_ICorJitCompiler->compileMethod(comp, info, nativeEntry, nativeSizeOfCode);
         }
     }
 
@@ -70,7 +69,7 @@ CorJitResult interceptor_ICJC::compileMethod(ICorJitInfo*                comp,  
 
     mc->cr->recProcessName(GetCommandLineA());
 
-    mc->recCompileMethod(info, flags, currentOs);
+    mc->recCompileMethod(info, currentOs);
 
     // force some extra data into our tables..
     // data probably not needed with RyuJIT, but needed in 4.5 and 4.5.1 to help with catching cached values
@@ -104,7 +103,6 @@ CorJitResult interceptor_ICJC::compileMethod(ICorJitInfo*                comp,  
         ICorJitCompiler* origComp;
         interceptor_ICJI* ourICJI;
         struct CORINFO_METHOD_INFO* methodInfo;
-        unsigned flags;
         uint8_t** nativeEntry;
         uint32_t* nativeSizeOfCode;
         CorJitResult result;
@@ -113,7 +111,6 @@ CorJitResult interceptor_ICJC::compileMethod(ICorJitInfo*                comp,  
     compileParams.origComp = original_ICorJitCompiler;
     compileParams.ourICJI = &our_ICorJitInfo;
     compileParams.methodInfo = info;
-    compileParams.flags = flags;
     compileParams.nativeEntry = nativeEntry;
     compileParams.nativeSizeOfCode = nativeSizeOfCode;
     compileParams.result = CORJIT_INTERNALERROR;
@@ -128,7 +125,6 @@ CorJitResult interceptor_ICJC::compileMethod(ICorJitInfo*                comp,  
             pParam->result = pParam->origComp->compileMethod(
                 pParam->ourICJI,
                 pParam->methodInfo,
-                pParam->flags,
                 pParam->nativeEntry,
                 pParam->nativeSizeOfCode);
         }

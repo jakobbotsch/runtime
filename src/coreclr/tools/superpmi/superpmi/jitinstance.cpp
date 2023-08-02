@@ -305,7 +305,6 @@ JitInstance::Result JitInstance::CompileMethod(MethodContext* MethodToCompile, i
         JitInstance*        pThis;
         JitInstance::Result result;
         CORINFO_METHOD_INFO info;
-        unsigned            flags;
         int                 mcIndex;
         bool                collectThroughput;
         MetricsSummary*     metrics;
@@ -313,7 +312,6 @@ JitInstance::Result JitInstance::CompileMethod(MethodContext* MethodToCompile, i
     } param;
     param.pThis             = this;
     param.result            = RESULT_SUCCESS; // assume success
-    param.flags             = 0;
     param.mcIndex           = mcIndex;
     param.collectThroughput = collectThroughput;
     param.metrics           = metrics;
@@ -338,7 +336,7 @@ JitInstance::Result JitInstance::CompileMethod(MethodContext* MethodToCompile, i
         uint32_t   NCodeSizeBlock = 0;
         CORINFO_OS os             = CORINFO_WINNT;
 
-        pParam->pThis->mc->repCompileMethod(&pParam->info, &pParam->flags, &os);
+        pParam->pThis->mc->repCompileMethod(&pParam->info, &os);
         CORJIT_FLAGS jitFlags;
         pParam->pThis->mc->repGetJitFlags(&jitFlags, sizeof(jitFlags));
 
@@ -353,7 +351,7 @@ JitInstance::Result JitInstance::CompileMethod(MethodContext* MethodToCompile, i
         }
         pParam->pThis->pJitInstance->setTargetOS(os);
         CorJitResult jitResult = pParam->pThis->pJitInstance->compileMethod(pParam->pThis->icji, &pParam->info,
-                                                                       pParam->flags, &NEntryBlock, &NCodeSizeBlock);
+                                                                            &NEntryBlock, &NCodeSizeBlock);
         if (pParam->collectThroughput)
         {
             pParam->pThis->lt.Stop();
@@ -463,7 +461,7 @@ JitInstance::Result JitInstance::CompileMethod(MethodContext* MethodToCompile, i
     if (collectThroughput)
     {
         // If we get here, we know it compiles
-        timeResult(param.info, param.flags);
+        timeResult(param.info);
     }
 
     mc->cr->secondsToCompile = stj.GetSeconds();
@@ -489,7 +487,7 @@ JitInstance::Result JitInstance::CompileMethod(MethodContext* MethodToCompile, i
     return param.result;
 }
 
-void JitInstance::timeResult(CORINFO_METHOD_INFO info, unsigned flags)
+void JitInstance::timeResult(CORINFO_METHOD_INFO info)
 {
     uint8_t* NEntryBlock    = nullptr;
     uint32_t NCodeSizeBlock = 0;
@@ -503,7 +501,7 @@ void JitInstance::timeResult(CORINFO_METHOD_INFO info, unsigned flags)
         delete mc->cr;
         mc->cr = new CompileResult();
         lt.Start();
-        pJitInstance->compileMethod(icji, &info, flags, &NEntryBlock, &NCodeSizeBlock);
+        pJitInstance->compileMethod(icji, &info, &NEntryBlock, &NCodeSizeBlock);
         lt.Stop();
         time = lt.GetCycles();
         if (times[1] == 0)

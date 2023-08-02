@@ -99,16 +99,16 @@ public:
     static int dumpStatTitleToBuffer(char* buff, int len);
     int methodSize;
 
-    int dumpMethodIdentityInfoToBuffer(char* buff, int len, bool ignoreMethodName = false, CORINFO_METHOD_INFO* optInfo = nullptr, unsigned optFlags = 0);
-    int dumpMethodHashToBuffer(char* buff, int len, bool ignoreMethodName = false, CORINFO_METHOD_INFO* optInfo = nullptr, unsigned optFlags = 0);
+    int dumpMethodIdentityInfoToBuffer(char* buff, int len, bool ignoreMethodName = false, CORINFO_METHOD_INFO* optInfo = nullptr);
+    int dumpMethodHashToBuffer(char* buff, int len, bool ignoreMethodName = false, CORINFO_METHOD_INFO* optInfo = nullptr);
 
     bool hasPgoData(bool& hasEdgeProfile, bool& hasClassProfile, bool& hasMethodProfile, bool& hasLikelyClass, bool& hasLikelyMethod, ICorJitInfo::PgoSource& pgoSource);
 
     void recGlobalContext(const MethodContext& other);
 
-    void recCompileMethod(CORINFO_METHOD_INFO* info, unsigned flags, CORINFO_OS os);
+    void recCompileMethod(CORINFO_METHOD_INFO* info, CORINFO_OS os);
     void dmpCompileMethod(DWORD key, const Agnostic_CompileMethod& value);
-    void repCompileMethod(CORINFO_METHOD_INFO* info, unsigned* flags, CORINFO_OS* os);
+    void repCompileMethod(CORINFO_METHOD_INFO* info, CORINFO_OS* os);
 
     void recGetMethodClass(CORINFO_METHOD_HANDLE methodHandle, CORINFO_CLASS_HANDLE classHandle);
     void dmpGetMethodClass(DWORDLONG key, DWORDLONG value);

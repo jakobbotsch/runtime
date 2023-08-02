@@ -27,7 +27,7 @@ private:
     MethodContext::Environment environment;
 
     JitInstance(){};
-    void timeResult(CORINFO_METHOD_INFO info, unsigned flags);
+    void timeResult(CORINFO_METHOD_INFO info);
 
 public:
 

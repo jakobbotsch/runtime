@@ -1066,9 +1066,8 @@ bool NearDiffer::compareVars(MethodContext* mc, CompileResult* cr1, CompileResul
     ICorDebugInfo::NativeVarInfo* vars_2;
 
     CORINFO_METHOD_INFO info;
-    unsigned            flags = 0;
     CORINFO_OS          os    = CORINFO_WINNT;
-    mc->repCompileMethod(&info, &flags, &os);
+    mc->repCompileMethod(&info, &os);
 
     bool set1 = cr1->repSetVars(&ftn_1, &cVars_1, &vars_1);
     bool set2 = cr2->repSetVars(&ftn_2, &cVars_2, &vars_2);
@@ -1140,9 +1139,8 @@ bool NearDiffer::compareBoundaries(MethodContext* mc, CompileResult* cr1, Compil
     ICorDebugInfo::OffsetMapping* map_2;
 
     CORINFO_METHOD_INFO info;
-    unsigned            flags = 0;
     CORINFO_OS          os    = CORINFO_WINNT;
-    mc->repCompileMethod(&info, &flags, &os);
+    mc->repCompileMethod(&info, &os);
 
     bool set1 = cr1->repSetBoundaries(&ftn_1, &cMap_1, &map_1);
     bool set2 = cr2->repSetBoundaries(&ftn_2, &cMap_2, &map_2);

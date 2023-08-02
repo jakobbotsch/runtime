@@ -61,7 +61,7 @@ void MethodStatsEmitter::Emit(int methodNumber, MethodContext* mc, ULONGLONG fir
             CORINFO_METHOD_INFO info;
             unsigned            flags = 0;
             CORINFO_OS          os    = CORINFO_WINNT;
-            mc->repCompileMethod(&info, &flags, &os);
+            mc->repCompileMethod(&info, &os);
 
             charCount += sprintf_s(rowData + charCount, ARRAY_SIZE(rowData) - charCount, "%d,", info.ILCodeSize);
         }

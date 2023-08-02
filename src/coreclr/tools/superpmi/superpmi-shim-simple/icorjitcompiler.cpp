@@ -12,7 +12,6 @@ void interceptor_ICJC::setTargetOS(CORINFO_OS os)
 
 CorJitResult interceptor_ICJC::compileMethod(ICorJitInfo*                comp,     /* IN */
                                              struct CORINFO_METHOD_INFO* info,     /* IN */
-                                             unsigned /* code:CorJitFlag */ flags, /* IN */
                                              uint8_t** nativeEntry,                /* OUT */
                                              uint32_t* nativeSizeOfCode            /* OUT */
                                              )
@@ -21,7 +20,7 @@ CorJitResult interceptor_ICJC::compileMethod(ICorJitInfo*                comp,  
     our_ICorJitInfo.original_ICorJitInfo = comp;
 
     CorJitResult temp =
-        original_ICorJitCompiler->compileMethod(&our_ICorJitInfo, info, flags, nativeEntry, nativeSizeOfCode);
+        original_ICorJitCompiler->compileMethod(&our_ICorJitInfo, info, nativeEntry, nativeSizeOfCode);
 
     return temp;
 }

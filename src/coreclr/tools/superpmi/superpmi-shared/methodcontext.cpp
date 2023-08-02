@@ -380,14 +380,12 @@ bool MethodContext::Equal(MethodContext* other)
 
     // Compare MethodInfo's first.
     CORINFO_METHOD_INFO otherInfo;
-    unsigned            otherFlags = 0;
     CORINFO_OS          otherOs    = CORINFO_WINNT;
-    other->repCompileMethod(&otherInfo, &otherFlags, &otherOs);
+    other->repCompileMethod(&otherInfo, &otherOs);
 
     CORINFO_METHOD_INFO ourInfo;
-    unsigned            ourFlags = 0;
     CORINFO_OS          ourOs    = CORINFO_WINNT;
-    repCompileMethod(&ourInfo, &ourFlags, &ourOs);
+    repCompileMethod(&ourInfo, &ourOs);
 
     if (otherInfo.ILCodeSize != ourInfo.ILCodeSize)
         return false;
@@ -415,8 +413,6 @@ bool MethodContext::Equal(MethodContext* other)
     if (otherInfo.args.flags != ourInfo.args.flags)
         return false;
     if (otherInfo.locals.cbSig != ourInfo.locals.cbSig)
-        return false;
-    if (otherFlags != ourFlags)
         return false;
     if (otherOs != ourOs)
         return false;
@@ -644,7 +640,7 @@ unsigned int toCorInfoSize(CorInfoType cit)
     return -1;
 }
 
-void MethodContext::recCompileMethod(CORINFO_METHOD_INFO* info, unsigned flags, CORINFO_OS os)
+void MethodContext::recCompileMethod(CORINFO_METHOD_INFO* info, CORINFO_OS os)
 {
     if (CompileMethod == nullptr)
         CompileMethod = new LightWeightMap<DWORD, Agnostic_CompileMethod>();
@@ -665,21 +661,19 @@ void MethodContext::recCompileMethod(CORINFO_METHOD_INFO* info, unsigned flags, 
 
     value.os = (DWORD)os;
 
-    value.flags = (DWORD)flags;
-
     CompileMethod->Add(0, value);
     DEBUG_REC(dmpCompileMethod(0, value));
 }
 void MethodContext::dmpCompileMethod(DWORD key, const Agnostic_CompileMethod& value)
 {
-    printf("CompileMethod key %u, value ftn-%016" PRIX64 " scp-%016" PRIX64 " ilo-%u ils-%u ms-%u ehc-%u opt-%u rk-%u args-%s locals-%s flg-%08X os-%u",
+    printf("CompileMethod key %u, value ftn-%016" PRIX64 " scp-%016" PRIX64 " ilo-%u ils-%u ms-%u ehc-%u opt-%u rk-%u args-%s locals-%s os-%u",
            key, value.info.ftn, value.info.scope, value.info.ILCode_offset, value.info.ILCodeSize, value.info.maxStack,
            value.info.EHcount, value.info.options, value.info.regionKind,
            SpmiDumpHelper::DumpAgnostic_CORINFO_SIG_INFO(value.info.args, CompileMethod, SigInstHandleMap).c_str(),
            SpmiDumpHelper::DumpAgnostic_CORINFO_SIG_INFO(value.info.locals, CompileMethod, SigInstHandleMap).c_str(),
-           value.flags, value.os);
+           value.os);
 }
-void MethodContext::repCompileMethod(CORINFO_METHOD_INFO* info, unsigned* flags, CORINFO_OS* os)
+void MethodContext::repCompileMethod(CORINFO_METHOD_INFO* info, CORINFO_OS* os)
 {
     Agnostic_CompileMethod value;
     value = LookupByKeyOrMissNoMessage(CompileMethod, 0); // The only item in this set is a single group of inputs to CompileMethod
@@ -699,7 +693,6 @@ void MethodContext::repCompileMethod(CORINFO_METHOD_INFO* info, unsigned* flags,
     info->args   = SpmiRecordsHelper::Restore_CORINFO_SIG_INFO(value.info.args, CompileMethod, SigInstHandleMap);
     info->locals = SpmiRecordsHelper::Restore_CORINFO_SIG_INFO(value.info.locals, CompileMethod, SigInstHandleMap);
 
-    *flags             = (unsigned)value.flags;
     *os                = (CORINFO_OS)value.os;
 }
 
@@ -6971,7 +6964,7 @@ void MethodContext::dmpSigInstHandleMap(DWORD key, DWORDLONG value)
     printf("SigInstHandleMap key %u, value %016" PRIX64 "", key, value);
 }
 
-int MethodContext::dumpMethodIdentityInfoToBuffer(char* buff, int len, bool ignoreMethodName /* = false */, CORINFO_METHOD_INFO* optInfo /* = nullptr */, unsigned optFlags /* = 0 */)
+int MethodContext::dumpMethodIdentityInfoToBuffer(char* buff, int len, bool ignoreMethodName /* = false */, CORINFO_METHOD_INFO* optInfo /* = nullptr */)
 {
     if (len < METHOD_IDENTITY_INFO_SIZE)
         return -1;
@@ -6979,18 +6972,16 @@ int MethodContext::dumpMethodIdentityInfoToBuffer(char* buff, int len, bool igno
     // Obtain the Method Info structure for this method
     CORINFO_METHOD_INFO  info;
     CORINFO_METHOD_INFO* pInfo = nullptr;
-    unsigned             flags = 0;
 
     if (optInfo != nullptr)
     {
         // Use the info we've already retrieved from repCompileMethod().
         pInfo = optInfo;
-        flags = optFlags;
     }
     else
     {
         CORINFO_OS os;
-        repCompileMethod(&info, &flags, &os);
+        repCompileMethod(&info, &os);
         pInfo = &info;
     }
 
@@ -7102,11 +7093,11 @@ int MethodContext::dumpMethodIdentityInfoToBuffer(char* buff, int len, bool igno
     return (int)(buff - obuff);
 }
 
-int MethodContext::dumpMethodHashToBuffer(char* buff, int len, bool ignoreMethodName /* = false */, CORINFO_METHOD_INFO* optInfo /* = nullptr */, unsigned optFlags /* = 0 */)
+int MethodContext::dumpMethodHashToBuffer(char* buff, int len, bool ignoreMethodName /* = false */, CORINFO_METHOD_INFO* optInfo /* = nullptr */)
 {
     char bufferIdentityInfo[METHOD_IDENTITY_INFO_SIZE];
 
-    int cbLen = dumpMethodIdentityInfoToBuffer(bufferIdentityInfo, METHOD_IDENTITY_INFO_SIZE, ignoreMethodName, optInfo, optFlags);
+    int cbLen = dumpMethodIdentityInfoToBuffer(bufferIdentityInfo, METHOD_IDENTITY_INFO_SIZE, ignoreMethodName, optInfo);
 
     if (cbLen < 0)
         return cbLen;
@@ -7131,9 +7122,8 @@ bool MethodContext::hasPgoData(bool& hasEdgeProfile, bool& hasClassProfile, bool
 
     // Obtain the Method Info structure for this method
     CORINFO_METHOD_INFO  info;
-    unsigned             flags = 0;
     CORINFO_OS os;
-    repCompileMethod(&info, &flags, &os);
+    repCompileMethod(&info, &os);
 
     if ((GetPgoInstrumentationResults != nullptr) &&
         (GetPgoInstrumentationResults->GetIndex(CastHandle(info.ftn)) != -1))

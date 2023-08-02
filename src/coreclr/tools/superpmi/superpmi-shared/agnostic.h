@@ -47,7 +47,6 @@ struct Agnostic_CORINFO_METHOD_INFO
 struct Agnostic_CompileMethod
 {
     Agnostic_CORINFO_METHOD_INFO info;
-    DWORD                        flags;
     DWORD                        os;
 };
 

@@ -7,7 +7,6 @@ class CILJit : public ICorJitCompiler
 {
     CorJitResult compileMethod(ICorJitInfo*         comp,            /* IN */
                                CORINFO_METHOD_INFO* methodInfo,      /* IN */
-                               unsigned             flags,           /* IN */
                                uint8_t**            nativeEntry,     /* OUT */
                                uint32_t*            nativeSizeOfCode /* OUT */
                                );

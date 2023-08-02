@@ -193,7 +193,6 @@ public:
     virtual CorJitResult compileMethod (
             ICorJitInfo*                    comp,               /* IN */
             struct CORINFO_METHOD_INFO*     info,               /* IN */
-            unsigned /* code:CorJitFlag */  flags,              /* IN */
             uint8_t**                       nativeEntry,        /* OUT */
             uint32_t*                       nativeSizeOfCode    /* OUT */
             ) = 0;

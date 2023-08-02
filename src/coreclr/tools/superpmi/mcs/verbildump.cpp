@@ -950,10 +950,9 @@ char* DumpAttributeToConsoleBare(DWORD attribute)
 void DumpIL(MethodContext* mc)
 {
     CORINFO_METHOD_INFO cmi;
-    unsigned int        flags = 0;
     CORINFO_OS          os    = CORINFO_WINNT;
 
-    mc->repCompileMethod(&cmi, &flags, &os);
+    mc->repCompileMethod(&cmi, &os);
 
     printf("// ProcessName - '%s'\n", mc->cr->repProcessName());
     printf(".assembly extern mscorlib{}\n");

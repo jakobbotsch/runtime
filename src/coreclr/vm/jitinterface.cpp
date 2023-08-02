@@ -12304,7 +12304,6 @@ void CEEJitInfo::getEHinfo(
 static CorJitResult CompileMethodWithEtwWrapper(EEJitManager *jitMgr,
                                                       CEEInfo *comp,
                                                       struct CORINFO_METHOD_INFO *info,
-                                                      unsigned flags,
                                                       BYTE **nativeEntry,
                                                       ULONG *nativeSizeOfCode)
 {
@@ -12316,7 +12315,7 @@ static CorJitResult CompileMethodWithEtwWrapper(EEJitManager *jitMgr,
     // Fire an ETW event to mark the beginning of JIT'ing
     ETW::MethodLog::MethodJitting(reinterpret_cast<MethodDesc*>(info->ftn), &namespaceOrClassName, &methodName, &methodSignature);
 
-    CorJitResult ret = jitMgr->m_jit->compileMethod(comp, info, flags, nativeEntry, nativeSizeOfCode);
+    CorJitResult ret = jitMgr->m_jit->compileMethod(comp, info, nativeEntry, nativeSizeOfCode);
 
     // Logically, it would seem that the end-of-JITting ETW even should go here, but it must come after the native code has been
     // set for the given method desc, which happens in a caller.
@@ -12349,7 +12348,6 @@ CorJitResult invokeCompileMethodHelper(EEJitManager *jitMgr,
         comp->setJitFlags(altJitFlags);
         ret = jitMgr->m_alternateJit->compileMethod( comp,
                                                      info,
-                                                     CORJIT_FLAGS::CORJIT_FLAG_CALL_GETJITFLAGS,
                                                      nativeEntry,
                                                      nativeSizeOfCode);
 
@@ -12391,7 +12389,6 @@ CorJitResult invokeCompileMethodHelper(EEJitManager *jitMgr,
         ret = CompileMethodWithEtwWrapper(jitMgr,
                                           comp,
                                           info,
-                                          CORJIT_FLAGS::CORJIT_FLAG_CALL_GETJITFLAGS,
                                           nativeEntry,
                                           nativeSizeOfCode);
     }
@@ -12414,7 +12411,6 @@ CorJitResult invokeCompileMethodHelper(EEJitManager *jitMgr,
     {
         ret = jitMgr->m_jit->compileMethod( comp,
                                             info,
-                                            CORJIT_FLAGS::CORJIT_FLAG_CALL_GETJITFLAGS,
                                             nativeEntry,
                                             nativeSizeOfCode);
     }

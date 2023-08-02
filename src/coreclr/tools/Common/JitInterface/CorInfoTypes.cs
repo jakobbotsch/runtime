@@ -1390,9 +1390,6 @@ namespace Internal.JitInterface
 
     public enum CorJitFlag : uint
     {
-        CORJIT_FLAG_CALL_GETJITFLAGS = 0xffffffff, // Indicates that the JIT should retrieve flags in the form of a
-                                                   // pointer to a CORJIT_FLAGS value via ICorJitInfo::getJitFlags().
-
         CORJIT_FLAG_SPEED_OPT               = 0, // optimize for speed
         CORJIT_FLAG_SIZE_OPT                = 1, // optimize for code size
         CORJIT_FLAG_DEBUG_CODE              = 2, // generate "debuggable" code (no code-mangling optimizations)

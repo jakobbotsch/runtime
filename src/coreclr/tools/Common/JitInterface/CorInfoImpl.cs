@@ -146,7 +146,7 @@ namespace Internal.JitInterface
         [DllImport(JitSupportLibrary)]
         private static extern CorJitResult JitCompileMethod(out IntPtr exception,
             IntPtr jit, IntPtr thisHandle, IntPtr callbacks,
-            ref CORINFO_METHOD_INFO info, uint flags, out IntPtr nativeEntry, out uint codeSize);
+            ref CORINFO_METHOD_INFO info, out IntPtr nativeEntry, out uint codeSize);
 
         [DllImport(JitSupportLibrary)]
         private static extern IntPtr AllocException([MarshalAs(UnmanagedType.LPWStr)]string message, int messageLength);
@@ -351,7 +351,7 @@ namespace Internal.JitInterface
             uint codeSize;
             var result = JitCompileMethod(out exception,
                     _jit, (IntPtr)Unsafe.AsPointer(ref _this), _unmanagedCallbacks,
-                    ref methodInfo, (uint)CorJitFlag.CORJIT_FLAG_CALL_GETJITFLAGS, out nativeEntry, out codeSize);
+                    ref methodInfo, out nativeEntry, out codeSize);
             if (exception != IntPtr.Zero)
             {
                 if (_lastException != null)
