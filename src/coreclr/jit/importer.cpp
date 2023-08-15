@@ -8561,6 +8561,75 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                         block->bbFlags |= BBF_HAS_NEWOBJ;
                         optMethodFlags |= OMF_HAS_NEWOBJ;
 
+                        if (!compCurBB->HasPotentialEHSuccs(this))
+                        {
+                            if (codeAddr + sz >= codeEndp)
+                            {
+                                BADCODE("invalid IL");
+                            }
+
+                            unsigned char nextOpc = getU1LittleEndian(codeAddr + sz);
+                            unsigned directStoreCandidateLclNum = BAD_VAR_NUM;
+                            unsigned candidateSkip = 0;
+                            if (nextOpc == CEE_STLOC)
+                            {
+                                if (codeAddr + sz + 3 >= codeEndp)
+                                {
+                                    BADCODE("invalid IL");
+                                }
+
+                                JITDUMP("Next opcode is a CEE_STLOC\n");
+
+                                directStoreCandidateLclNum = getU2LittleEndian(codeAddr + sz + 1);
+                                candidateSkip = 3;
+                            }
+                            else if (nextOpc == CEE_STLOC_S)
+                            {
+                                if (codeAddr + sz + 2 >= codeEndp)
+                                {
+                                    BADCODE("invalid IL");
+                                }
+
+                                JITDUMP("Next opcode is a CEE_STLOC_S\n");
+
+                                directStoreCandidateLclNum = getU1LittleEndian(codeAddr + sz + 1);
+                                candidateSkip = 2;
+                            }
+                            else if ((nextOpc >= CEE_STLOC_0) && (nextOpc <= CEE_STLOC_3))
+                            {
+                                JITDUMP("Next opcode is a CEE_STLOC_N\n");
+
+                                directStoreCandidateLclNum = nextOpc - CEE_STLOC_0;
+                                candidateSkip = 1;
+                            }
+
+                            if (directStoreCandidateLclNum != BAD_VAR_NUM)
+                            {
+                                JITDUMP("Checking if we can store directly to V%02u\n", directStoreCandidateLclNum);
+                                if (compIsForInlining())
+                                {
+                                    directStoreCandidateLclNum = impInlineFetchLocal(directStoreCandidateLclNum DEBUGARG("Inline stloc first use temp"));
+                                    JITDUMP("  .. which is actually V%02u\n", directStoreCandidateLclNum);
+                                }
+
+                                LclVarDsc* dsc = lvaGetDesc(directStoreCandidateLclNum);
+                                if (!dsc->lvHasLdAddrOp)
+                                {
+                                    JITDUMP("  .. we can!\n");
+                                    impSpillLclRefs(directStoreCandidateLclNum, CHECK_SPILL_ALL);
+                                    impStoreTemp(directStoreCandidateLclNum, op1, CHECK_SPILL_NONE);
+                                    lvaGetDesc(lclNum)->lvType = TYP_REF;
+                                    newObjThisPtr = gtNewLclvNode(directStoreCandidateLclNum, TYP_REF);
+                                    //sz += candidateSkip;
+                                    goto CALL;
+                                }
+                                else
+                                {
+                                    JITDUMP("  .. we cannot, it has its address taken\n");
+                                }
+                            }
+                        }
+
                         // Append the assignment to the temp/local. Dont need to spill
                         // at all as we are just calling an EE-Jit helper which can only
                         // cause an (async) OutOfMemoryException.
