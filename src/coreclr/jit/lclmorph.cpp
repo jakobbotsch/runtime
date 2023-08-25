@@ -701,6 +701,18 @@ private:
         }
     }
 
+    void MarkExposed(unsigned lclNum DEBUGARG(AddressExposedReason reason))
+    {
+        LclVarDsc* dsc = m_compiler->lvaGetDesc(lclNum);
+        if (dsc->IsAddressExposed())
+        {
+            return;
+        }
+
+        dsc->lvAddrExposedByAnalysis = true;
+        m_compiler->lvaSetVarAddrExposed(lclNum DEBUGARG(reason));
+    }
+
     //------------------------------------------------------------------------
     // EscapeAddress: Process an escaped address value
     //
@@ -1675,3 +1687,208 @@ bool Compiler::fgMorphCombineSIMDFieldStores(BasicBlock* block, Statement* stmt)
     return true;
 }
 #endif // FEATURE_SIMD
+
+PhaseStatus Compiler::UnexposeLocals()
+{
+    unsigned numCandidates = 0;
+    for (unsigned lclNum = 0; lclNum < lvaCount; lclNum++)
+    {
+        LclVarDsc* dsc = lvaGetDesc(lclNum);
+        if (dsc->lvAddrExposedByAnalysis)
+        {
+            dsc->lvVarIndex = (unsigned short)numCandidates;
+            numCandidates++;
+        }
+    }
+
+    if (numCandidates <= 0)
+    {
+        return PhaseStatus::MODIFIED_NOTHING;
+    }
+
+    BitVecTraits traits(numCandidates, this);
+    // For each block, allocate bit vector that indicates whether that block
+    // can be reached with the local exposed.
+    BitVec* blockExposure = fgAllocateTypeForEachBlk<BitVec>(CMK_LocalAddressVisitor);
+
+    for (BasicBlock* block : Blocks())
+    {
+        BitVecOps::AssignNoCopy(&traits, blockExposure[block->bbNum], BitVecOps::MakeEmpty(&traits));
+    }
+
+    // Fill initial exposure.
+    for (BasicBlock* block : Blocks())
+    {
+        for (Statement* stmt : block->Statements())
+        {
+            for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
+            {
+                if (!lcl->OperIs(GT_LCL_ADDR))
+                {
+                    continue;
+                }
+
+                LclVarDsc* dsc = lvaGetDesc(lcl);
+                if (!dsc->lvAddrExposedByAnalysis)
+                {
+                    continue;
+                }
+
+                BitVecOps::AddElemD(&traits, blockExposure[block->bbNum], dsc->lvVarIndex);
+            }
+        }
+    }
+
+    // Compute the fixpoint.
+    BitVec exposure(BitVecOps::MakeEmpty(&traits));
+
+    bool changed;
+    do
+    {
+        changed = false;
+        for (BasicBlock* block : Blocks())
+        {
+            BitVecOps::AssignNoCopy(&traits, exposure, blockExposure[block->bbNum]);
+
+            for (FlowEdge* predEdge = BlockPredsWithEH(block); predEdge != nullptr; predEdge = predEdge->getNextPredEdge())
+            {
+                BasicBlock* pred = predEdge->getSourceBlock();
+                BitVecOps::UnionD(&traits, exposure, blockExposure[pred->bbNum]);
+            }
+
+            if (!BitVecOps::Equal(&traits, exposure, blockExposure[block->bbNum]))
+            {
+                BitVecOps::Assign(&traits, blockExposure[block->bbNum], exposure);
+                changed = true;
+            }
+        }
+    } while (changed);
+
+    m_blockToEHPreds = nullptr;
+
+    unsigned* numUnexposedReads = new (this, CMK_LocalAddressVisitor) unsigned[numCandidates] {};
+
+    for (BasicBlock* block : Blocks())
+    {
+        for (Statement* stmt : block->Statements())
+        {
+            for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
+            {
+                LclVarDsc* dsc = lvaGetDesc(lcl);
+                if (!dsc->lvAddrExposedByAnalysis)
+                {
+                    continue;
+                }
+
+                if (lcl->OperIs(GT_LCL_ADDR))
+                {
+                    continue;
+                }
+
+                if (BitVecOps::IsMember(&traits, blockExposure[block->bbNum], dsc->lvVarIndex))
+                {
+                    continue;
+                }
+
+                if ((lcl->gtFlags & GTF_VAR_DEF) == 0)
+                {
+                    numUnexposedReads[dsc->lvVarIndex]++;
+                }
+            }
+        }
+    }
+
+    unsigned* newLclNums = new (this, CMK_LocalAddressVisitor) unsigned[numCandidates];
+    for (unsigned i = 0; i < numCandidates; i++)
+    {
+        newLclNums[i] = BAD_VAR_NUM;
+    }
+
+    for (unsigned lclNum = 0; lclNum < lvaCount; lclNum++)
+    {
+        LclVarDsc* dsc = lvaGetDesc(lclNum);
+        if (!dsc->lvAddrExposedByAnalysis)
+        {
+            continue;
+        }
+
+        if (numUnexposedReads[dsc->lvVarIndex] <= 0)
+        {
+            continue;
+        }
+
+        unsigned newLclNum = lvaGrabTemp(false DEBUGARG("Exposed copy"));
+        newLclNums[dsc->lvVarIndex] = newLclNum;
+        lvaSetVarAddrExposed(newLclNum DEBUGARG(dsc->GetAddrExposedReason()));
+        lvaGetDesc(newLclNum)->lvAddrExposedByAnalysis = true;
+        dsc->CleanAddressExposed();
+        JITDUMP("Unexposed V%02u; new exposed copy is V%02u\n", lclNum, newLclNum);
+    }
+
+    BitVec newlyExposed(BitVecOps::MakeEmpty(&traits));
+    for (BasicBlock* block : Blocks())
+    {
+        for (Statement* stmt : block->Statements())
+        {
+            for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
+            {
+                LclVarDsc* dsc = lvaGetDesc(lcl);
+                if (!dsc->lvAddrExposedByAnalysis)
+                {
+                    continue;
+                }
+
+                if (BitVecOps::IsMember(&traits, blockExposure[block->bbNum], dsc->lvVarIndex))
+                {
+                    // Exposed
+                    unsigned newLclNum = newLclNums[dsc->lvVarIndex];
+                    if (newLclNum == BAD_VAR_NUM)
+                    {
+                        continue;
+                    }
+
+                    lcl->SetLclNum(newLclNum);
+                }
+            }
+        }
+
+        BitVecOps::ClearD(&traits, newlyExposed);
+        block->VisitAllSuccs(this, [&](BasicBlock* succ) {
+            BitVecOps::UnionD(&traits, newlyExposed, blockExposure[succ->bbNum]);
+            return BasicBlockVisit::Continue;
+            });
+
+        BitVecOps::DiffD(&traits, newlyExposed, blockExposure[block->bbNum]);
+
+        BitVecOps::Iter iter(&traits, newlyExposed);
+        unsigned newlyExposedVarIndex = 0;
+        while (iter.NextElem(&newlyExposedVarIndex))
+        {
+            bool found = false;
+            for (unsigned lclNum = 0; lclNum < lvaCount; lclNum++)
+            {
+                LclVarDsc* dsc = lvaGetDesc(lclNum);
+                if (!dsc->lvAddrExposedByAnalysis)
+                {
+                    continue;
+                }
+
+                if (dsc->lvVarIndex != newlyExposedVarIndex)
+                {
+                    continue;
+                }
+
+                found = true;
+                GenTree* lcl = gtNewLclVarNode(lclNum, dsc->lvNormalizeOnLoad() ? dsc->TypeGet() : genActualType(dsc));
+                GenTree* store = gtNewTempStore(newLclNums[lclNum], lcl);
+
+                fgInsertStmtNearEnd(block, fgNewStmtFromTree(store));
+                break;
+            }
+
+            assert(found);
+        }
+    }
+
+    return PhaseStatus::MODIFIED_EVERYTHING;
+}

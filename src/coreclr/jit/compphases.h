@@ -42,6 +42,7 @@ CompPhaseNameMacro(PHASE_CLONE_FINALLY,              "Clone finally",           
 CompPhaseNameMacro(PHASE_UPDATE_FINALLY_FLAGS,       "Update finally target flags",    false, -1, false)
 CompPhaseNameMacro(PHASE_EARLY_UPDATE_FLOW_GRAPH,    "Update flow graph early pass",   false, -1, false)
 CompPhaseNameMacro(PHASE_STR_ADRLCL,                 "Morph - Structs/AddrExp",        false, -1, false)
+CompPhaseNameMacro(PHASE_UNEXPOSE_LOCALS,            "Unexpose exposed locals",        false, -1, false)
 CompPhaseNameMacro(PHASE_EARLY_LIVENESS,             "Early liveness",                 false, -1, false)
 CompPhaseNameMacro(PHASE_PHYSICAL_PROMOTION,         "Physical promotion",             false, -1, false)
 CompPhaseNameMacro(PHASE_FWD_SUB,                    "Forward Substitution",           false, -1, false)

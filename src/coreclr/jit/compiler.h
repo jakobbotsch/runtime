@@ -524,6 +524,7 @@ private:
                             // global location, etc.
                             // We cannot reason reliably about the value of the variable.
 public:
+    bool lvAddrExposedByAnalysis : 1;
     unsigned char lvDoNotEnregister : 1; // Do not enregister this variable.
     unsigned char lvFieldAccessed : 1;   // The var is a struct local, and a field of the variable is accessed.  Affects
                                          // struct promotion.
@@ -6167,6 +6168,8 @@ private:
 
     PhaseStatus fgMarkAddressExposedLocals();
     void fgSequenceLocals(Statement* stmt);
+
+    PhaseStatus UnexposeLocals();
 
     PhaseStatus PhysicalPromotion();
 
