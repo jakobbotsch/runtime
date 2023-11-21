@@ -4696,6 +4696,10 @@ void Compiler::compCompile(void** methodCodePtr, uint32_t* methodCodeSize, JitFl
         // Run an early flow graph simplification pass
         //
         DoPhase(this, PHASE_EARLY_UPDATE_FLOW_GRAPH, &Compiler::fgUpdateFlowGraphPhase);
+
+        // Build post-order and remove unreachable blocks
+        //
+        DoPhase(this, PHASE_DFS_BLOCKS, &Compiler::fgDfsBlocks);
     }
 
     // Promote struct locals
@@ -4993,6 +4997,8 @@ void Compiler::compCompile(void** methodCodePtr, uint32_t* methodCodeSize, JitFl
                 //
                 DoPhase(this, PHASE_VN_BASED_DEAD_STORE_REMOVAL, &Compiler::optVNBasedDeadStoreRemoval);
             }
+
+            //DoPhase(this, PHASE_DFS_BLOCKS, &Compiler::fgDfsBlocks);
 
             if (fgModified)
             {

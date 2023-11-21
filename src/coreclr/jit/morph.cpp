@@ -14125,6 +14125,7 @@ PhaseStatus Compiler::fgMorphBlocks()
     // We are done with the global morphing phase
     //
     fgGlobalMorph = false;
+    fgGlobalMorphDone = true;
     compCurBB     = nullptr;
 
 #ifdef DEBUG
