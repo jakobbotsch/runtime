@@ -117,7 +117,7 @@ void Compiler::fgMarkUseDef(GenTreeLclVarCommon* tree)
 }
 
 /*****************************************************************************/
-void Compiler::fgLocalVarLiveness()
+void Compiler::fgLocalVarLiveness(bool hasPostOrder)
 {
 #ifdef DEBUG
     if (verbose)
@@ -149,7 +149,7 @@ void Compiler::fgLocalVarLiveness()
         /* Live variable analysis. */
 
         fgStmtRemoved = false;
-        fgInterBlockLocalVarLiveness();
+        fgInterBlockLocalVarLiveness(hasPostOrder);
     } while (fgStmtRemoved && fgLocalVarLivenessChanged);
 
     EndPhase(PHASE_LCLVARLIVENESS_INTERBLOCK);
@@ -1153,7 +1153,8 @@ class LiveVarAnalysis
     {
     }
 
-    bool PerBlockAnalysis(BasicBlock* block, bool updateInternalOnly, bool keepAliveThis)
+    template<typename TFunc>
+    bool PerBlockAnalysis(BasicBlock* block, bool updateInternalOnly, bool keepAliveThis, TFunc hasIteratedBlock)
     {
         /* Compute the 'liveOut' set */
         VarSetOps::ClearD(m_compiler, m_liveOut);
@@ -1189,7 +1190,7 @@ class LiveVarAnalysis
             // state index variable may be live at this point without appearing
             // as an explicit use anywhere.
             VarSetOps::UnionD(m_compiler, m_liveOut, m_compiler->fgEntryBB->bbLiveIn);
-            if (m_compiler->fgEntryBB->bbNum <= block->bbNum)
+            if (!hasIteratedBlock(m_compiler->fgEntryBB))
             {
                 m_hasPossibleBackEdge = true;
             }
@@ -1202,7 +1203,7 @@ class LiveVarAnalysis
         block->VisitRegularSuccs(m_compiler, [=](BasicBlock* succ) {
             VarSetOps::UnionD(m_compiler, m_liveOut, succ->bbLiveIn);
             m_memoryLiveOut |= succ->bbMemoryLiveIn;
-            if (succ->bbNum <= block->bbNum)
+            if (!hasIteratedBlock(succ))
             {
                 m_hasPossibleBackEdge = true;
             }
@@ -1286,6 +1287,7 @@ class LiveVarAnalysis
         return liveInChanged || memoryLiveInChanged;
     }
 
+    template<bool hasPostOrder>
     void Run(bool updateInternalOnly)
     {
         const bool keepAliveThis =
@@ -1305,31 +1307,39 @@ class LiveVarAnalysis
             m_memoryLiveIn  = emptyMemoryKindSet;
             m_memoryLiveOut = emptyMemoryKindSet;
 
-            for (BasicBlock* block = m_compiler->fgLastBB; block; block = block->Prev())
+            if (hasPostOrder)
             {
-                // sometimes block numbers are not monotonically increasing which
-                // would cause us not to identify backedges
-                if (!block->IsLast() && block->Next()->bbNum <= block->bbNum)
+                assert(!updateInternalOnly);
+                for (unsigned i = 0; i < m_compiler->fgPostOrderCount; i++)
                 {
-                    m_hasPossibleBackEdge = true;
+                    changed |= PerBlockAnalysis(m_compiler->fgPostOrder[i], false, keepAliveThis, [i](BasicBlock* succ) { return succ->bbPostorderNum < i; });
                 }
-
-                if (updateInternalOnly)
+            }
+            else
+            {
+                for (BasicBlock* block = m_compiler->fgLastBB; block; block = block->Prev())
                 {
-                    /* Only update BBF_INTERNAL blocks as they may be
-                       syntactically out of sequence. */
-
-                    noway_assert(m_compiler->opts.compDbgCode && (m_compiler->info.compVarScopesCount > 0));
-
-                    if (!(block->bbFlags & BBF_INTERNAL))
+                    // sometimes block numbers are not monotonically increasing which
+                    // would cause us not to identify backedges
+                    if (!block->IsLast() && block->Next()->bbNum <= block->bbNum)
                     {
-                        continue;
+                        m_hasPossibleBackEdge = true;
                     }
-                }
 
-                if (PerBlockAnalysis(block, updateInternalOnly, keepAliveThis))
-                {
-                    changed = true;
+                    if (updateInternalOnly)
+                    {
+                        /* Only update BBF_INTERNAL blocks as they may be
+                           syntactically out of sequence. */
+
+                        noway_assert(m_compiler->opts.compDbgCode && (m_compiler->info.compVarScopesCount > 0));
+
+                        if (!(block->bbFlags & BBF_INTERNAL))
+                        {
+                            continue;
+                        }
+                    }
+
+                    changed |= PerBlockAnalysis(block, updateInternalOnly, keepAliveThis, [block](BasicBlock* succ) { return succ->bbNum > block->bbNum; });
                 }
             }
             // if there is no way we could have processed a block without seeing all of its predecessors
@@ -1342,10 +1352,18 @@ class LiveVarAnalysis
     }
 
 public:
-    static void Run(Compiler* compiler, bool updateInternalOnly)
+    static void Run(Compiler* compiler, bool hasPostOrder, bool updateInternalOnly)
     {
         LiveVarAnalysis analysis(compiler);
-        analysis.Run(updateInternalOnly);
+
+        if (hasPostOrder)
+        {
+            analysis.Run<true>(updateInternalOnly);
+        }
+        else
+        {
+            analysis.Run<false>(updateInternalOnly);
+        }
     }
 };
 
@@ -1355,14 +1373,14 @@ public:
  *  If updateInternalOnly==true, only update BBF_INTERNAL blocks.
  */
 
-void Compiler::fgLiveVarAnalysis(bool updateInternalOnly)
+void Compiler::fgLiveVarAnalysis(bool hasPostOrder, bool updateInternalOnly)
 {
     if (!backendRequiresLocalVarLifetimes())
     {
         return;
     }
 
-    LiveVarAnalysis::Run(this, updateInternalOnly);
+    LiveVarAnalysis::Run(this, hasPostOrder, updateInternalOnly);
 
 #ifdef DEBUG
     if (verbose && !updateInternalOnly)
@@ -2395,7 +2413,7 @@ bool Compiler::fgRemoveDeadStore(GenTree**        pTree,
  *  Iterative data flow for live variable info and availability of range
  *  check index expressions.
  */
-void Compiler::fgInterBlockLocalVarLiveness()
+void Compiler::fgInterBlockLocalVarLiveness(bool hasPostOrder)
 {
 #ifdef DEBUG
     if (verbose)
@@ -2413,7 +2431,7 @@ void Compiler::fgInterBlockLocalVarLiveness()
 
     /* Compute the IN and OUT sets for tracked variables */
 
-    fgLiveVarAnalysis();
+    fgLiveVarAnalysis(hasPostOrder);
 
     /* For debuggable code, we mark vars as live over their entire
      * reported scope, so that it will be visible over the entire scope
@@ -2441,6 +2459,11 @@ void Compiler::fgInterBlockLocalVarLiveness()
 
     for (BasicBlock* const block : Blocks())
     {
+        if (hasPostOrder && ((block->bbPostorderNum >= fgPostOrderCount) || (fgPostOrder[block->bbPostorderNum] != block)))
+        {
+            continue;
+        }
+
         if (block->hasEHBoundaryIn())
         {
             // Note the set of variables live on entry to exception handler.
@@ -2523,6 +2546,11 @@ void Compiler::fgInterBlockLocalVarLiveness()
 
     for (BasicBlock* const block : Blocks())
     {
+        if (hasPostOrder && ((block->bbPostorderNum >= fgPostOrderCount) || (fgPostOrder[block->bbPostorderNum] != block)))
+        {
+            continue;
+        }
+
         /* Tell everyone what block we're working on */
 
         compCurBB = block;
@@ -2782,7 +2810,7 @@ PhaseStatus Compiler::fgEarlyLiveness()
         /* Live variable analysis. */
 
         fgStmtRemoved = false;
-        fgInterBlockLocalVarLiveness();
+        fgInterBlockLocalVarLiveness(/* hasPostOrder */ true);
     } while (fgStmtRemoved && fgLocalVarLivenessChanged);
 
     fgIsDoingEarlyLiveness = false;

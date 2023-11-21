@@ -4928,7 +4928,7 @@ public:
         return !opts.MinOpts() || m_pLinearScan->willEnregisterLocalVars();
     }
 
-    void fgLocalVarLiveness();
+    void fgLocalVarLiveness(bool hasPostOrder);
 
     void fgLocalVarLivenessInit();
 
@@ -4941,7 +4941,7 @@ public:
 
     void fgAddHandlerLiveVars(BasicBlock* block, VARSET_TP& ehHandlerLiveVars, MemoryKindSet& memoryLiveness);
 
-    void fgLiveVarAnalysis(bool updateInternalOnly = false);
+    void fgLiveVarAnalysis(bool hasPostOrder, bool updateInternalOnly = false);
 
     void fgComputeLifeCall(VARSET_TP& life, GenTreeCall* call);
 
@@ -4977,7 +4977,7 @@ public:
                            bool*            pStmtInfoDirty,
                            bool* pStoreRemoved DEBUGARG(bool* treeModf));
 
-    void fgInterBlockLocalVarLiveness();
+    void fgInterBlockLocalVarLiveness(bool hasPostOrder);
 
     // Blocks: convenience methods for enabling range-based `for` iteration over the function's blocks, e.g.:
     // 1.   for (BasicBlock* const block : compiler->Blocks()) ...

@@ -7202,7 +7202,7 @@ PhaseStatus Lowering::DoPhase()
     const bool setSlotNumbers = false;
     comp->lvaComputeRefCounts(isRecompute, setSlotNumbers);
 
-    comp->fgLocalVarLiveness();
+    comp->fgLocalVarLiveness(/* hasPostOrder */ false);
     // local var liveness can delete code, which may create empty blocks
     if (comp->opts.OptimizationEnabled())
     {
@@ -7212,7 +7212,7 @@ PhaseStatus Lowering::DoPhase()
         if (modified)
         {
             JITDUMP("had to run another liveness pass:\n");
-            comp->fgLocalVarLiveness();
+            comp->fgLocalVarLiveness(/* hasPostOrder */ false);
         }
     }
     else

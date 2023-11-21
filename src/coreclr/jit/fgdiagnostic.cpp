@@ -4444,23 +4444,18 @@ public:
                 BasicBlock* const ssaInfoDefBlock   = ssaInfo->GetDefBlock();
                 BasicBlock* const ssaVarDscDefBlock = ssaVarDsc->GetBlock();
 
-                if (ssaInfoDefBlock != ssaVarDscDefBlock)
+                if ((ssaInfoDefBlock == nullptr) && (ssaVarDscDefBlock != nullptr))
                 {
-                    // We are inconsistent in tracking where the initial values of params
-                    // and uninit locals come from. Tolerate.
-                    //
-                    const bool initialValOfParamOrLocal =
-                        (lclNum < m_compiler->lvaCount) && (ssaNum == SsaConfig::FIRST_SSA_NUM);
-                    const bool noDefBlockOrFirstBB =
-                        (ssaInfoDefBlock == nullptr) && (ssaVarDscDefBlock == m_compiler->fgFirstBB);
-                    if (!(initialValOfParamOrLocal && noDefBlockOrFirstBB))
-                    {
-                        JITDUMP("[error] Wrong def block for V%02u.%u : IR " FMT_BB " SSA " FMT_BB "\n", lclNum, ssaNum,
-                                ssaInfoDefBlock == nullptr ? 0 : ssaInfoDefBlock->bbNum,
-                                ssaVarDscDefBlock == nullptr ? 0 : ssaVarDscDefBlock->bbNum);
+                    // Removed pred.
+                    JITDUMP("[info] Phi arg predecessor for V%02u.%u has been removed (removed BB num: " FMT_BB "\n", lclNum, ssaNum, ssaVarDscDefBlock->bbNum);
+                }
+                else if (ssaInfoDefBlock != ssaVarDscDefBlock)
+                {
+                    JITDUMP("[error] Wrong def block for V%02u.%u : IR " FMT_BB " SSA " FMT_BB "\n", lclNum, ssaNum,
+                            ssaInfoDefBlock == nullptr ? 0 : ssaInfoDefBlock->bbNum,
+                            ssaVarDscDefBlock == nullptr ? 0 : ssaVarDscDefBlock->bbNum);
 
-                        SetHasErrors();
-                    }
+                    SetHasErrors();
                 }
 
                 unsigned const ssaInfoUses   = ssaInfo->GetNumUses();
