@@ -591,9 +591,14 @@ BasicBlockVisit BasicBlock::VisitAllSuccs(Compiler* comp, TFunc func)
     switch (bbJumpKind)
     {
         case BBJ_EHFINALLYRET:
-            for (unsigned i = 0; i < bbJumpEhf->bbeCount; i++)
+            // This can run before import, in which case we haven't converted
+            // LEAVE into callfinally yet, and haven't added return successors.
+            if (bbJumpEhf != nullptr)
             {
-                RETURN_ON_ABORT(func(bbJumpEhf->bbeSuccs[i]));
+                for (unsigned i = 0; i < bbJumpEhf->bbeCount; i++)
+                {
+                    RETURN_ON_ABORT(func(bbJumpEhf->bbeSuccs[i]));
+                }
             }
 
             return VisitEHSuccs(comp, func);
@@ -673,9 +678,14 @@ BasicBlockVisit BasicBlock::VisitRegularSuccs(Compiler* comp, TFunc func)
     switch (bbJumpKind)
     {
         case BBJ_EHFINALLYRET:
-            for (unsigned i = 0; i < bbJumpEhf->bbeCount; i++)
+            // This can run before import, in which case we haven't converted
+            // LEAVE into callfinally yet, and haven't added return successors.
+            if (bbJumpEhf != nullptr)
             {
-                RETURN_ON_ABORT(func(bbJumpEhf->bbeSuccs[i]));
+                for (unsigned i = 0; i < bbJumpEhf->bbeCount; i++)
+                {
+                    RETURN_ON_ABORT(func(bbJumpEhf->bbeSuccs[i]));
+                }
             }
 
             return BasicBlockVisit::Continue;
@@ -4934,6 +4944,42 @@ inline bool Compiler::compCanHavePatchpoints(const char** reason)
     }
 
     return whyNot == nullptr;
+}
+
+template <typename TFunc>
+BasicBlockVisit FlowGraphNaturalLoop::VisitLoopBlocksReversePostOrder(TFunc func)
+{
+    BitVecTraits traits(m_blocksSize, m_tree->GetCompiler());
+    bool result = BitVecOps::VisitBits(&traits, m_blocks, [=](unsigned index) {
+        // head block rpo index = PostOrderCount - 1 - headPreOrderIndex
+        // loop block rpo index = head block rpoIndex + index
+        // loop block po index = PostOrderCount - 1 - loop block rpo index
+        //                     = headPreOrderIndex - index
+        unsigned poIndex = m_head->bbPostorderNum - index;
+        assert(poIndex < m_tree->GetPostOrderCount());
+        return func(m_tree->GetPostOrder()[poIndex]) == BasicBlockVisit::Continue;
+    });
+
+    return result ? BasicBlockVisit::Continue : BasicBlockVisit::Abort;
+}
+
+template <typename TFunc>
+BasicBlockVisit FlowGraphNaturalLoop::VisitLoopBlocksPostOrder(TFunc func)
+{
+    BitVecTraits traits(m_blocksSize, m_tree->GetCompiler());
+    bool result = BitVecOps::VisitBitsReverse(&traits, m_blocks, [=](unsigned index) {
+        unsigned poIndex = m_head->bbPostorderNum - index;
+        assert(poIndex < m_tree->GetPostOrderCount());
+        return func(m_tree->GetPostOrder()[poIndex]) == BasicBlockVisit::Continue;
+    });
+
+    return result ? BasicBlockVisit::Continue : BasicBlockVisit::Abort;
+}
+
+template <typename TFunc>
+BasicBlockVisit FlowGraphNaturalLoop::VisitLoopBlocks(TFunc func)
+{
+    return VisitLoopBlocksReversePostOrder(func);
 }
 
 /*****************************************************************************/

@@ -61,6 +61,9 @@ PhaseStatus Compiler::fgSsaBuild()
         fgResetForSsa();
     }
 
+    // Reset BlockPredsWithEH cache.
+    m_blockToEHPreds = nullptr;
+
     SsaBuilder builder(this);
     builder.Build();
     fgSsaPassesCompleted++;
@@ -146,8 +149,9 @@ void SsaBuilder::ComputeImmediateDom()
 {
     JITDUMP("[SsaBuilder::ComputeImmediateDom]\n");
 
-    BasicBlock** postOrder = m_pCompiler->fgPostOrder;
-    unsigned     count     = m_pCompiler->fgPostOrderCount;
+    FlowGraphDfsTree* dfs       = m_pCompiler->m_dfs;
+    BasicBlock**      postOrder = dfs->GetPostOrder();
+    unsigned          count     = dfs->GetPostOrderCount();
 
     // Add entry point to visited as its IDom is NULL.
     assert(postOrder[count - 1] == m_pCompiler->fgFirstBB);
@@ -528,8 +532,9 @@ void SsaBuilder::InsertPhiFunctions()
 {
     JITDUMP("*************** In SsaBuilder::InsertPhiFunctions()\n");
 
-    BasicBlock** postOrder = m_pCompiler->fgPostOrder;
-    unsigned     count     = m_pCompiler->fgPostOrderCount;
+    FlowGraphDfsTree* dfs       = m_pCompiler->m_dfs;
+    BasicBlock**      postOrder = dfs->GetPostOrder();
+    unsigned          count     = dfs->GetPostOrderCount();
 
     // Compute dominance frontier.
     BlkToBlkVectorMap mapDF(m_allocator);
