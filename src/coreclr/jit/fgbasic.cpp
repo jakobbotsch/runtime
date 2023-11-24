@@ -68,6 +68,8 @@ void Compiler::fgInit()
     fgBBVarSetsInited = false;
     fgReturnCount     = 0;
 
+    m_dfs = nullptr;
+
     // Initialize BlockSet data.
     fgCurBBEpoch             = 0;
     fgCurBBEpochSize         = 0;
@@ -6223,7 +6225,15 @@ BasicBlock* Compiler::fgNewBBbefore(BBjumpKinds jumpKind,
 
     fgInsertBBbefore(block, newBlk);
 
-    newBlk->bbRefs = 0;
+    if (newBlk == fgFirstBB)
+    {
+        newBlk->bbRefs = 1;
+        newBlk->Next()->bbRefs--;
+    }
+    else
+    {
+        newBlk->bbRefs = 0;
+    }
 
     if (newBlk->bbFallsThrough() && block->isRunRarely())
     {

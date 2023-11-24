@@ -2024,6 +2024,11 @@ public:
         return m_head;
     }
 
+    const FlowGraphDfsTree* GetDfsTree() const
+    {
+        return m_tree;
+    }
+
     FlowGraphNaturalLoop* GetParent() const
     {
         return m_parent;
@@ -6522,6 +6527,8 @@ public:
     PhaseStatus optOptimizeLayout(); // Optimize the BasicBlock layout of the method
     PhaseStatus optSetBlockWeights();
     PhaseStatus optFindLoopsPhase(); // Finds loops and records them in the loop table
+    bool optCanonicalizeLoops(FlowGraphNaturalLoops* loops);
+    bool optCreatePreheader(FlowGraphNaturalLoop* loop);
 
     void optFindLoops();
 
@@ -6880,6 +6887,11 @@ protected:
         UpdatePredLists,      // add/remove to pred lists
         AddToPredLists,       // only add to pred lists
     };
+
+    template<typename TFunc>
+    void optRedirectBlock(BasicBlock*      blk,
+                          TFunc            lookupNewTarget,
+                          const RedirectBlockOption = RedirectBlockOption::DoNotChangePredLists);
 
     void optRedirectBlock(BasicBlock*      blk,
                           BlockToBlockMap* redirectMap,
