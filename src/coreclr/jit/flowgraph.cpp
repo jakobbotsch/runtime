@@ -4730,7 +4730,7 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
 
 void FlowGraphNaturalLoop::MatchInit(NaturalLoopIterInfo* info, BasicBlock* initBlock, GenTree* init)
 {
-    if ((init == nullptr) || init->OperIs(GT_STORE_LCL_VAR) || (init->AsLclVar()->GetLclNum() != info->IterVar))
+    if ((init == nullptr) || !init->OperIs(GT_STORE_LCL_VAR) || (init->AsLclVarCommon()->GetLclNum() != info->IterVar))
         return;
 
     GenTree* initValue = init->AsLclVar()->Data();
@@ -4830,8 +4830,6 @@ bool FlowGraphNaturalLoop::MatchLimit(NaturalLoopIterInfo* info, GenTree* test)
                     Compiler::dspTreeID(def));
             return false;
         }
-
-        return true;
 
         info->HasArrayLengthLimit = true;
     }
