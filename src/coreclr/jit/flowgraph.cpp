@@ -4607,6 +4607,22 @@ bool FlowGraphNaturalLoop::VisitDefs(TFunc func)
     return result == BasicBlockVisit::Continue;
 }
 
+GenTreeLclVarCommon* FlowGraphNaturalLoop::FindDef(unsigned lclNum)
+{
+    GenTreeLclVarCommon* result = nullptr;
+    VisitDefs([&result, lclNum](GenTreeLclVarCommon* def) {
+        if (def->GetLclNum() == lclNum)
+        {
+            result = def;
+            return false;
+        }
+
+        return true;
+        });
+
+    return result;
+}
+
 bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
 {
     JITDUMP("Analyzing iteration for " FMT_LP "\n", GetIndex());
@@ -4687,12 +4703,12 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
         return false;
     }
 
-    if (!AnalyzeLimit(info, test))
+    if (!MatchLimit(info, test))
     {
         return false;
     }
 
-    AnalyzeInit(info, initBlock, init);
+    MatchInit(info, initBlock, init);
 
     JITDUMP("  IterVar = V%02u\n", info->IterVar);
 
@@ -4713,7 +4729,7 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
     return result;
 }
 
-void FlowGraphNaturalLoop::AnalyzeInit(NaturalLoopIterInfo* info, BasicBlock* initBlock, GenTree* init)
+void FlowGraphNaturalLoop::MatchInit(NaturalLoopIterInfo* info, BasicBlock* initBlock, GenTree* init)
 {
     if ((init == nullptr) || init->OperIs(GT_STORE_LCL_VAR) || (init->AsLclVar()->GetLclNum() != info->IterVar))
         return;
@@ -4727,7 +4743,7 @@ void FlowGraphNaturalLoop::AnalyzeInit(NaturalLoopIterInfo* info, BasicBlock* in
     info->InitBlock      = initBlock;
 }
 
-bool FlowGraphNaturalLoop::AnalyzeLimit(NaturalLoopIterInfo* info, GenTree* test)
+bool FlowGraphNaturalLoop::MatchLimit(NaturalLoopIterInfo* info, GenTree* test)
 {
     // Obtain the relop from the "test" tree.
     GenTree* relop;
@@ -4786,19 +4802,11 @@ bool FlowGraphNaturalLoop::AnalyzeLimit(NaturalLoopIterInfo* info, GenTree* test
     {
         // See if limit var is a loop invariant
         //
-        bool result = VisitDefs([=](GenTreeLclVarCommon* def) {
-            if (def->GetLclNum() == limitOp->AsLclVarCommon()->GetLclNum())
-            {
-                JITDUMP("  Limit var V%02u modified by [%06u]\n", limitOp->AsLclVarCommon()->GetLclNum(),
-                        Compiler::dspTreeID(def));
-                return false;
-            }
-
-            return true;
-        });
-
-        if (!result)
+        GenTreeLclVarCommon* def = FindDef(limitOp->AsLclVarCommon()->GetLclNum());
+        if (def != nullptr)
         {
+            JITDUMP("  Limit var V%02u modified by [%06u]\n", limitOp->AsLclVarCommon()->GetLclNum(),
+                    Compiler::dspTreeID(def));
             return false;
         }
 
@@ -4816,21 +4824,15 @@ bool FlowGraphNaturalLoop::AnalyzeLimit(NaturalLoopIterInfo* info, GenTree* test
             return false;
         }
 
-        bool result = VisitDefs([=](GenTreeLclVarCommon* def) {
-            if (def->GetLclNum() == array->AsLclVar()->GetLclNum())
-            {
-                JITDUMP("  Array limit var V%02u modified by [%06u]\n", limitOp->AsLclVarCommon()->GetLclNum(),
-                        Compiler::dspTreeID(def));
-                return false;
-            }
-
-            return true;
-        });
-
-        if (!result)
+        GenTreeLclVarCommon* def = FindDef(array->AsLclVar()->GetLclNum());
+        if (def != nullptr)
         {
+            JITDUMP("  Array limit var V%02u modified by [%06u]\n", array->AsLclVarCommon()->GetLclNum(),
+                    Compiler::dspTreeID(def));
             return false;
         }
+
+        return true;
 
         info->HasArrayLengthLimit = true;
     }

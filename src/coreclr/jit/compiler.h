@@ -2045,8 +2045,10 @@ class FlowGraphNaturalLoop
     template<typename TFunc>
     bool VisitDefs(TFunc func);
 
-    void AnalyzeInit(NaturalLoopIterInfo* info, BasicBlock* initBlock, GenTree* init);
-    bool AnalyzeLimit(NaturalLoopIterInfo* info, GenTree* test);
+    GenTreeLclVarCommon* FindDef(unsigned lclNum);
+
+    void MatchInit(NaturalLoopIterInfo* info, BasicBlock* initBlock, GenTree* init);
+    bool MatchLimit(NaturalLoopIterInfo* info, GenTree* test);
 public:
     BasicBlock* GetHead() const
     {
