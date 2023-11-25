@@ -4553,3 +4553,297 @@ bool FlowGraphNaturalLoops::FindNaturalLoopBlocks(FlowGraphNaturalLoop* loop, ji
 
     return true;
 }
+
+template <typename TFunc>
+bool FlowGraphNaturalLoop::VisitDefs(TFunc func)
+{
+    class VisitDefsVisitor : public GenTreeVisitor<VisitDefsVisitor>
+    {
+        using GenTreeVisitor::m_compiler;
+
+        TFunc& m_func;
+
+    public:
+        enum
+        {
+            DoPreOrder = true,
+        };
+
+        VisitDefsVisitor(Compiler* comp, TFunc& func) : GenTreeVisitor(comp), m_func(func)
+        {
+        }
+
+        Compiler::fgWalkResult PreOrderVisit(GenTree** use, GenTree* user)
+        {
+            GenTree* tree = *use;
+            if ((tree->gtFlags & GTF_ASG) == 0)
+            {
+                return Compiler::WALK_SKIP_SUBTREES;
+            }
+
+            GenTreeLclVarCommon* lclDef;
+            if (tree->DefinesLocal(m_compiler, &lclDef))
+            {
+                if (!m_func(lclDef))
+                    return Compiler::WALK_ABORT;
+            }
+
+            return Compiler::WALK_CONTINUE;
+        }
+    };
+
+    VisitDefsVisitor visitor(m_tree->GetCompiler(), func);
+
+    BasicBlockVisit result = VisitLoopBlocks([&](BasicBlock* loopBlock) {
+        for (Statement* stmt : loopBlock->Statements())
+        {
+            if (visitor.WalkTree(stmt->GetRootNodePointer(), nullptr) == Compiler::WALK_ABORT)
+                return BasicBlockVisit::Abort;
+        }
+
+        return BasicBlockVisit::Continue;
+    });
+
+    return result == BasicBlockVisit::Continue;
+}
+
+bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
+{
+    JITDUMP("Analyzing iteration for " FMT_LP "\n", GetIndex());
+
+    const FlowGraphDfsTree* dfs  = m_tree;
+    Compiler*               comp = dfs->GetCompiler();
+    assert(m_backEdges.size() > 0);
+
+    if (m_backEdges.size() > 1)
+    {
+        // Pick one? Pick all? For example merge sort has two different iter
+        // variables with different back edges.
+        JITDUMP("  failing due to %zu backedges\n", m_backEdges.size());
+        return false;
+    }
+
+    assert((m_entryEdges.size() == 1) && "Expected preheader");
+
+    BasicBlock* preheader = m_entryEdges[0]->getSourceBlock();
+    BasicBlock* latch     = m_backEdges[0]->getSourceBlock();
+
+    JITDUMP("  Preheader = " FMT_BB "\n", preheader->bbNum);
+    JITDUMP("  Latch = " FMT_BB "\n", latch->bbNum);
+
+    BasicBlock* initBlock = preheader;
+    GenTree*    init;
+    GenTree*    test;
+    if (!comp->optExtractInitTestIncr(&initBlock, latch, m_head, &init, &test, &info->IncrTree))
+    {
+        JITDUMP("  Could not extract loop iter\n");
+        return false;
+    }
+
+    info->IterVar = comp->optIsLoopIncrTree(info->IncrTree);
+
+    assert(info->IterVar != BAD_VAR_NUM);
+    LclVarDsc* const iterVarDsc = comp->lvaGetDesc(info->IterVar);
+
+    // Bail on promoted case, otherwise we'd have to search the loop
+    // for both iterVar and its parent.
+    // TODO-CQ: Fix this
+    //
+    if (iterVarDsc->lvIsStructField)
+    {
+        JITDUMP("  iterVar V%02u is a promoted field\n", info->IterVar);
+        return false;
+    }
+
+    // Bail on the potentially aliased case.
+    //
+    if (iterVarDsc->IsAddressExposed())
+    {
+        JITDUMP("  iterVar V%02u is address exposed\n", info->IterVar);
+        return false;
+    }
+
+    if (init == nullptr)
+    {
+        JITDUMP("  Init = <none>, test = [%06u], incr = [%06u]\n", Compiler::dspTreeID(test),
+                Compiler::dspTreeID(info->IncrTree));
+    }
+    else
+    {
+        JITDUMP("  Init = [%06u], test = [%06u], incr = [%06u]\n", Compiler::dspTreeID(init), Compiler::dspTreeID(test),
+                Compiler::dspTreeID(info->IncrTree));
+    }
+
+    bool result = VisitDefs([=](GenTreeLclVarCommon* def) {
+        if ((def->GetLclNum() != info->IterVar) || (def == info->IncrTree))
+            return true;
+
+        JITDUMP("  Loop has extraneous def [%06u]\n", Compiler::dspTreeID(def));
+        return false;
+    });
+
+    if (!result)
+    {
+        return false;
+    }
+
+    if (!AnalyzeLimit(info, test))
+    {
+        return false;
+    }
+
+    AnalyzeInit(info, initBlock, init);
+
+    JITDUMP("  IterVar = V%02u\n", info->IterVar);
+
+    if (info->HasConstInit)
+        JITDUMP("  Const init with value %d in " FMT_BB "\n", info->ConstInitValue, info->InitBlock->bbNum);
+
+    JITDUMP("  Test is [%06u] (", Compiler::dspTreeID(info->TestTree));
+    if (info->HasConstLimit)
+        JITDUMP("const limit ");
+    if (info->HasSimdLimit)
+        JITDUMP("simd limit ");
+    if (info->HasInvariantLocalLimit)
+        JITDUMP("invariant local limit ");
+    if (info->HasArrayLengthLimit)
+        JITDUMP("array length limit ");
+    JITDUMP(")");
+
+    return result;
+}
+
+void FlowGraphNaturalLoop::AnalyzeInit(NaturalLoopIterInfo* info, BasicBlock* initBlock, GenTree* init)
+{
+    if ((init == nullptr) || init->OperIs(GT_STORE_LCL_VAR) || (init->AsLclVar()->GetLclNum() != info->IterVar))
+        return;
+
+    GenTree* initValue = init->AsLclVar()->Data();
+    if (!initValue->IsCnsIntOrI() || !initValue->TypeIs(TYP_INT))
+        return;
+
+    info->HasConstInit   = true;
+    info->ConstInitValue = (int)initValue->AsIntCon()->IconValue();
+    info->InitBlock      = initBlock;
+}
+
+bool FlowGraphNaturalLoop::AnalyzeLimit(NaturalLoopIterInfo* info, GenTree* test)
+{
+    // Obtain the relop from the "test" tree.
+    GenTree* relop;
+    if (test->OperIs(GT_JTRUE))
+    {
+        relop = test->gtGetOp1();
+    }
+    else
+    {
+        assert(test->OperIs(GT_STORE_LCL_VAR));
+        relop = test->AsLclVar()->Data();
+    }
+
+    noway_assert(relop->OperIsCompare());
+
+    GenTree* opr1 = relop->AsOp()->gtOp1;
+    GenTree* opr2 = relop->AsOp()->gtOp2;
+
+    GenTree* iterOp;
+    GenTree* limitOp;
+
+    // Make sure op1 or op2 is the iterVar.
+    if (opr1->gtOper == GT_LCL_VAR && opr1->AsLclVarCommon()->GetLclNum() == info->IterVar)
+    {
+        iterOp  = opr1;
+        limitOp = opr2;
+    }
+    else if (opr2->gtOper == GT_LCL_VAR && opr2->AsLclVarCommon()->GetLclNum() == info->IterVar)
+    {
+        iterOp  = opr2;
+        limitOp = opr1;
+    }
+    else
+    {
+        return false;
+    }
+
+    if (iterOp->gtType != TYP_INT)
+    {
+        return false;
+    }
+
+    // Mark the iterator node.
+    iterOp->gtFlags |= GTF_VAR_ITERATOR;
+
+    // Check what type of limit we have - constant, variable or arr-len.
+    if (limitOp->gtOper == GT_CNS_INT)
+    {
+        info->HasConstLimit = true;
+        if ((limitOp->gtFlags & GTF_ICON_SIMD_COUNT) != 0)
+        {
+            info->HasSimdLimit = true;
+        }
+    }
+    else if (limitOp->OperIs(GT_LCL_VAR))
+    {
+        // See if limit var is a loop invariant
+        //
+        bool result = VisitDefs([=](GenTreeLclVarCommon* def) {
+            if (def->GetLclNum() == limitOp->AsLclVarCommon()->GetLclNum())
+            {
+                JITDUMP("  Limit var V%02u modified by [%06u]\n", limitOp->AsLclVarCommon()->GetLclNum(),
+                        Compiler::dspTreeID(def));
+                return false;
+            }
+
+            return true;
+        });
+
+        if (!result)
+        {
+            return false;
+        }
+
+        info->HasInvariantLocalLimit = true;
+    }
+    else if (limitOp->OperIs(GT_ARR_LENGTH))
+    {
+        // See if limit array is a loop invariant
+        //
+        GenTree* const array = limitOp->AsArrLen()->ArrRef();
+
+        if (!array->OperIs(GT_LCL_VAR))
+        {
+            JITDUMP("  Array limit tree [%06u] not analyzable\n", Compiler::dspTreeID(limitOp));
+            return false;
+        }
+
+        bool result = VisitDefs([=](GenTreeLclVarCommon* def) {
+            if (def->GetLclNum() == array->AsLclVar()->GetLclNum())
+            {
+                JITDUMP("  Array limit var V%02u modified by [%06u]\n", limitOp->AsLclVarCommon()->GetLclNum(),
+                        Compiler::dspTreeID(def));
+                return false;
+            }
+
+            return true;
+        });
+
+        if (!result)
+        {
+            return false;
+        }
+
+        info->HasArrayLengthLimit = true;
+    }
+    else
+    {
+        JITDUMP("  Loop limit tree [%06u] not analyzable\n", Compiler::dspTreeID(limitOp));
+        return false;
+    }
+
+    // Were we able to successfully analyze the limit?
+    //
+    assert(info->HasConstLimit || info->HasInvariantLocalLimit || info->HasArrayLengthLimit);
+
+    info->TestTree = relop;
+    return true;
+}

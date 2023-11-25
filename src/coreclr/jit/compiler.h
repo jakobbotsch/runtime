@@ -1995,6 +1995,29 @@ public:
     bool IsAncestor(BasicBlock* ancestor, BasicBlock* descendant) const;
 };
 
+struct NaturalLoopIterInfo
+{
+    unsigned IterVar = BAD_VAR_NUM;
+    int ConstInitValue = 0;
+    BasicBlock* InitBlock = nullptr;
+    GenTree* TestTree = nullptr;
+    GenTree* IncrTree = nullptr;
+    bool HasConstInit : 1;
+    bool HasConstLimit : 1;
+    bool HasSimdLimit : 1;
+    bool HasInvariantLocalLimit : 1;
+    bool HasArrayLengthLimit : 1;
+
+    NaturalLoopIterInfo()
+        : HasConstInit(false)
+        , HasConstLimit(false)
+        , HasSimdLimit(false)
+        , HasInvariantLocalLimit(false)
+        , HasArrayLengthLimit(false)
+    {
+    }
+};
+
 class FlowGraphNaturalLoop
 {
     friend class FlowGraphNaturalLoops;
@@ -2018,6 +2041,12 @@ class FlowGraphNaturalLoop
     bool TryGetLoopBlockBitVecIndex(BasicBlock* block, unsigned* pIndex);
 
     BitVecTraits LoopBlockTraits();
+
+    template<typename TFunc>
+    bool VisitDefs(TFunc func);
+
+    void AnalyzeInit(NaturalLoopIterInfo* info, BasicBlock* initBlock, GenTree* init);
+    bool AnalyzeLimit(NaturalLoopIterInfo* info, GenTree* test);
 public:
     BasicBlock* GetHead() const
     {
@@ -2069,6 +2098,8 @@ public:
 
     template<typename TFunc>
     BasicBlockVisit VisitLoopBlocks(TFunc func);
+
+    bool AnalyzeIteration(NaturalLoopIterInfo* info);
 };
 
 class FlowGraphNaturalLoops
@@ -2242,6 +2273,7 @@ class Compiler
     friend class LocalsUseVisitor;
     friend class Promotion;
     friend class ReplaceVisitor;
+    friend class FlowGraphNaturalLoop;
 
 #ifdef FEATURE_HW_INTRINSICS
     friend struct HWIntrinsicInfo;
@@ -6845,7 +6877,7 @@ protected:
     bool optComputeIterInfo(GenTree* incr, BasicBlock* from, BasicBlock* to, unsigned* pIterVar);
     bool optPopulateInitInfo(unsigned loopInd, BasicBlock* initBlock, GenTree* init, unsigned iterVar);
     bool optExtractInitTestIncr(
-        BasicBlock** pInitBlock, BasicBlock* bottom, BasicBlock* exit, GenTree** ppInit, GenTree** ppTest, GenTree** ppIncr);
+        BasicBlock** pInitBlock, BasicBlock* bottom, BasicBlock* top, GenTree** ppInit, GenTree** ppTest, GenTree** ppIncr);
 
     void optFindNaturalLoops();
 
