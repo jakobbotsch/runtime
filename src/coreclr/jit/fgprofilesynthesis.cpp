@@ -710,7 +710,7 @@ void ProfileSynthesis::ComputeCyclicProbabilities(FlowGraphNaturalLoop* loop)
     loop->VisitLoopBlocksReversePostOrder([=](BasicBlock* block) {
         // Loop head gets external count of 1
         //
-        if (block == loop->GetHead())
+        if (block == loop->GetHeader())
         {
             JITDUMP("ccp: " FMT_BB " :: 1.0\n", block->bbNum);
             block->bbWeight = 1.0;
@@ -771,7 +771,7 @@ void ProfileSynthesis::ComputeCyclicProbabilities(FlowGraphNaturalLoop* loop)
     for (FlowEdge* const edge : loop->BackEdges())
     {
         JITDUMP("ccp backedge " FMT_BB " (" FMT_WT ") -> " FMT_BB " likelihood " FMT_WT "\n",
-                edge->getSourceBlock()->bbNum, edge->getSourceBlock()->bbWeight, loop->GetHead()->bbNum,
+                edge->getSourceBlock()->bbNum, edge->getSourceBlock()->bbWeight, loop->GetHeader()->bbNum,
                 edge->getLikelihood());
 
         cyclicWeight += edge->getLikelyWeight();
@@ -795,7 +795,7 @@ void ProfileSynthesis::ComputeCyclicProbabilities(FlowGraphNaturalLoop* loop)
     weight_t const cyclicProbability = 1.0 / (1.0 - cyclicWeight);
 
     JITDUMP("For loop at " FMT_BB " cyclic weight is " FMT_WT " cyclic probability is " FMT_WT "%s\n",
-            loop->GetHead()->bbNum, cyclicWeight, cyclicProbability, capped ? " [capped]" : "");
+            loop->GetHeader()->bbNum, cyclicWeight, cyclicProbability, capped ? " [capped]" : "");
 
     m_cyclicProbabilities[loop->GetIndex()] = cyclicProbability;
 

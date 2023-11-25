@@ -2023,7 +2023,7 @@ class FlowGraphNaturalLoop
     friend class FlowGraphNaturalLoops;
 
     const FlowGraphDfsTree* m_tree;
-    BasicBlock* m_head;
+    BasicBlock* m_header;
     FlowGraphNaturalLoop* m_parent = nullptr;
     // Bit vector of blocks in the loop; each index is the RPO index a block,
     // with the head block's RPO index subtracted.
@@ -2032,7 +2032,6 @@ class FlowGraphNaturalLoop
     jitstd::vector<FlowEdge*> m_backEdges;
     jitstd::vector<FlowEdge*> m_entryEdges;
     jitstd::vector<FlowEdge*> m_exitEdges;
-    unsigned m_depth = 0;
     unsigned m_index = 0;
 
     FlowGraphNaturalLoop(const FlowGraphDfsTree* tree, BasicBlock* head);
@@ -2050,9 +2049,9 @@ class FlowGraphNaturalLoop
     void MatchInit(NaturalLoopIterInfo* info, BasicBlock* initBlock, GenTree* init);
     bool MatchLimit(NaturalLoopIterInfo* info, GenTree* test);
 public:
-    BasicBlock* GetHead() const
+    BasicBlock* GetHeader() const
     {
-        return m_head;
+        return m_header;
     }
 
     const FlowGraphDfsTree* GetDfsTree() const
@@ -2063,11 +2062,6 @@ public:
     FlowGraphNaturalLoop* GetParent() const
     {
         return m_parent;
-    }
-
-    unsigned GetDepth() const
-    {
-        return m_depth;
     }
 
     unsigned GetIndex() const

@@ -4183,9 +4183,9 @@ FlowGraphDfsTree* Compiler::fgComputeDfs()
     return new (this, CMK_DepthFirstSearch) FlowGraphDfsTree(this, postOrder, postOrderIndex);
 }
 
-FlowGraphNaturalLoop::FlowGraphNaturalLoop(const FlowGraphDfsTree* tree, BasicBlock* head)
+FlowGraphNaturalLoop::FlowGraphNaturalLoop(const FlowGraphDfsTree* tree, BasicBlock* header)
     : m_tree(tree)
-    , m_head(head)
+    , m_header(header)
     , m_blocks(BitVecOps::UninitVal())
     , m_backEdges(tree->GetCompiler()->getAllocator(CMK_Loops))
     , m_entryEdges(tree->GetCompiler()->getAllocator(CMK_Loops))
@@ -4195,19 +4195,19 @@ FlowGraphNaturalLoop::FlowGraphNaturalLoop(const FlowGraphDfsTree* tree, BasicBl
 
 unsigned FlowGraphNaturalLoop::LoopBlockBitVecIndex(BasicBlock* block)
 {
-    unsigned index = m_head->bbPostorderNum - block->bbPostorderNum;
+    unsigned index = m_header->bbPostorderNum - block->bbPostorderNum;
     assert(index < m_blocksSize);
     return index;
 }
 
 bool FlowGraphNaturalLoop::TryGetLoopBlockBitVecIndex(BasicBlock* block, unsigned* pIndex)
 {
-    if (block->bbPostorderNum > m_head->bbPostorderNum)
+    if (block->bbPostorderNum > m_header->bbPostorderNum)
     {
         return false;
     }
 
-    unsigned index = m_head->bbPostorderNum - block->bbPostorderNum;
+    unsigned index = m_header->bbPostorderNum - block->bbPostorderNum;
     if (index >= m_blocksSize)
     {
         return false;
@@ -4253,7 +4253,7 @@ FlowGraphNaturalLoop* FlowGraphNaturalLoops::GetLoopFromHeader(BasicBlock* block
     // TODO-TP: This can use binary search based on post order number.
     for (FlowGraphNaturalLoop* loop : m_loops)
     {
-        if (loop->m_head == block)
+        if (loop->m_header == block)
         {
             return loop;
         }
@@ -4344,24 +4344,24 @@ FlowGraphNaturalLoops* FlowGraphNaturalLoops::Find(const FlowGraphDfsTree* dfs)
 
     for (unsigned i = dfs->GetPostOrderCount(); i != 0; i--)
     {
-        BasicBlock* const head = dfs->GetPostOrder()[i - 1];
+        BasicBlock* const header = dfs->GetPostOrder()[i - 1];
 
         // If a block is a DFS ancestor of one if its predecessors then the block is a loop header.
         //
         FlowGraphNaturalLoop* loop = nullptr;
 
-        for (FlowEdge* predEdge : head->PredEdges())
+        for (FlowEdge* predEdge : header->PredEdges())
         {
             BasicBlock* predBlock = predEdge->getSourceBlock();
-            if (dfs->Contains(predBlock) && dfs->IsAncestor(head, predBlock))
+            if (dfs->Contains(predBlock) && dfs->IsAncestor(header, predBlock))
             {
                 if (loop == nullptr)
                 {
-                    loop = new (comp, CMK_Loops) FlowGraphNaturalLoop(dfs, head);
+                    loop = new (comp, CMK_Loops) FlowGraphNaturalLoop(dfs, header);
                     JITDUMP("\n");
                 }
 
-                JITDUMP(FMT_BB " -> " FMT_BB " is a backedge\n", predBlock->bbNum, head->bbNum);
+                JITDUMP(FMT_BB " -> " FMT_BB " is a backedge\n", predBlock->bbNum, header->bbNum);
                 loop->m_backEdges.push_back(predEdge);
             }
         }
@@ -4371,14 +4371,14 @@ FlowGraphNaturalLoops* FlowGraphNaturalLoops::Find(const FlowGraphDfsTree* dfs)
             continue;
         }
 
-        JITDUMP(FMT_BB " is head of a DFS loop with %d back edges\n", head->bbNum, loop->m_backEdges.size());
+        JITDUMP(FMT_BB " is the header of a DFS loop with %d back edges\n", header->bbNum, loop->m_backEdges.size());
 
         // Now walk back in flow along the back edges from head to determine if
         // this is a natural loop and to find all the blocks in the loop.
         //
 
         worklist.clear();
-        loop->m_blocksSize = loop->m_head->bbPostorderNum + 1;
+        loop->m_blocksSize = loop->m_header->bbPostorderNum + 1;
 
         BitVecTraits loopTraits = loop->LoopBlockTraits();
         loop->m_blocks          = BitVecOps::MakeEmpty(&loopTraits);
@@ -4414,13 +4414,13 @@ FlowGraphNaturalLoops* FlowGraphNaturalLoops::Find(const FlowGraphDfsTree* dfs)
         // So it needs to be special cased later on when processing
         // entry edges.
         //
-        for (FlowEdge* const predEdge : loop->m_head->PredEdges())
+        for (FlowEdge* const predEdge : loop->m_header->PredEdges())
         {
             BasicBlock* predBlock = predEdge->getSourceBlock();
-            if (dfs->Contains(predBlock) && !dfs->IsAncestor(head, predEdge->getSourceBlock()))
+            if (dfs->Contains(predBlock) && !dfs->IsAncestor(header, predEdge->getSourceBlock()))
             {
                 JITDUMP(FMT_BB " -> " FMT_BB " is an entry edge\n", predEdge->getSourceBlock()->bbNum,
-                        loop->m_head->bbNum);
+                        loop->m_header->bbNum);
                 loop->m_entryEdges.push_back(predEdge);
             }
         }
@@ -4432,12 +4432,10 @@ FlowGraphNaturalLoops* FlowGraphNaturalLoops::Find(const FlowGraphDfsTree* dfs)
         //
         for (FlowGraphNaturalLoop* const otherLoop : loops->InPostOrder())
         {
-            if (otherLoop->ContainsBlock(head))
+            if (otherLoop->ContainsBlock(header))
             {
                 loop->m_parent = otherLoop;
-                loop->m_depth  = otherLoop->m_depth + 1;
-                JITDUMP("at depth %u, nested within loop starting at " FMT_BB "\n", loop->m_depth,
-                        otherLoop->GetHead()->bbNum);
+                JITDUMP("Nested within loop starting at " FMT_BB "\n", otherLoop->GetHeader()->bbNum);
                 break;
             }
         }
@@ -4447,7 +4445,7 @@ FlowGraphNaturalLoops* FlowGraphNaturalLoops::Find(const FlowGraphDfsTree* dfs)
         //
         for (FlowGraphNaturalLoop* const otherLoop : loops->InPostOrder())
         {
-            if (otherLoop->ContainsBlock(head))
+            if (otherLoop->ContainsBlock(header))
             {
                 // Ancestor loop; should contain all blocks of this loop
                 //
@@ -4468,15 +4466,12 @@ FlowGraphNaturalLoops* FlowGraphNaturalLoops::Find(const FlowGraphDfsTree* dfs)
         }
 #endif
 
-        if (loop->m_parent == nullptr)
-        {
-            JITDUMP("top-level loop\n");
-        }
-
         // Record this loop
         //
         loop->m_index = (unsigned)loops->m_loops.size();
         loops->m_loops.push_back(loop);
+
+        JITDUMP("Added loop " FMT_LP " with header " FMT_BB "\n", loop->GetIndex(), loop->GetHeader()->bbNum);
     }
 
     if (loops->m_loops.size() > 0)
@@ -4505,7 +4500,7 @@ bool FlowGraphNaturalLoops::FindNaturalLoopBlocks(FlowGraphNaturalLoop* loop, ji
     for (FlowEdge* backEdge : loop->m_backEdges)
     {
         BasicBlock* const backEdgeSource = backEdge->getSourceBlock();
-        if (backEdgeSource == loop->GetHead())
+        if (backEdgeSource == loop->GetHeader())
         {
             continue;
         }
@@ -4538,7 +4533,7 @@ bool FlowGraphNaturalLoops::FindNaturalLoopBlocks(FlowGraphNaturalLoop* loop, ji
 
             // Head cannot dominate `predBlock` unless it is a DFS ancestor.
             //
-            if (!tree->IsAncestor(loop->GetHead(), predBlock))
+            if (!tree->IsAncestor(loop->GetHeader(), predBlock))
             {
                 JITDUMP("Loop is not natural; witness " FMT_BB " -> " FMT_BB "\n", predBlock->bbNum, loopBlock->bbNum);
                 return false;
@@ -4618,7 +4613,7 @@ GenTreeLclVarCommon* FlowGraphNaturalLoop::FindDef(unsigned lclNum)
         }
 
         return true;
-        });
+    });
 
     return result;
 }
@@ -4633,8 +4628,6 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
 
     if (m_backEdges.size() > 1)
     {
-        // Pick one? Pick all? For example merge sort has two different iter
-        // variables with different back edges.
         JITDUMP("  failing due to %zu backedges\n", m_backEdges.size());
         return false;
     }
@@ -4647,10 +4640,16 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
     JITDUMP("  Preheader = " FMT_BB "\n", preheader->bbNum);
     JITDUMP("  Latch = " FMT_BB "\n", latch->bbNum);
 
+    if (!latch->KindIs(BBJ_COND))
+    {
+        JITDUMP("  Latch is %s\n", BBjumpKindNames[latch->GetJumpKind()]);
+        return false;
+    }
+
     BasicBlock* initBlock = preheader;
     GenTree*    init;
     GenTree*    test;
-    if (!comp->optExtractInitTestIncr(&initBlock, latch, m_head, &init, &test, &info->IncrTree))
+    if (!comp->optExtractInitTestIncr(&initBlock, latch, m_header, &init, &test, &info->IncrTree))
     {
         JITDUMP("  Could not extract loop iter\n");
         return false;
@@ -4690,6 +4689,13 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
                 Compiler::dspTreeID(info->IncrTree));
     }
 
+    if (!MatchLimit(info, test))
+    {
+        return false;
+    }
+
+    MatchInit(info, initBlock, init);
+
     bool result = VisitDefs([=](GenTreeLclVarCommon* def) {
         if ((def->GetLclNum() != info->IterVar) || (def == info->IncrTree))
             return true;
@@ -4702,13 +4708,6 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
     {
         return false;
     }
-
-    if (!MatchLimit(info, test))
-    {
-        return false;
-    }
-
-    MatchInit(info, initBlock, init);
 
     JITDUMP("  IterVar = V%02u\n", info->IterVar);
 
@@ -4724,7 +4723,7 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
         JITDUMP("invariant local limit ");
     if (info->HasArrayLengthLimit)
         JITDUMP("array length limit ");
-    JITDUMP(")");
+    JITDUMP(")\n");
 
     return result;
 }

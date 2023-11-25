@@ -2711,7 +2711,7 @@ void Compiler::optIdentifyLoopsForAlignment()
 //     Fall-through successors are assumed correct and are not modified.
 //     Pred lists for successors of `blk` may be changed, depending on `predOption`.
 //
-template<typename TFunc>
+template <typename TFunc>
 void Compiler::optRedirectBlock(BasicBlock* blk, TFunc lookupNewTarget, RedirectBlockOption predOption)
 {
     const bool updatePreds = (predOption == RedirectBlockOption::UpdatePredLists);
@@ -2761,11 +2761,11 @@ void Compiler::optRedirectBlock(BasicBlock* blk, TFunc lookupNewTarget, Redirect
 
         case BBJ_EHFINALLYRET:
         {
-            BBehfDesc*  ehfDesc = blk->GetJumpEhf();
+            BBehfDesc* ehfDesc = blk->GetJumpEhf();
             for (unsigned i = 0; i < ehfDesc->bbeCount; i++)
             {
-                BasicBlock* const succ = ehfDesc->bbeSuccs[i];
-                BasicBlock* newTarget = lookupNewTarget(succ);
+                BasicBlock* const succ      = ehfDesc->bbeSuccs[i];
+                BasicBlock*       newTarget = lookupNewTarget(succ);
                 if (newTarget != nullptr)
                 {
                     if (updatePreds)
@@ -2792,7 +2792,7 @@ void Compiler::optRedirectBlock(BasicBlock* blk, TFunc lookupNewTarget, Redirect
             for (unsigned i = 0; i < blk->GetJumpSwt()->bbsCount; i++)
             {
                 BasicBlock* const switchDest = blk->GetJumpSwt()->bbsDstTab[i];
-                BasicBlock* newTarget = lookupNewTarget(switchDest);
+                BasicBlock*       newTarget  = lookupNewTarget(switchDest);
                 if (newTarget != nullptr)
                 {
                     if (updatePreds)
@@ -2846,10 +2846,12 @@ void Compiler::optRedirectBlock(BasicBlock* blk, TFunc lookupNewTarget, Redirect
 //
 void Compiler::optRedirectBlock(BasicBlock* blk, BlockToBlockMap* redirectMap, RedirectBlockOption predOption)
 {
-    optRedirectBlock(blk, [=](BasicBlock* bb) {
-        BasicBlock* newTarget;
-        return redirectMap->Lookup(bb, &newTarget) ? newTarget : nullptr;
-        }, predOption);
+    optRedirectBlock(blk,
+                     [=](BasicBlock* bb) {
+                         BasicBlock* newTarget;
+                         return redirectMap->Lookup(bb, &newTarget) ? newTarget : nullptr;
+                     },
+                     predOption);
 }
 
 // TODO-Cleanup: This should be a static member of the BasicBlock class.
@@ -5684,7 +5686,7 @@ bool Compiler::optCanonicalizeLoops(FlowGraphNaturalLoops* loops)
     bool changed = false;
     for (FlowGraphNaturalLoop* loop : loops->InReversePostOrder())
     {
-        if (loop->GetHead()->bbNatLoopNum == BasicBlock::NOT_IN_LOOP)
+        if (loop->GetHeader()->bbNatLoopNum == BasicBlock::NOT_IN_LOOP)
         {
             changed |= optCreatePreheader(loop);
         }
@@ -5695,15 +5697,15 @@ bool Compiler::optCanonicalizeLoops(FlowGraphNaturalLoops* loops)
 
 bool Compiler::optCreatePreheader(FlowGraphNaturalLoop* loop)
 {
-    BasicBlock* head = loop->GetHead();
+    BasicBlock* header = loop->GetHeader();
 
     // If the header is already a try entry then we need to keep it as such
     // since blocks from within the loop will be jumping back to it after we're
     // done. Thus, in that case we insert the preheader in the enclosing try
     // region.
-    unsigned headerEHRegion = head->hasTryIndex() ? head->getTryIndex() : EHblkDsc::NO_ENCLOSING_INDEX;
+    unsigned headerEHRegion    = header->hasTryIndex() ? header->getTryIndex() : EHblkDsc::NO_ENCLOSING_INDEX;
     unsigned preheaderEHRegion = headerEHRegion;
-    if ((headerEHRegion != EHblkDsc::NO_ENCLOSING_INDEX) && bbIsTryBeg(head))
+    if ((headerEHRegion != EHblkDsc::NO_ENCLOSING_INDEX) && bbIsTryBeg(header))
     {
         preheaderEHRegion = ehTrueEnclosingTryIndexIL(headerEHRegion);
     }
@@ -5711,32 +5713,32 @@ bool Compiler::optCreatePreheader(FlowGraphNaturalLoop* loop)
     if (loop->EntryEdges().size() == 1)
     {
         BasicBlock* preheaderCandidate = loop->EntryEdges()[0]->getSourceBlock();
-        unsigned candidateEHRegion = preheaderCandidate->hasTryIndex() ? preheaderCandidate->getTryIndex() : EHblkDsc::NO_ENCLOSING_INDEX;
-        if ((preheaderCandidate->GetUniqueSucc() == loop->GetHead()) && (candidateEHRegion == preheaderEHRegion))
+        unsigned    candidateEHRegion =
+            preheaderCandidate->hasTryIndex() ? preheaderCandidate->getTryIndex() : EHblkDsc::NO_ENCLOSING_INDEX;
+        if ((preheaderCandidate->GetUniqueSucc() == loop->GetHeader()) && (candidateEHRegion == preheaderEHRegion))
         {
-            JITDUMP("Natural loop LX%02u already has preheader " FMT_BB "\n", loop->GetIndex(), preheaderCandidate->bbNum);
+            JITDUMP("Natural loop LX%02u already has preheader " FMT_BB "\n", loop->GetIndex(),
+                    preheaderCandidate->bbNum);
             return false;
         }
     }
 
-    BasicBlock* preheader = fgNewBBbefore(BBJ_NONE, head, false);
+    BasicBlock* preheader = fgNewBBbefore(BBJ_NONE, header, false);
     preheader->bbFlags |= BBF_INTERNAL;
-    fgSetEHRegionForNewLoopHead(preheader, head);
+    fgSetEHRegionForNewLoopHead(preheader, header);
 
     JITDUMP("Created new preheader " FMT_BB " for LX%02u\n", preheader->bbNum, loop->GetIndex());
 
-    FlowEdge* newEnterEdge = fgAddRefPred(head, preheader);
+    FlowEdge* newEnterEdge = fgAddRefPred(header, preheader);
 
     for (FlowEdge* enterEdge : loop->EntryEdges())
     {
         BasicBlock* enterBlock = enterEdge->getSourceBlock();
-        JITDUMP("Entry edge " FMT_BB " -> " FMT_BB " becomes " FMT_BB " -> " FMT_BB "\n",
-            enterBlock->bbNum, head->bbNum,
-            enterBlock->bbNum, preheader->bbNum);
+        JITDUMP("Entry edge " FMT_BB " -> " FMT_BB " becomes " FMT_BB " -> " FMT_BB "\n", enterBlock->bbNum,
+                header->bbNum, enterBlock->bbNum, preheader->bbNum);
 
-        optRedirectBlock(enterBlock, [=](BasicBlock* target) {
-            return target == head ? preheader : nullptr;
-            }, RedirectBlockOption::UpdatePredLists);
+        optRedirectBlock(enterBlock, [=](BasicBlock* target) { return target == header ? preheader : nullptr; },
+                         RedirectBlockOption::UpdatePredLists);
     }
 
     // Fix up potential fallthrough successor
@@ -5748,7 +5750,7 @@ bool Compiler::optCreatePreheader(FlowGraphNaturalLoop* loop)
             // Either unreachable or an enter edge. The new fallthrough into
             // the preheader is what we want. We still need to update refs
             // which optRedirectBlock doesn't do for fallthrough.
-            FlowEdge* old = fgRemoveRefPred(head, fallthroughSource);
+            FlowEdge* old = fgRemoveRefPred(header, fallthroughSource);
             fgAddRefPred(preheader, fallthroughSource, old);
         }
         else
@@ -5758,20 +5760,19 @@ bool Compiler::optCreatePreheader(FlowGraphNaturalLoop* loop)
             if (fallthroughSource->KindIs(BBJ_NONE))
             {
                 assert(loop->GetDfsTree()->Contains(fallthroughSource) && loop->ContainsBlock(fallthroughSource));
-                fallthroughSource->SetJumpKindAndTarget(BBJ_ALWAYS, loop->GetHead() DEBUGARG(this));
+                fallthroughSource->SetJumpKindAndTarget(BBJ_ALWAYS, loop->GetHeader() DEBUGARG(this));
             }
             else if (fallthroughSource->KindIs(BBJ_COND) && (fallthroughSource->Next() == preheader))
             {
                 assert(loop->GetDfsTree()->Contains(fallthroughSource) && loop->ContainsBlock(fallthroughSource));
                 // Annoying case
-                FlowEdge* edge = fgRemoveRefPred(head, fallthroughSource);
-                BasicBlock* newAlways = fgNewBBafter(BBJ_ALWAYS, fallthroughSource, true, head);
-                fgAddRefPred(head, newAlways, edge);
+                FlowEdge*   edge      = fgRemoveRefPred(header, fallthroughSource);
+                BasicBlock* newAlways = fgNewBBafter(BBJ_ALWAYS, fallthroughSource, true, header);
+                fgAddRefPred(header, newAlways, edge);
                 fgAddRefPred(newAlways, fallthroughSource, edge);
 
-                JITDUMP("Created new BBJ_ALWAYS " FMT_BB " to redirect " FMT_BB " over preheader\n",
-                    newAlways->bbNum,
-                    fallthroughSource->bbNum);
+                JITDUMP("Created new BBJ_ALWAYS " FMT_BB " to redirect " FMT_BB " over preheader\n", newAlways->bbNum,
+                        fallthroughSource->bbNum);
             }
         }
     }
