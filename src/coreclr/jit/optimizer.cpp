@@ -1122,21 +1122,7 @@ bool Compiler::optExtractInitTestIncr(
 
     if (incrStmt == nullptr || optIsLoopIncrTree(incrStmt->GetRootNode()) == BAD_VAR_NUM)
     {
-        if (top == nullptr || top->bbStmtList == nullptr || top->bbStmtList->GetPrevStmt() == nullptr)
-        {
-            return false;
-        }
-
-        // If the prev stmt to loop test is not incr, then check if we have loop test evaluated into a tmp.
-        Statement* toplastStmt = top->lastStmt();
-        if (optIsLoopIncrTree(toplastStmt->GetRootNode()) != BAD_VAR_NUM)
-        {
-            incrStmt = toplastStmt;
-        }
-        else
-        {
-            return false;
-        }
+        return false;
     }
 
     assert(testStmt != incrStmt);
