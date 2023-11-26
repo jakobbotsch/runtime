@@ -2165,6 +2165,9 @@ public:
     }
 
     // Iterate the loops in reverse post order (parent loops before child loops)
+    // TODO: This is reverse post order in terms of the head block... it does
+    // not necessarily correspond to reverse post order of the loop tree (but
+    // the "parent loops before child loops" is true).
     LoopsReversePostOrderIter InReversePostOrder()
     {
         return LoopsReversePostOrderIter(&m_loops);
@@ -4713,6 +4716,9 @@ public:
     BasicBlock** fgBBReversePostorder; // Blocks in reverse postorder
     FlowGraphDfsTree* m_dfs;
     FlowGraphNaturalLoops* m_loops;
+    struct LoopDsc;
+    LoopDsc** m_newToOldLoop;
+    FlowGraphNaturalLoop** m_oldToNewLoop;
 
     // After the dominance tree is computed, we cache a DFS preorder number and DFS postorder number to compute
     // dominance queries in O(1). fgDomTreePreOrder and fgDomTreePostOrder are arrays giving the block's preorder and

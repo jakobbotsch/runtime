@@ -4330,6 +4330,7 @@ FlowGraphNaturalLoops* FlowGraphNaturalLoops::Find(const FlowGraphDfsTree* dfs)
     Compiler* comp         = dfs->GetCompiler();
     comp->m_blockToEHPreds = nullptr;
 
+#ifdef DEBUG
     JITDUMP("Identifying loops in DFS tree with following reverse post order:\n");
     for (unsigned i = dfs->GetPostOrderCount(); i != 0; i--)
     {
@@ -4338,6 +4339,8 @@ FlowGraphNaturalLoops* FlowGraphNaturalLoops::Find(const FlowGraphDfsTree* dfs)
         JITDUMP("%02u -> " FMT_BB "[%u, %u]\n", rpoNum + 1, block->bbNum, block->bbPreorderNum + 1,
                 block->bbPostorderNum + 1);
     }
+#endif
+
     FlowGraphNaturalLoops* loops = new (comp, CMK_Loops) FlowGraphNaturalLoops(dfs);
 
     jitstd::list<BasicBlock*> worklist(comp->getAllocator(CMK_Loops));
@@ -4371,7 +4374,7 @@ FlowGraphNaturalLoops* FlowGraphNaturalLoops::Find(const FlowGraphDfsTree* dfs)
             continue;
         }
 
-        JITDUMP(FMT_BB " is the header of a DFS loop with %d back edges\n", header->bbNum, loop->m_backEdges.size());
+        JITDUMP(FMT_BB " is the header of a DFS loop with %zu back edges\n", header->bbNum, loop->m_backEdges.size());
 
         // Now walk back in flow along the back edges from head to determine if
         // this is a natural loop and to find all the blocks in the loop.
@@ -4389,7 +4392,7 @@ FlowGraphNaturalLoops* FlowGraphNaturalLoops::Find(const FlowGraphDfsTree* dfs)
             continue;
         }
 
-        JITDUMP("Loop has %d blocks\n", BitVecOps::Count(&loopTraits, loop->m_blocks));
+        JITDUMP("Loop has %u blocks\n", BitVecOps::Count(&loopTraits, loop->m_blocks));
 
         // Find the exit edges
         //
@@ -4620,38 +4623,36 @@ GenTreeLclVarCommon* FlowGraphNaturalLoop::FindDef(unsigned lclNum)
 
 bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
 {
-    JITDUMP("Analyzing iteration for " FMT_LP "\n", GetIndex());
+    JITDUMP("Analyzing iteration for " FMT_LP " with header " FMT_BB "\n", m_index, m_header->bbNum);
 
     const FlowGraphDfsTree* dfs  = m_tree;
     Compiler*               comp = dfs->GetCompiler();
-    assert(m_backEdges.size() > 0);
-
-    if (m_backEdges.size() > 1)
-    {
-        JITDUMP("  failing due to %zu backedges\n", m_backEdges.size());
-        return false;
-    }
-
     assert((m_entryEdges.size() == 1) && "Expected preheader");
 
     BasicBlock* preheader = m_entryEdges[0]->getSourceBlock();
-    BasicBlock* latch     = m_backEdges[0]->getSourceBlock();
 
     JITDUMP("  Preheader = " FMT_BB "\n", preheader->bbNum);
-    JITDUMP("  Latch = " FMT_BB "\n", latch->bbNum);
 
-    if (!latch->KindIs(BBJ_COND))
-    {
-        JITDUMP("  Latch is %s\n", BBjumpKindNames[latch->GetJumpKind()]);
-        return false;
-    }
+    // TODO-Quirk: For backwards compatibility always try the lexically
+    // bottom-most block for the loop variable.
+    BasicBlock* bottom = m_header;
+    VisitLoopBlocks([&bottom](BasicBlock* block) {
+        if (block->bbNum > bottom->bbNum)
+            bottom = block;
+        return BasicBlockVisit::Continue;
+    });
 
+    JITDUMP("  Bottom = " FMT_BB "\n", bottom->bbNum);
+
+    BasicBlock* cond      = bottom;
     BasicBlock* initBlock = preheader;
     GenTree*    init;
     GenTree*    test;
-    if (!comp->optExtractInitTestIncr(&initBlock, latch, m_header, &init, &test, &info->IncrTree))
+    if (!cond->KindIs(BBJ_COND) ||
+        !comp->optExtractInitTestIncr(&initBlock, bottom, m_header, &init, &test, &info->IncrTree))
     {
-        JITDUMP("  Could not extract loop iter\n");
+        // TODO: If there is just one latch we can try it and its unique preds here.
+        JITDUMP("  Could not extract induction variable from bottom\n");
         return false;
     }
 
