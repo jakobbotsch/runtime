@@ -501,7 +501,7 @@ void BlockCountInstrumentor::RelocateProbes()
                 //
                 if (pred->KindIs(BBJ_NONE))
                 {
-                    pred->SetJumpKindAndTarget(BBJ_ALWAYS, block DEBUG_ARG(m_comp));
+                    pred->SetJumpKindAndTarget(BBJ_ALWAYS, block);
                 }
                 assert(pred->KindIs(BBJ_ALWAYS));
             }
@@ -1549,7 +1549,7 @@ void EfficientEdgeCountInstrumentor::SplitCriticalEdges()
                         //
                         if (block->KindIs(BBJ_NONE))
                         {
-                            block->SetJumpKindAndTarget(BBJ_ALWAYS, target DEBUG_ARG(m_comp));
+                            block->SetJumpKindAndTarget(BBJ_ALWAYS, target);
                         }
 
                         instrumentedBlock = m_comp->fgSplitEdge(block, target);
@@ -1691,7 +1691,7 @@ void EfficientEdgeCountInstrumentor::RelocateProbes()
                 //
                 if (pred->KindIs(BBJ_NONE))
                 {
-                    pred->SetJumpKindAndTarget(BBJ_ALWAYS, block DEBUG_ARG(m_comp));
+                    pred->SetJumpKindAndTarget(BBJ_ALWAYS, block);
                 }
                 assert(pred->KindIs(BBJ_ALWAYS));
             }
