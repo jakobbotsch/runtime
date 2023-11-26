@@ -4239,6 +4239,11 @@ FlowGraphNaturalLoops::FlowGraphNaturalLoops(const FlowGraphDfsTree* dfs)
 {
 }
 
+FlowGraphNaturalLoop* FlowGraphNaturalLoops::GetLoopByIndex(unsigned index)
+{
+    return m_loops[index];
+}
+
 // GetLoopFromHeader: see if a block is a loop header, and if so return
 //   the associated loop.
 //
@@ -4635,13 +4640,7 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
 
     // TODO-Quirk: For backwards compatibility always try the lexically
     // bottom-most block for the loop variable.
-    BasicBlock* bottom = m_header;
-    VisitLoopBlocks([&bottom](BasicBlock* block) {
-        if (block->bbNum > bottom->bbNum)
-            bottom = block;
-        return BasicBlockVisit::Continue;
-    });
-
+    BasicBlock* bottom = GetLexicallyBottomMostBlock();
     JITDUMP("  Bottom = " FMT_BB "\n", bottom->bbNum);
 
     BasicBlock* cond      = bottom;
@@ -4649,14 +4648,14 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
     GenTree*    init;
     GenTree*    test;
     if (!cond->KindIs(BBJ_COND) ||
-        !comp->optExtractInitTestIncr(&initBlock, bottom, m_header, &init, &test, &info->IncrTree))
+        !comp->optExtractInitTestIncr(&initBlock, bottom, m_header, &init, &test, &info->IterTree))
     {
         // TODO: If there is just one latch we can try it and its unique preds here.
         JITDUMP("  Could not extract induction variable from bottom\n");
         return false;
     }
 
-    info->IterVar = comp->optIsLoopIncrTree(info->IncrTree);
+    info->IterVar = comp->optIsLoopIncrTree(info->IterTree);
 
     assert(info->IterVar != BAD_VAR_NUM);
     LclVarDsc* const iterVarDsc = comp->lvaGetDesc(info->IterVar);
@@ -4682,12 +4681,12 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
     if (init == nullptr)
     {
         JITDUMP("  Init = <none>, test = [%06u], incr = [%06u]\n", Compiler::dspTreeID(test),
-                Compiler::dspTreeID(info->IncrTree));
+                Compiler::dspTreeID(info->IterTree));
     }
     else
     {
         JITDUMP("  Init = [%06u], test = [%06u], incr = [%06u]\n", Compiler::dspTreeID(init), Compiler::dspTreeID(test),
-                Compiler::dspTreeID(info->IncrTree));
+                Compiler::dspTreeID(info->IterTree));
     }
 
     if (!MatchLimit(info, test))
@@ -4698,7 +4697,7 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
     MatchInit(info, initBlock, init);
 
     bool result = VisitDefs([=](GenTreeLclVarCommon* def) {
-        if ((def->GetLclNum() != info->IterVar) || (def == info->IncrTree))
+        if ((def->GetLclNum() != info->IterVar) || (def == info->IterTree))
             return true;
 
         JITDUMP("  Loop has extraneous def [%06u]\n", Compiler::dspTreeID(def));
@@ -4846,4 +4845,161 @@ bool FlowGraphNaturalLoop::MatchLimit(NaturalLoopIterInfo* info, GenTree* test)
 
     info->TestTree = relop;
     return true;
+}
+
+//------------------------------------------------------------------------
+// GetLexicallyBottomMostBlock: Get the lexically bottom-most block contained
+// within the loop.
+//
+// Returns:
+//   Block with highest bbNum.
+//
+// Remarks:
+//   Mostly exists as a quirk while transitioning from the old loop
+//   representation to the new one.
+//
+BasicBlock* FlowGraphNaturalLoop::GetLexicallyBottomMostBlock()
+{
+    BasicBlock* bottom = m_header;
+    VisitLoopBlocks([&bottom](BasicBlock* loopBlock) {
+        if (loopBlock->bbNum > bottom->bbNum)
+            bottom = loopBlock;
+        return BasicBlockVisit::Continue;
+    });
+
+    return bottom;
+}
+
+//------------------------------------------------------------------------
+// HasDef: Check if a local is defined anywhere in the loop.
+//
+// Parameters:
+//   lclNum - Local to check for a def for.
+//
+// Returns:
+//   True if the local has any def.
+//
+// Remarks:
+//
+bool FlowGraphNaturalLoop::HasDef(unsigned lclNum)
+{
+    Compiler*  comp = m_tree->GetCompiler();
+    LclVarDsc* dsc  = comp->lvaGetDesc(lclNum);
+
+    assert(!comp->lvaVarAddrExposed(lclNum));
+    // Currently does not handle promoted locals, only fields.
+    assert(!dsc->lvPromoted);
+
+    unsigned defLclNum1 = lclNum;
+    unsigned defLclNum2 = BAD_VAR_NUM;
+    if (dsc->lvIsStructField)
+    {
+        defLclNum2 = dsc->lvParentLcl;
+    }
+
+    bool result = VisitDefs([=](GenTreeLclVarCommon* lcl) {
+        if ((lcl->GetLclNum() == defLclNum1) || (lcl->GetLclNum() == defLclNum2))
+        {
+            return false;
+        }
+
+        return true;
+    });
+
+    // If we stopped early we found a def.
+    return !result;
+}
+
+int NaturalLoopIterInfo::IterConst()
+{
+    GenTree* value = IterTree->AsLclVar()->Data();
+    return (int)value->gtGetOp2()->AsIntCon()->IconValue();
+}
+
+genTreeOps NaturalLoopIterInfo::IterOper()
+{
+    return IterTree->AsLclVar()->Data()->OperGet();
+}
+
+var_types NaturalLoopIterInfo::IterOperType()
+{
+    assert(genActualType(IterTree) == TYP_INT);
+    return IterTree->TypeGet();
+}
+
+bool NaturalLoopIterInfo::IsReversed()
+{
+    return TestTree->gtGetOp2()->OperIs(GT_LCL_VAR) && ((TestTree->gtGetOp2()->gtFlags & GTF_VAR_ITERATOR) != 0);
+}
+
+genTreeOps NaturalLoopIterInfo::TestOper()
+{
+    genTreeOps op = TestTree->OperGet();
+    return IsReversed() ? GenTree::SwapRelop(op) : op;
+}
+
+bool NaturalLoopIterInfo::IsIncreasingLoop()
+{
+    // Increasing loop is the one that has "+=" increment operation and "< or <=" limit check.
+    bool isLessThanLimitCheck = GenTree::StaticOperIs(TestOper(), GT_LT, GT_LE);
+    return (isLessThanLimitCheck &&
+            (((IterOper() == GT_ADD) && (IterConst() > 0)) || ((IterOper() == GT_SUB) && (IterConst() < 0))));
+}
+
+bool NaturalLoopIterInfo::IsDecreasingLoop()
+{
+    // Decreasing loop is the one that has "-=" decrement operation and "> or >=" limit check. If the operation is
+    // "+=", make sure the constant is negative to give an effect of decrementing the iterator.
+    bool isGreaterThanLimitCheck = GenTree::StaticOperIs(TestOper(), GT_GT, GT_GE);
+    return (isGreaterThanLimitCheck &&
+            (((IterOper() == GT_ADD) && (IterConst() < 0)) || ((IterOper() == GT_SUB) && (IterConst() > 0))));
+}
+
+GenTree* NaturalLoopIterInfo::Iterator()
+{
+    return IsReversed() ? TestTree->gtGetOp2() : TestTree->gtGetOp1();
+}
+
+GenTree* NaturalLoopIterInfo::Limit()
+{
+    return IsReversed() ? TestTree->gtGetOp1() : TestTree->gtGetOp2();
+}
+
+int NaturalLoopIterInfo::ConstLimit()
+{
+    assert(HasConstLimit);
+    GenTree* limit = Limit();
+    assert(limit->OperIsConst());
+    return (int)limit->AsIntCon()->gtIconVal;
+}
+
+unsigned NaturalLoopIterInfo::VarLimit()
+{
+    assert(HasInvariantLocalLimit);
+
+    GenTree* limit = Limit();
+    assert(limit->OperGet() == GT_LCL_VAR);
+    return limit->AsLclVarCommon()->GetLclNum();
+}
+
+bool NaturalLoopIterInfo::ArrLenLimit(Compiler* comp, ArrIndex* index)
+{
+    assert(HasArrayLengthLimit);
+
+    GenTree* limit = Limit();
+    assert(limit->OperIs(GT_ARR_LENGTH));
+
+    // Check if we have a.length or a[i][j].length
+    if (limit->AsArrLen()->ArrRef()->OperIs(GT_LCL_VAR))
+    {
+        index->arrLcl = limit->AsArrLen()->ArrRef()->AsLclVarCommon()->GetLclNum();
+        index->rank   = 0;
+        return true;
+    }
+    // We have a[i].length, extract a[i] pattern.
+    else if (limit->AsArrLen()->ArrRef()->OperIs(GT_COMMA))
+    {
+        return comp->optReconstructArrIndex(limit->AsArrLen()->ArrRef(), index);
+    }
+    return false;
 }

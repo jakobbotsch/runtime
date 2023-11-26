@@ -5645,8 +5645,8 @@ PhaseStatus Compiler::optFindLoopsPhase()
     m_dfs   = fgComputeDfs();
     m_loops = FlowGraphNaturalLoops::Find(m_dfs);
 
-    m_newToOldLoop = m_loops->NumLoops() == 0 ? nullptr : (new (this, CMK_Loops) LoopDsc*[m_loops->NumLoops()] {});
-    m_oldToNewLoop = new (this, CMK_Loops) FlowGraphNaturalLoop*[BasicBlock::MAX_LOOP_NUM] {};
+    m_newToOldLoop = m_loops->NumLoops() == 0 ? nullptr : (new (this, CMK_Loops) LoopDsc*[m_loops->NumLoops()]{});
+    m_oldToNewLoop = new (this, CMK_Loops) FlowGraphNaturalLoop*[BasicBlock::MAX_LOOP_NUM]{};
 
     for (FlowGraphNaturalLoop* loop : m_loops->InReversePostOrder())
     {
@@ -5661,7 +5661,7 @@ PhaseStatus Compiler::optFindLoopsPhase()
         assert(m_oldToNewLoop[head->bbNatLoopNum] == nullptr);
         assert(m_newToOldLoop[loop->GetIndex()] == nullptr);
         m_oldToNewLoop[head->bbNatLoopNum] = loop;
-        m_newToOldLoop[loop->GetIndex()] = dsc;
+        m_newToOldLoop[loop->GetIndex()]   = dsc;
 
         if ((dsc->lpFlags & LPFLG_ITER) == 0)
             continue;
