@@ -4709,21 +4709,26 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
         return false;
     }
 
-    JITDUMP("  IterVar = V%02u\n", info->IterVar);
+#ifdef DEBUG
+    if (comp->verbose)
+    {
+        printf("  IterVar = V%02u\n", info->IterVar);
 
-    if (info->HasConstInit)
-        JITDUMP("  Const init with value %d in " FMT_BB "\n", info->ConstInitValue, info->InitBlock->bbNum);
+        if (info->HasConstInit)
+            printf("  Const init with value %d in " FMT_BB "\n", info->ConstInitValue, info->InitBlock->bbNum);
 
-    JITDUMP("  Test is [%06u] (", Compiler::dspTreeID(info->TestTree));
-    if (info->HasConstLimit)
-        JITDUMP("const limit ");
-    if (info->HasSimdLimit)
-        JITDUMP("simd limit ");
-    if (info->HasInvariantLocalLimit)
-        JITDUMP("invariant local limit ");
-    if (info->HasArrayLengthLimit)
-        JITDUMP("array length limit ");
-    JITDUMP(")\n");
+        printf("  Test is [%06u] (", Compiler::dspTreeID(info->TestTree));
+        if (info->HasConstLimit)
+            printf("const limit ");
+        if (info->HasSimdLimit)
+            printf("simd limit ");
+        if (info->HasInvariantLocalLimit)
+            printf("invariant local limit ");
+        if (info->HasArrayLengthLimit)
+            printf("array length limit ");
+        printf(")\n");
+    }
+#endif
 
     return result;
 }
