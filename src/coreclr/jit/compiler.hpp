@@ -4946,6 +4946,21 @@ inline bool Compiler::compCanHavePatchpoints(const char** reason)
     return whyNot == nullptr;
 }
 
+//------------------------------------------------------------------------------
+// FlowGraphNaturalLoop::VisitLoopBlocksReversePostOrder: Visit all of the
+// loop's blocks in reverse post order.
+//
+// Type parameters:
+//   TFunc - Callback functor type
+//
+// Arguments:
+//   func - Callback functor that takes a BasicBlock* and returns a
+//   BasicBlockVisit.
+//
+// Returns:
+//    BasicBlockVisit that indicated whether the visit was aborted by the
+//    callback or whether all blocks were visited.
+//
 template <typename TFunc>
 BasicBlockVisit FlowGraphNaturalLoop::VisitLoopBlocksReversePostOrder(TFunc func)
 {
@@ -4963,6 +4978,21 @@ BasicBlockVisit FlowGraphNaturalLoop::VisitLoopBlocksReversePostOrder(TFunc func
     return result ? BasicBlockVisit::Continue : BasicBlockVisit::Abort;
 }
 
+//------------------------------------------------------------------------------
+// FlowGraphNaturalLoop::VisitLoopBlocksPostOrder: Visit all of the loop's
+// blocks in post order.
+//
+// Type parameters:
+//   TFunc - Callback functor type
+//
+// Arguments:
+//   func - Callback functor that takes a BasicBlock* and returns a
+//   BasicBlockVisit.
+//
+// Returns:
+//    BasicBlockVisit that indicated whether the visit was aborted by the
+//    callback or whether all blocks were visited.
+//
 template <typename TFunc>
 BasicBlockVisit FlowGraphNaturalLoop::VisitLoopBlocksPostOrder(TFunc func)
 {
@@ -4976,6 +5006,20 @@ BasicBlockVisit FlowGraphNaturalLoop::VisitLoopBlocksPostOrder(TFunc func)
     return result ? BasicBlockVisit::Continue : BasicBlockVisit::Abort;
 }
 
+//------------------------------------------------------------------------------
+// FlowGraphNaturalLoop::VisitLoopBlocks: Visit all of the loop's blocks.
+//
+// Type parameters:
+//   TFunc - Callback functor type
+//
+// Arguments:
+//   func - Callback functor that takes a BasicBlock* and returns a
+//   BasicBlockVisit.
+//
+// Returns:
+//    BasicBlockVisit that indicated whether the visit was aborted by the
+//    callback or whether all blocks were visited.
+//
 template <typename TFunc>
 BasicBlockVisit FlowGraphNaturalLoop::VisitLoopBlocks(TFunc func)
 {

@@ -521,6 +521,14 @@ bool Compiler::fgRemoveUnreachableBlocks(CanRemoveBlockBody canRemoveBlock)
     return changed;
 }
 
+//------------------------------------------------------------------------
+// fgDfsBlocks: Compute a DFS of the flow graph and remove unreachable blocks.
+// The DFS tree is stored in Compiler::m_dfs.
+//
+// Returns:
+//   Phase status indicating whether any blocks were unreachable and thus
+//   removed.
+//
 PhaseStatus Compiler::fgDfsBlocks()
 {
     m_dfs = fgComputeDfs();

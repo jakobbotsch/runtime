@@ -2683,15 +2683,18 @@ void Compiler::optIdentifyLoopsForAlignment()
 }
 
 //------------------------------------------------------------------------
-// optRedirectBlock: Replace the branch successors of a block based on a block map.
+// optRedirectBlock: Replace the branch successors of a block based on an map functor.
 //
 // Updates the successors of `blk`: if `blk2` is a branch successor of `blk`, and there is a mapping
-// for `blk2->blk3` in `redirectMap`, change `blk` so that `blk3` is this branch successor.
+// for `blk2->blk3` in `lookupNewTarget`, change `blk` so that `blk3` is this branch successor.
+//
+// Type arguments:
+//     TFunc        - map functor type
 //
 // Arguments:
-//     blk          - block to redirect
-//     redirectMap  - block->block map specifying how the `blk` target will be redirected.
-//     predOption   - specifies how to update the pred lists
+//     blk             - block to redirect
+//     lookupNewTarget - block->block map specifying how the `blk` target will be redirected.
+//     predOption      - specifies how to update the pred lists
 //
 // Notes:
 //     Fall-through successors are assumed correct and are not modified.
@@ -5693,12 +5696,16 @@ PhaseStatus Compiler::optFindLoopsPhase()
 }
 
 //-----------------------------------------------------------------------------
-// optCanonocalizeLoops: The wrapper function for the "find loops" phase.
+// optCanonocalizeLoops: Canoncalize natural loops.
+//
+// Parameters:
+//   loops - Structure containing loops
+//
+// Returns:
+//   True if any flow graph modifications were made
 //
 // Remarks:
-//   After this function has run we have the following guarantees:
-//   1. All loops have a preheader (single block unconditionally entering the loop)
-//   2. All loops have a single backedge (which is necessarily contained in the same loop)
+//   Guarantees that all natural loops have preheaders.
 //
 bool Compiler::optCanonicalizeLoops(FlowGraphNaturalLoops* loops)
 {
@@ -5714,6 +5721,15 @@ bool Compiler::optCanonicalizeLoops(FlowGraphNaturalLoops* loops)
     return changed;
 }
 
+//-----------------------------------------------------------------------------
+// optCreatePreheader: Create (or find) a preheader for a natural loop.
+//
+// Parameters:
+//   loop - The loop to create the preheader for
+//
+// Returns:
+//   True if a new preheader block had to be created.
+//
 bool Compiler::optCreatePreheader(FlowGraphNaturalLoop* loop)
 {
     BasicBlock* header = loop->GetHeader();

@@ -784,11 +784,28 @@ void LoopCloneContext::PrintConditions(unsigned loopNum)
 }
 #endif
 
+//--------------------------------------------------------------------------------------------------
+// GetLoopIterInfo: Get the analyzed loop iteration for a loop.
+//
+// Arguments:
+//   loopNum - Index of loop, as returned by FlowGraphNaturalLoop::GetIndex().
+//
+// Returns:
+//   The info, or nullptr if the loop iteration structure could not be
+//   analyzed.
+//
 NaturalLoopIterInfo* LoopCloneContext::GetLoopIterInfo(unsigned loopNum)
 {
     return iterInfo[loopNum];
 }
 
+//--------------------------------------------------------------------------------------------------
+// SetLoopIterInfo: Set the analyzed loop iteration for a loop.
+//
+// Arguments:
+//   loopNum - Index of loop, as returned by FlowGraphNaturalLoop::GetIndex().
+//   info    - Info to store
+//
 void LoopCloneContext::SetLoopIterInfo(unsigned loopNum, NaturalLoopIterInfo* info)
 {
     iterInfo[loopNum] = info;
@@ -1914,10 +1931,10 @@ bool Compiler::optIsLoopClonable(FlowGraphNaturalLoop* loop, LoopCloneContext* c
 // optInsertLoopChoiceConditions: Insert the loop conditions for a loop after the loop head.
 //
 // Arguments:
-//      context     loop cloning context variable
-//      loopNum     the loop index
-//      slowHead    the slow path loop head, where the condition failures branch
-//      insertAfter insert the conditions after this block
+//      context     - loop cloning context variable
+//      loop        - the loop
+//      slowHead    - the slow path loop head, where the condition failures branch
+//      insertAfter - insert the conditions after this block
 //
 // Return Value:
 //      The last condition block added.
@@ -1969,7 +1986,7 @@ BasicBlock* Compiler::optInsertLoopChoiceConditions(LoopCloneContext*     contex
 // optCloneLoop: Perform the mechanical cloning of the specified loop
 //
 // Arguments:
-//    loopInd - loop index of loop to clone
+//    loop    - The loop to clone
 //    context - data structure where all loop cloning info is kept.
 //
 void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* context)
@@ -3032,7 +3049,7 @@ Compiler::fgWalkResult Compiler::optCanOptimizeByLoopCloningVisitor(GenTree** pT
 // Also, check if the loop is suitable for the optimizations performed.
 //
 // Arguments:
-//     loopNum     -  the current loop index for which conditions are derived.
+//     loop        -  Loop being analyzed
 //     context     -  data structure where all loop cloning candidates will be updated.
 //
 // Return Value:

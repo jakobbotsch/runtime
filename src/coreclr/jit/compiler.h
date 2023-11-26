@@ -1957,6 +1957,7 @@ inline LoopFlags& operator&=(LoopFlags& a, LoopFlags b)
     return a = (LoopFlags)((unsigned short)a & (unsigned short)b);
 }
 
+// Represents a depth-first search tree of the flow graph.
 class FlowGraphDfsTree
 {
     Compiler* m_comp;
@@ -2129,7 +2130,11 @@ public:
         return m_loops.size();
     }
 
-    FlowGraphNaturalLoop* GetLoopByIndex(unsigned index);
+    bool HasNonNaturalLoopCycles()
+    {
+        return m_improperLoopHeaders> 0;
+    }
+
     FlowGraphNaturalLoop* GetLoopFromHeader(BasicBlock* header);
 
     bool IsLoopBackEdge(FlowEdge* edge);
@@ -2184,9 +2189,6 @@ public:
     }
 
     // Iterate the loops in reverse post order (parent loops before child loops)
-    // TODO: This is reverse post order in terms of the head block... it does
-    // not necessarily correspond to reverse post order of the loop tree (but
-    // the "parent loops before child loops" is true).
     LoopsReversePostOrderIter InReversePostOrder()
     {
         return LoopsReversePostOrderIter(&m_loops);

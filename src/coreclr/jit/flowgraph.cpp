@@ -4085,8 +4085,8 @@ void Compiler::fgLclFldAssign(unsigned lclNum)
 }
 
 //------------------------------------------------------------------------
-// FlowGraphDfsTree::Contains: Check if a block is contained in the DFS tree; i.e., if
-// it is reachable.
+// FlowGraphDfsTree::Contains: Check if a block is contained in the DFS tree;
+// i.e., if it is reachable.
 //
 // Arguments:
 //    block - The block
@@ -4100,15 +4100,16 @@ bool FlowGraphDfsTree::Contains(BasicBlock* block) const
 }
 
 //------------------------------------------------------------------------
-// FlowGraphDfsTree::IsAncestor: Check if block `ancestor` is an ancestor of block
-// `descendant`
+// FlowGraphDfsTree::IsAncestor: Check if block `ancestor` is an ancestor of
+// block `descendant`
 //
 // Arguments:
 //   ancestor   -- block that is possible ancestor
 //   descendant -- block that is possible descendant
 //
 // Returns:
-//   True if `ancestor` is ancestor of `descendant` in the depth first spanning tree.
+//   True if `ancestor` is ancestor of `descendant` in the depth first spanning
+//   tree.
 //
 // Notes:
 //   If return value is false, then `ancestor` does not dominate `descendant`.
@@ -4120,6 +4121,16 @@ bool FlowGraphDfsTree::IsAncestor(BasicBlock* ancestor, BasicBlock* descendant) 
            (descendant->bbPostorderNum <= ancestor->bbPostorderNum);
 }
 
+//------------------------------------------------------------------------
+// fgComputeDfs: Compute a depth-first search tree for the flow graph.
+//
+// Returns:
+//   The tree.
+//
+// Notes:
+//   Preorder and postorder numbers are assigned into the BasicBlock structure.
+//   The tree returned contains a postorder of the basic blocks.
+//
 FlowGraphDfsTree* Compiler::fgComputeDfs()
 {
     BasicBlock** postOrder = new (this, CMK_DepthFirstSearch) BasicBlock*[fgBBcount];
@@ -4183,6 +4194,13 @@ FlowGraphDfsTree* Compiler::fgComputeDfs()
     return new (this, CMK_DepthFirstSearch) FlowGraphDfsTree(this, postOrder, postOrderIndex);
 }
 
+//------------------------------------------------------------------------
+// FlowGraphNaturalLoop::FlowGraphNaturalLoop: Initialize a new loop instance.
+//
+// Returns:
+//   tree   - The DFS tree
+//   header - The loop header
+//
 FlowGraphNaturalLoop::FlowGraphNaturalLoop(const FlowGraphDfsTree* tree, BasicBlock* header)
     : m_tree(tree)
     , m_header(header)
@@ -4193,13 +4211,49 @@ FlowGraphNaturalLoop::FlowGraphNaturalLoop(const FlowGraphDfsTree* tree, BasicBl
 {
 }
 
+//------------------------------------------------------------------------
+// LoopBlockBitVecIndex: Convert a basic block to an index into the bit vector
+// used to store the set of loop blocks.
+//
+// Parameters:
+//   block - The block
+//
+// Returns:
+//   Index into the bit vector
+//
+// Remarks:
+//   The bit vector is stored with the base index of the loop header since we
+//   know the header is an ancestor of all loop blocks. Thus we do not need to
+//   waste space on previous blocks.
+//
+//   This function should only be used when it is known that the block has an
+//   index in the loop bit vector.
+//
 unsigned FlowGraphNaturalLoop::LoopBlockBitVecIndex(BasicBlock* block)
 {
+    assert(m_tree->Contains(block));
+
     unsigned index = m_header->bbPostorderNum - block->bbPostorderNum;
     assert(index < m_blocksSize);
     return index;
 }
 
+//------------------------------------------------------------------------
+// TryGetLoopBlockBitVecIndex: Convert a basic block to an index into the bit
+// vector used to store the set of loop blocks.
+//
+// Parameters:
+//   block  - The block
+//   pIndex - [out] Index into the bit vector, if this function returns true.
+//
+// Returns:
+//   True if the block has an index in the loop bit vector.
+//
+// Remarks:
+//   See GetLoopBlockBitVecIndex for more information. This function can be
+//   used when it is not known whether the block has an index in the loop bit
+//   vector.
+//
 bool FlowGraphNaturalLoop::TryGetLoopBlockBitVecIndex(BasicBlock* block, unsigned* pIndex)
 {
     if (block->bbPostorderNum > m_header->bbPostorderNum)
@@ -4217,11 +4271,32 @@ bool FlowGraphNaturalLoop::TryGetLoopBlockBitVecIndex(BasicBlock* block, unsigne
     return true;
 }
 
+//------------------------------------------------------------------------
+// LoopBlockTraits: Get traits for a bit vector for blocks in this loop.
+//
+// Returns:
+//   Bit vector traits.
+//
 BitVecTraits FlowGraphNaturalLoop::LoopBlockTraits()
 {
     return BitVecTraits(m_blocksSize, m_tree->GetCompiler());
 }
 
+//------------------------------------------------------------------------
+// ContainsBlock: Returns true if this loop contains the specified block.
+//
+// Parameters:
+//   block - A block
+//
+// Returns:
+//   True if the block is contained in the loop.
+//
+// Remarks:
+//   Containment here means that the block is in the SCC of the loop; i.e. it
+//   is in a cycle with the header block. Note that EH successors are taken
+//   into acount; for example, a BBJ_RETURN may still be a loop block provided
+//   that its handler can reach the loop header.
+//
 bool FlowGraphNaturalLoop::ContainsBlock(BasicBlock* block)
 {
     unsigned index;
@@ -4234,24 +4309,26 @@ bool FlowGraphNaturalLoop::ContainsBlock(BasicBlock* block)
     return BitVecOps::IsMember(&traits, m_blocks, index);
 }
 
+//------------------------------------------------------------------------
+// FlowGraphNaturalLoops::FlowGraphNaturalLoops: Initialize a new instance to
+// track a set of loops over the flow graph.
+//
+// Parameters:
+//   dfs - A DFS tree.
+//
 FlowGraphNaturalLoops::FlowGraphNaturalLoops(const FlowGraphDfsTree* dfs)
     : m_dfs(dfs), m_loops(m_dfs->GetCompiler()->getAllocator(CMK_Loops))
 {
 }
 
-FlowGraphNaturalLoop* FlowGraphNaturalLoops::GetLoopByIndex(unsigned index)
-{
-    return m_loops[index];
-}
-
-// GetLoopFromHeader: see if a block is a loop header, and if so return
-//   the associated loop.
+// GetLoopFromHeader: See if a block is a loop header, and if so return the
+// associated loop.
 //
-// Arguments:
+// Parameters:
 //    block - block in question
 //
 // Returns:
-//    loop headed by block, or nullptr
+//    Loop headed by block, or nullptr
 //
 FlowGraphNaturalLoop* FlowGraphNaturalLoops::GetLoopFromHeader(BasicBlock* block)
 {
@@ -4268,20 +4345,13 @@ FlowGraphNaturalLoop* FlowGraphNaturalLoops::GetLoopFromHeader(BasicBlock* block
 }
 
 //------------------------------------------------------------------------
-// IsLoopBackEdge: see if an edge is a loop back edge
+// IsLoopBackEdge: See if an edge is a loop back edge
 //
-// Arguments:
+// Parameters:
 //   edge - edge in question
 //
 // Returns:
 //   True if edge is a backedge in some recognized loop.
-//
-// Notes:
-//   Different than asking IsDfsAncestor since we disqualify some
-//   natural backedges for complex loop structures.
-//
-// Todo:
-//   Annotate the edge directly
 //
 bool FlowGraphNaturalLoops::IsLoopBackEdge(FlowEdge* edge)
 {
@@ -4302,17 +4372,12 @@ bool FlowGraphNaturalLoops::IsLoopBackEdge(FlowEdge* edge)
 //------------------------------------------------------------------------
 // IsLoopExitEdge: see if a flow edge is a loop exit edge
 //
-// Arguments:
+// Parameters:
 //   edge - edge in question
 //
 // Returns:
-//   True if edge is an exit edge in some recognized loop
-//
-// Todo:
-//   Annotate the edge directly
-//
-//   Decide if we want to report that the edge exits
-//   multiple loops.
+//   True if edge is an exit edge in some recognized loop. Note that a single
+//   edge may exit multiple loops.
 //
 bool FlowGraphNaturalLoops::IsLoopExitEdge(FlowEdge* edge)
 {
@@ -4330,6 +4395,16 @@ bool FlowGraphNaturalLoops::IsLoopExitEdge(FlowEdge* edge)
     return false;
 }
 
+//------------------------------------------------------------------------
+// FlowGraphNaturalLoops::Find: Find natural loops in the specified DFS tree
+// constructed for the flow graph.
+//
+// Parameters:
+//   dfs - The DFS tree
+//
+// Returns:
+//   Identified natural loops.
+//
 FlowGraphNaturalLoops* FlowGraphNaturalLoops::Find(const FlowGraphDfsTree* dfs)
 {
     Compiler* comp         = dfs->GetCompiler();
@@ -4495,6 +4570,18 @@ FlowGraphNaturalLoops* FlowGraphNaturalLoops::Find(const FlowGraphDfsTree* dfs)
     return loops;
 }
 
+//------------------------------------------------------------------------
+// FlowGraphNaturalLoops::FindNaturalLoopBlocks: Find the loop blocks for a
+// specified loop.
+//
+// Parameters:
+//   loop     - The natural loop we are constructing
+//   worklist - Scratch worklist to use for the search
+//
+// Returns:
+//   True if the loop is natural; marks the loop blocks into 'loop' as part of
+//   the search.
+//
 bool FlowGraphNaturalLoops::FindNaturalLoopBlocks(FlowGraphNaturalLoop* loop, jitstd::list<BasicBlock*>& worklist)
 {
     const FlowGraphDfsTree* tree       = loop->m_tree;
@@ -4557,6 +4644,20 @@ bool FlowGraphNaturalLoops::FindNaturalLoopBlocks(FlowGraphNaturalLoop* loop, ji
     return true;
 }
 
+//------------------------------------------------------------------------
+// FlowGraphNaturalLoop::VisitDefs: Visit all definitions contained in the
+// loop.
+//
+// Type parameters:
+//   TFunc - Callback functor type
+//
+// Parameters:
+//   func - Callback functor that accepts a GenTreeLclVarCommon* and returns a
+//   bool. On true, continue looking for defs; on false, abort.
+//
+// Returns:
+//   True if all defs were visited and the functor never returned false; otherwise false.
+//
 template <typename TFunc>
 bool FlowGraphNaturalLoop::VisitDefs(TFunc func)
 {
@@ -4610,6 +4711,18 @@ bool FlowGraphNaturalLoop::VisitDefs(TFunc func)
     return result == BasicBlockVisit::Continue;
 }
 
+//------------------------------------------------------------------------
+// FlowGraphNaturalLoop::FindDef: Find a def of the specified local number.
+//
+// Parameters:
+//   lclNum - The local.
+//
+// Returns:
+//   Tree that represents a def of the local; nullptr if no def was found.
+//
+// Remarks:
+//   Does not take promotion into account.
+//
 GenTreeLclVarCommon* FlowGraphNaturalLoop::FindDef(unsigned lclNum)
 {
     GenTreeLclVarCommon* result = nullptr;
@@ -4626,6 +4739,28 @@ GenTreeLclVarCommon* FlowGraphNaturalLoop::FindDef(unsigned lclNum)
     return result;
 }
 
+//------------------------------------------------------------------------
+// FlowGraphNaturalLoop::AnalyzeIteration: Analyze the induction structure of
+// the loop.
+//
+// Parameters:
+//   info - [out] Loop information
+//
+// Returns:
+//   True if the structure was analyzed and we can make guarantees about it;
+//   otherwise false.
+//
+// Remarks:
+//   The function guarantees that at all definitions of the iteration local,
+//   the loop condition is reestablished before iteration continues. In other
+//   words, if this function returns true the loop invariant is guaranteed to
+//   be upheld in all blocks in the loop (but see below for establishing the
+//   base case).
+//
+//   Currently we do not validate that there is a zero-trip test ensuring the
+//   condition is true, so it is up to the user to validate that. This is
+//   normally done via GTF_RELOP_ZTT set by loop inversion.
+//
 bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
 {
     JITDUMP("Analyzing iteration for " FMT_LP " with header " FMT_BB "\n", m_index, m_header->bbNum);
@@ -4733,6 +4868,19 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info)
     return result;
 }
 
+//------------------------------------------------------------------------
+// FlowGraphNaturalLoop::MatchInit: Try to pattern match the initialization of
+// an induction variable.
+//
+// Parameters:
+//   info      - [in, out] Info structure to query and fill out
+//   initBlock - Block containing the initialization tree
+//   init      - Initialization tree
+//
+// Remarks:
+//   We do not necessarily guarantee or require to be able to find any
+//   initialization.
+//
 void FlowGraphNaturalLoop::MatchInit(NaturalLoopIterInfo* info, BasicBlock* initBlock, GenTree* init)
 {
     if ((init == nullptr) || !init->OperIs(GT_STORE_LCL_VAR) || (init->AsLclVarCommon()->GetLclNum() != info->IterVar))
@@ -4747,6 +4895,21 @@ void FlowGraphNaturalLoop::MatchInit(NaturalLoopIterInfo* info, BasicBlock* init
     info->InitBlock      = initBlock;
 }
 
+//------------------------------------------------------------------------
+// FlowGraphNaturalLoop::MatchLimit: Try to pattern match the loop test of an
+// induction variable.
+//
+// Parameters:
+//   info      - [in, out] Info structure to query and fill out
+//   test      - Loop condition test
+//
+// Returns:
+//   True if the loop condition was recognized and "info" was filled out.
+//
+// Remarks:
+//   Unlike the initialization, we do require that we are able to match the
+//   loop condition.
+//
 bool FlowGraphNaturalLoop::MatchLimit(NaturalLoopIterInfo* info, GenTree* test)
 {
     // Obtain the relop from the "test" tree.
@@ -4915,34 +5078,73 @@ bool FlowGraphNaturalLoop::HasDef(unsigned lclNum)
     return !result;
 }
 
+//------------------------------------------------------------------------
+// IterConst: Get the constant with which the iterator is modified
+//
+// Returns:
+//   Constant value.
+//
 int NaturalLoopIterInfo::IterConst()
 {
     GenTree* value = IterTree->AsLclVar()->Data();
     return (int)value->gtGetOp2()->AsIntCon()->IconValue();
 }
 
+//------------------------------------------------------------------------
+// IterOper: Get the type of the operation on the iterator
+//
+// Returns:
+//   Oper
+//
 genTreeOps NaturalLoopIterInfo::IterOper()
 {
     return IterTree->AsLclVar()->Data()->OperGet();
 }
 
+//------------------------------------------------------------------------
+// IterOperType: Get the type of the operation on the iterator.
+//
+// Returns:
+//   Type, used for overflow instructions.
+//
 var_types NaturalLoopIterInfo::IterOperType()
 {
     assert(genActualType(IterTree) == TYP_INT);
     return IterTree->TypeGet();
 }
 
+//------------------------------------------------------------------------
+// IsReversed: Returns true if the iterator node is the second operand in the
+// loop condition.
+//
+// Returns:
+//   True if so.
+//
 bool NaturalLoopIterInfo::IsReversed()
 {
     return TestTree->gtGetOp2()->OperIs(GT_LCL_VAR) && ((TestTree->gtGetOp2()->gtFlags & GTF_VAR_ITERATOR) != 0);
 }
 
+//------------------------------------------------------------------------
+// TestOper: The type of the comparison between the iterator and the limit
+// (GT_LE, GT_GE, etc.)
+//
+// Returns:
+//   Oper.
+//
 genTreeOps NaturalLoopIterInfo::TestOper()
 {
     genTreeOps op = TestTree->OperGet();
     return IsReversed() ? GenTree::SwapRelop(op) : op;
 }
 
+//------------------------------------------------------------------------
+// IsIncreasingLoop: Returns true if the loop iterator increases from low to
+// high value.
+//
+// Returns:
+//   True if so.
+//
 bool NaturalLoopIterInfo::IsIncreasingLoop()
 {
     // Increasing loop is the one that has "+=" increment operation and "< or <=" limit check.
@@ -4951,6 +5153,13 @@ bool NaturalLoopIterInfo::IsIncreasingLoop()
             (((IterOper() == GT_ADD) && (IterConst() > 0)) || ((IterOper() == GT_SUB) && (IterConst() < 0))));
 }
 
+//------------------------------------------------------------------------
+// IsIncreasingLoop: Returns true if the loop iterator decreases from high to
+// low value.
+//
+// Returns:
+//   True if so.
+//
 bool NaturalLoopIterInfo::IsDecreasingLoop()
 {
     // Decreasing loop is the one that has "-=" decrement operation and "> or >=" limit check. If the operation is
@@ -4960,16 +5169,38 @@ bool NaturalLoopIterInfo::IsDecreasingLoop()
             (((IterOper() == GT_ADD) && (IterConst() < 0)) || ((IterOper() == GT_SUB) && (IterConst() > 0))));
 }
 
+//------------------------------------------------------------------------
+// Iterator: Get the iterator node in the loop test
+//
+// Returns:
+//   Iterator node.
+//
 GenTree* NaturalLoopIterInfo::Iterator()
 {
     return IsReversed() ? TestTree->gtGetOp2() : TestTree->gtGetOp1();
 }
 
+//------------------------------------------------------------------------
+// Limit: Get the limit node in the loop test.
+//
+// Returns:
+//   Iterator node.
+//
 GenTree* NaturalLoopIterInfo::Limit()
 {
     return IsReversed() ? TestTree->gtGetOp1() : TestTree->gtGetOp2();
 }
 
+//------------------------------------------------------------------------
+// ConstLimit: Get the constant value of the iterator limit, i.e. when the loop
+// condition is "i RELOP const".
+//
+// Returns:
+//   Limit constant.
+//
+// Remarks:
+//   Only valid if HasConstLimit is true.
+//
 int NaturalLoopIterInfo::ConstLimit()
 {
     assert(HasConstLimit);
@@ -4978,6 +5209,16 @@ int NaturalLoopIterInfo::ConstLimit()
     return (int)limit->AsIntCon()->gtIconVal;
 }
 
+//------------------------------------------------------------------------
+// VarLimit: Get the local var num used in the loop condition, i.e. when the
+// loop condition is "i RELOP lclVar" with a loop invariant local.
+//
+// Returns:
+//   Local var number.
+//
+// Remarks:
+//   Only valid if HasInvariantLocalLimit is true.
+//
 unsigned NaturalLoopIterInfo::VarLimit()
 {
     assert(HasInvariantLocalLimit);
@@ -4987,6 +5228,20 @@ unsigned NaturalLoopIterInfo::VarLimit()
     return limit->AsLclVarCommon()->GetLclNum();
 }
 
+//------------------------------------------------------------------------
+// ArrLenLimit: Get the array length used in the loop condition, i.e. when the
+// loop condition is "i RELOP arr.len".
+//
+// Parameters:
+//   comp  - Compiler instance
+//   index - [out] Array index information
+//
+// Returns:
+//   True if the array length was extracted.
+//
+// Remarks:
+//   Only valid if HasArrayLengthLimit is true.
+//
 bool NaturalLoopIterInfo::ArrLenLimit(Compiler* comp, ArrIndex* index)
 {
     assert(HasArrayLengthLimit);

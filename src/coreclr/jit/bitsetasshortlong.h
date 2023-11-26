@@ -561,6 +561,23 @@ public:
         }
     };
 
+    //------------------------------------------------------------------------
+    // VisitBits: Invoke a callback for each index that is set in the bit
+    // vector, in ascending order of indices.
+    //
+    // Type parameters:
+    //   TFunc - Type of callback functor
+    //
+    // Arguments:
+    //   env  - The traits
+    //   bs   - The bit vector
+    //   func - The functor callback. Return true to continue to the next bit,
+    //   and false to abort.
+    //
+    // Returns:
+    //   True if all bits were iterated; false if the callback returned false
+    //   and iteration was aborted.
+    //
     template <typename TFunc>
     static bool VisitBits(Env env, BitSetShortLongRep bs, TFunc func)
     {
@@ -603,6 +620,23 @@ public:
 #undef BitScanForwardSizeT
     }
 
+    //------------------------------------------------------------------------
+    // VisitBitsReverse: Invoke a callback for each index that is set in the
+    // bit vector, in descending order of indices.
+    //
+    // Type parameters:
+    //   TFunc - Type of callback functor
+    //
+    // Arguments:
+    //   env  - The traits
+    //   bs   - The bit vector
+    //   func - The functor callback. Return true to continue to the next bit,
+    //   and false to abort.
+    //
+    // Returns:
+    //   True if all bits were iterated; false if the callback returned false
+    //   and iteration was aborted.
+    //
     template <typename TFunc>
     static bool VisitBitsReverse(Env env, BitSetShortLongRep bs, TFunc func)
     {
