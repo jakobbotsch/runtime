@@ -2235,7 +2235,7 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
             case BBJ_NONE:
                 if ((i < numBlocks - 1) && !blk->NextIs(lexicalBlocks[i + 1]))
                 {
-                    newblk->SetJumpKindAndTarget(BBJ_ALWAYS, blk->Next() DEBUGARG(this));
+                    newblk->SetJumpKindAndTarget(BBJ_ALWAYS, blk->Next());
                     fgAddRefPred(newblk->GetJumpDest(), newblk);
                 }
                 else

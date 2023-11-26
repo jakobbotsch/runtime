@@ -5779,7 +5779,7 @@ bool Compiler::optCreatePreheader(FlowGraphNaturalLoop* loop)
             if (fallthroughSource->KindIs(BBJ_NONE))
             {
                 assert(loop->GetDfsTree()->Contains(fallthroughSource) && loop->ContainsBlock(fallthroughSource));
-                fallthroughSource->SetJumpKindAndTarget(BBJ_ALWAYS, loop->GetHeader() DEBUGARG(this));
+                fallthroughSource->SetJumpKindAndTarget(BBJ_ALWAYS, loop->GetHeader());
             }
             else if (fallthroughSource->KindIs(BBJ_COND) && (fallthroughSource->Next() == preheader))
             {
