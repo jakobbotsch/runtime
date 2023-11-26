@@ -2130,9 +2130,6 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
     jitstd::sort(lexicalBlocks, lexicalBlocks + numBlocks,
                  [](BasicBlock* lhs, BasicBlock* rhs) { return lhs->bbNum < rhs->bbNum; });
 
-    // TODO: We need to handle fallthrough to blocks outside the loop. Also,
-    // the old loop cloning clones these blocks, meaning they get optimized by
-    // the static optimizations...
     BlockToBlockMap* blockMap = new (getAllocator(CMK_LoopClone)) BlockToBlockMap(getAllocator(CMK_LoopClone));
     for (unsigned i = 0; i < numBlocks; i++)
     {
@@ -2184,6 +2181,31 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
 
         newPred = newBlk;
         blockMap->Set(blk, newBlk);
+
+        // If the block falls through to a block outside the loop then we may
+        // need to insert a new block to redirect.
+        if ((i < numBlocks - 1) && blk->bbFallsThrough() && !blk->NextIs(lexicalBlocks[i + 1]))
+        {
+            if (blk->KindIs(BBJ_NONE))
+            {
+                // Changed to BBJ_ALWAYS in below loop.
+            }
+            else if (blk->KindIs(BBJ_COND))
+            {
+                // Need to insert a block.
+                BasicBlock* newRedirBlk = fgNewBBafter(BBJ_ALWAYS, newPred, /* extendRegion */ true, blk->Next());
+                newRedirBlk->copyEHRegion(newPred);
+                newRedirBlk->bbNatLoopNum = ambientLoop;
+                // This block isn't part of the loop, so below loop won't add
+                // refs for it.
+                fgAddRefPred(blk->Next(), newRedirBlk);
+                newPred = newRedirBlk;
+            }
+            else
+            {
+                assert(!"Cannot handle fallthrough");
+            }
+        }
     }
 
     // Perform the static optimizations on the fast path.
@@ -2191,7 +2213,9 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
 
     // Now go through the new blocks, remapping their jump targets within the loop
     // and updating the preds lists.
-    loop->VisitLoopBlocks([=](BasicBlock* blk) {
+    for (unsigned i = 0; i < numBlocks; i++)
+    {
+        BasicBlock* blk    = lexicalBlocks[i];
         BasicBlock* newblk = nullptr;
         bool        b      = blockMap->Lookup(blk, &newblk);
         assert(b && newblk != nullptr);
@@ -2209,7 +2233,15 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
         switch (newblk->GetJumpKind())
         {
             case BBJ_NONE:
-                fgAddRefPred(newblk->Next(), newblk);
+                if ((i < numBlocks - 1) && !blk->NextIs(lexicalBlocks[i + 1]))
+                {
+                    newblk->SetJumpKindAndTarget(BBJ_ALWAYS, blk->Next() DEBUGARG(this));
+                    fgAddRefPred(newblk->GetJumpDest(), newblk);
+                }
+                else
+                {
+                    fgAddRefPred(newblk->Next(), newblk);
+                }
                 break;
 
             case BBJ_ALWAYS:
@@ -2232,9 +2264,7 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
             default:
                 break;
         }
-
-        return BasicBlockVisit::Continue;
-    });
+    }
 
 #ifdef DEBUG
     // Display the preds for the new blocks, after all the new blocks have been redirected.
