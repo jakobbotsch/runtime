@@ -1120,7 +1120,7 @@ bool Compiler::optExtractInitTestIncr(
         incrStmt = incrStmt->GetPrevStmt();
     }
 
-    if (incrStmt == nullptr || optIsLoopIncrTree(incrStmt->GetRootNode()) == BAD_VAR_NUM)
+    if (incrStmt == nullptr || (optIsLoopIncrTree(incrStmt->GetRootNode()) == BAD_VAR_NUM))
     {
         return false;
     }
@@ -2375,7 +2375,7 @@ private:
             case BBJ_CALLFINALLY:
             case BBJ_ALWAYS:
             case BBJ_EHCATCHRET:
-                assert(block->HasJump());
+                assert(block->HasInitializedJumpDest());
                 exitPoint = block->GetJumpDest();
 
                 if (!loopBlocks.IsMember(exitPoint->bbNum))
@@ -4419,7 +4419,7 @@ PhaseStatus Compiler::optUnrollLoops()
                     newBlock->scaleBBWeight(1.0 / BB_LOOP_WEIGHT_SCALE);
 
                     // Jump dests are set in a post-pass; make sure CloneBlockState hasn't tried to set them.
-                    assert(!newBlock->HasJump());
+                    assert(newBlock->KindIs(BBJ_NONE));
 
                     if (block == bottom)
                     {

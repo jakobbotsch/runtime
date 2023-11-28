@@ -1433,7 +1433,7 @@ void SsaBuilder::Build()
         block->bbPostorderNum = 0;
     }
 
-    m_pCompiler->fgDfsBlocks();
+    m_pCompiler->m_dfs = m_pCompiler->fgComputeDfs();
 
     // Compute IDom(b).
     ComputeImmediateDom();

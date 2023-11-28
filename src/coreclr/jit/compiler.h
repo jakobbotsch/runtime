@@ -2124,6 +2124,7 @@ class FlowGraphNaturalLoops
 
     FlowGraphNaturalLoops(const FlowGraphDfsTree* dfs);
 
+    static bool FindNaturalLoopBlocks(FlowGraphNaturalLoop* loop, jitstd::list<BasicBlock*>& worklist);
 public:
     size_t NumLoops()
     {
@@ -2195,7 +2196,6 @@ public:
     }
 
     static FlowGraphNaturalLoops* Find(const FlowGraphDfsTree* dfs);
-    static bool FindNaturalLoopBlocks(FlowGraphNaturalLoop* loop, jitstd::list<BasicBlock*>& worklist);
 };
 
 //  The following holds information about instr offsets in terms of generated code.
@@ -5832,8 +5832,6 @@ public:
     typedef bool(fgSplitPredicate)(GenTree* tree, GenTree* parent, fgWalkData* data);
 
     PhaseStatus fgSetBlockOrder();
-
-    PhaseStatus fgDfsBlocks();
 
     FlowGraphDfsTree* fgComputeDfs();
 
