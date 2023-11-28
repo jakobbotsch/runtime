@@ -522,45 +522,6 @@ bool Compiler::fgRemoveUnreachableBlocks(CanRemoveBlockBody canRemoveBlock)
 }
 
 //------------------------------------------------------------------------
-// fgDfsBlocks: Compute a DFS of the flow graph and remove unreachable blocks.
-// The DFS tree is stored in Compiler::m_dfs.
-//
-// Returns:
-//   Phase status indicating whether any blocks were unreachable and thus
-//   removed.
-//
-PhaseStatus Compiler::fgDfsBlocks()
-{
-    m_dfs = fgComputeDfs();
-
-    PhaseStatus status = PhaseStatus::MODIFIED_NOTHING;
-
-    if (m_dfs->GetPostOrderCount() != fgBBcount)
-    {
-#ifdef DEBUG
-        if (verbose)
-        {
-            printf("%u/%u blocks are unreachable and will be removed\n", fgBBcount - m_dfs->GetPostOrderCount(),
-                   fgBBcount);
-            for (BasicBlock* block : Blocks())
-            {
-                if (!m_dfs->Contains(block))
-                {
-                    printf("  " FMT_BB "\n", block->bbNum);
-                }
-            }
-        }
-#endif
-
-        fgRemoveUnreachableBlocks([=](BasicBlock* block) { return !m_dfs->Contains(block); });
-
-        status = PhaseStatus::MODIFIED_EVERYTHING;
-    }
-
-    return status;
-}
-
-//------------------------------------------------------------------------
 // fgComputeReachability: Compute the dominator and reachable sets.
 //
 // Returns:
