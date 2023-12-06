@@ -2214,6 +2214,10 @@ class FlowGraphNaturalLoops
 
     static bool FindNaturalLoopBlocks(FlowGraphNaturalLoop* loop, jitstd::list<BasicBlock*>& worklist);
 public:
+    const FlowGraphDfsTree* GetDfsTree() {
+        return m_dfs;
+    }
+
     size_t NumLoops()
     {
         return m_loops.size();
@@ -5973,6 +5977,7 @@ public:
     static void fgDumpTree(FILE* fgxFile, GenTree* const tree);
     FILE* fgOpenFlowGraphFile(bool* wbDontClose, Phases phase, PhasePosition pos, const char* type);
     bool fgDumpFlowGraph(Phases phase, PhasePosition pos);
+    void fgDumpLoopsToFlowGraph(FILE* file);
 #endif // DUMP_FLOWGRAPHS
 
 #ifdef DEBUG
