@@ -5056,6 +5056,148 @@ BasicBlockVisit FlowGraphNaturalLoop::VisitLoopBlocksLexical(TFunc func)
     }
 }
 
+//------------------------------------------------------------------------
+// optRedirectBlock: Replace the branch successors of a block based on an map functor.
+//
+// Updates the successors of `blk`: if `blk2` is a branch successor of `blk`, and there is a mapping
+// for `blk2->blk3` in `lookupNewTarget`, change `blk` so that `blk3` is this branch successor.
+//
+// Type arguments:
+//     TFunc        - map functor type
+//
+// Arguments:
+//     blk             - block to redirect
+//     lookupNewTarget - block->block map specifying how the `blk` target will be redirected.
+//     predOption      - specifies how to update the pred lists
+//
+// Notes:
+//     Fall-through successors are assumed correct and are not modified.
+//     Pred lists for successors of `blk` may be changed, depending on `predOption`.
+//
+template <typename TFunc>
+void Compiler::optRedirectBlock(BasicBlock* blk, TFunc lookupNewTarget, RedirectBlockOption predOption)
+{
+    const bool updatePreds = (predOption == RedirectBlockOption::UpdatePredLists);
+    const bool addPreds    = (predOption == RedirectBlockOption::AddToPredLists);
+
+    if (addPreds && blk->bbFallsThrough())
+    {
+        fgAddRefPred(blk->Next(), blk);
+    }
+
+    switch (blk->GetJumpKind())
+    {
+        case BBJ_THROW:
+        case BBJ_RETURN:
+        case BBJ_EHFAULTRET:
+            // These have no jump destination to update.
+            break;
+
+        case BBJ_ALWAYS:
+            // Fall-through successors are assumed correct and are not modified
+            if (blk->JumpsToNext() && ((blk->bbFlags & BBF_NONE_QUIRK) != 0))
+            {
+                break;
+            }
+
+            FALLTHROUGH;
+        case BBJ_LEAVE:
+        case BBJ_CALLFINALLY:
+        case BBJ_COND:
+        case BBJ_EHFILTERRET:
+        case BBJ_EHCATCHRET:
+        {
+            // All of these have a single jump destination to update.
+            BasicBlock* newTarget = lookupNewTarget(blk->GetJumpDest());
+            if (newTarget != nullptr)
+            {
+                if (updatePreds)
+                {
+                    fgRemoveRefPred(blk->GetJumpDest(), blk);
+                }
+                blk->SetJumpDest(newTarget);
+                if (updatePreds || addPreds)
+                {
+                    fgAddRefPred(newTarget, blk);
+                }
+            }
+            else if (addPreds)
+            {
+                fgAddRefPred(blk->GetJumpDest(), blk);
+            }
+        }
+        break;
+
+        case BBJ_EHFINALLYRET:
+        {
+            BBehfDesc* ehfDesc = blk->GetJumpEhf();
+            for (unsigned i = 0; i < ehfDesc->bbeCount; i++)
+            {
+                BasicBlock* const succ      = ehfDesc->bbeSuccs[i];
+                BasicBlock*       newTarget = lookupNewTarget(succ);
+                if (newTarget != nullptr)
+                {
+                    if (updatePreds)
+                    {
+                        fgRemoveRefPred(succ, blk);
+                    }
+                    if (updatePreds || addPreds)
+                    {
+                        fgAddRefPred(newTarget, blk);
+                    }
+                    ehfDesc->bbeSuccs[i] = newTarget;
+                }
+                else if (addPreds)
+                {
+                    fgAddRefPred(succ, blk);
+                }
+            }
+        }
+        break;
+
+        case BBJ_SWITCH:
+        {
+            bool redirected = false;
+            for (unsigned i = 0; i < blk->GetJumpSwt()->bbsCount; i++)
+            {
+                BasicBlock* const switchDest = blk->GetJumpSwt()->bbsDstTab[i];
+                BasicBlock*       newTarget  = lookupNewTarget(switchDest);
+                if (newTarget != nullptr)
+                {
+                    if (updatePreds)
+                    {
+                        fgRemoveRefPred(switchDest, blk);
+                    }
+                    if (updatePreds || addPreds)
+                    {
+                        fgAddRefPred(newTarget, blk);
+                    }
+                    blk->GetJumpSwt()->bbsDstTab[i] = newTarget;
+                    redirected                      = true;
+                }
+                else if (addPreds)
+                {
+                    fgAddRefPred(switchDest, blk);
+                }
+            }
+            // If any redirections happened, invalidate the switch table map for the switch.
+            if (redirected)
+            {
+                // Don't create a new map just to try to remove an entry.
+                BlockToSwitchDescMap* switchMap = GetSwitchDescMap(/* createIfNull */ false);
+                if (switchMap != nullptr)
+                {
+                    switchMap->Remove(blk);
+                }
+            }
+        }
+        break;
+
+        default:
+            unreached();
+    }
+}
+
 /*****************************************************************************/
 #endif //_COMPILER_HPP_
 /*****************************************************************************/

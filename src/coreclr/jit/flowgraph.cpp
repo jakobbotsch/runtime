@@ -4186,6 +4186,23 @@ BitVecTraits FlowGraphNaturalLoop::LoopBlockTraits()
 }
 
 //------------------------------------------------------------------------
+// GetDepth: Compute the depth of the loop.
+//
+// Returns:
+//   0 if this is a top level; otherwise the number of ancestors.
+//
+unsigned FlowGraphNaturalLoop::GetDepth() const
+{
+    unsigned depth = 0;
+    for (FlowGraphNaturalLoop* ancestor = m_parent; ancestor != nullptr; ancestor = ancestor->m_parent)
+    {
+        depth++;
+    }
+
+    return depth;
+}
+
+//------------------------------------------------------------------------
 // ContainsBlock: Returns true if this loop contains the specified block.
 //
 // Parameters:

@@ -5103,6 +5103,12 @@ void Compiler::fgDebugCheckLoopTable()
         if (loopNum != BasicBlock::NOT_IN_LOOP)
         {
             // ...it must be the one pointed to by bbNatLoopNum.
+            JITDUMP("Checking " FMT_BB " " FMT_LP " should be in " FMT_LP "\n", block->bbNum, block->bbNatLoopNum, loopNum);
+            if (block->bbNatLoopNum != loopNum)
+            {
+                fgDumpFlowGraph(mostRecentlyActivePhase, PhasePosition::PostPhase);
+            }
+
             assert(block->bbNatLoopNum == loopNum);
 
             // TODO: We might want the following assert, but there are cases where we don't move all
@@ -5113,6 +5119,11 @@ void Compiler::fgDebugCheckLoopTable()
         else
         {
             // Otherwise, this block should not point to a loop.
+            JITDUMP("Checking " FMT_BB " " FMT_LP " should not be in loop\n", block->bbNum, block->bbNatLoopNum);
+            if (block->bbNatLoopNum != BasicBlock::NOT_IN_LOOP)
+            {
+                fgDumpFlowGraph(mostRecentlyActivePhase, PhasePosition::PostPhase);
+            }
             assert(block->bbNatLoopNum == BasicBlock::NOT_IN_LOOP);
         }
 
@@ -5133,7 +5144,7 @@ void Compiler::fgDebugCheckLoopTable()
 
     // Verify that the number of loops marked as having pre-headers is the same as the number of blocks
     // with the pre-header flag set.
-    assert(preHeaderCount == 0);
+    //assert(preHeaderCount == 0);
 }
 
 /*****************************************************************************/

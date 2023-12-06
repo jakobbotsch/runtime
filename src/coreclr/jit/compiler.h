@@ -2166,6 +2166,8 @@ public:
         return m_exitEdges;
     }
 
+    unsigned GetDepth() const;
+
     bool ContainsBlock(BasicBlock* block);
 
     unsigned NumLoopBlocks();
@@ -6697,6 +6699,9 @@ public:
     PhaseStatus optFindLoopsPhase(); // Finds loops and records them in the loop table
 
     void optFindLoops();
+    bool optCanonicalizeLoops(FlowGraphNaturalLoops* loops);
+    bool optCreatePreheader(FlowGraphNaturalLoop* loop);
+
 
     PhaseStatus optCloneLoops();
     void optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* context);
@@ -7053,6 +7058,12 @@ protected:
         UpdatePredLists,      // add/remove to pred lists
         AddToPredLists,       // only add to pred lists
     };
+
+    template<typename TFunc>
+    void optRedirectBlock(BasicBlock*      blk,
+                          TFunc            lookupNewTarget,
+                          const RedirectBlockOption = RedirectBlockOption::DoNotChangePredLists);
+
 
     void optRedirectBlock(BasicBlock*      blk,
                           BlockToBlockMap* redirectMap,

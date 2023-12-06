@@ -6146,7 +6146,15 @@ BasicBlock* Compiler::fgNewBBbefore(BBjumpKinds jumpKind,
 
     fgInsertBBbefore(block, newBlk);
 
-    newBlk->bbRefs = 0;
+    if (newBlk == fgFirstBB)
+    {
+        newBlk->bbRefs = 1;
+        newBlk->Next()->bbRefs--;
+    }
+    else
+    {
+        newBlk->bbRefs = 0;
+    }
 
     if (newBlk->bbFallsThrough() && block->isRunRarely())
     {
