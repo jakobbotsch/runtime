@@ -1840,6 +1840,7 @@ bool Compiler::optIsLoopClonable(FlowGraphNaturalLoop* loop, LoopCloneContext* c
 
     assert(!requireIterable || !lvaVarAddrExposed(iterInfo->IterVar));
 
+
     if (requireIterable)
     {
         assert(iterInfo->HasConstLimit || iterInfo->HasInvariantLocalLimit || iterInfo->HasArrayLengthLimit);
@@ -1929,6 +1930,7 @@ BasicBlock* Compiler::optInsertLoopChoiceConditions(LoopCloneContext*     contex
     JITDUMP("\n");
     insertAfter = context->CondToStmtInBlock(this, *(context->GetConditions(loop->GetIndex())), slowPreheader, insertAfter);
 
+
     return insertAfter;
 }
 
@@ -1984,6 +1986,8 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
         assert(preheader->bbNatLoopNum == ambientLoop);
     }
 
+
+    BasicBlock* h = preheader;
     // We're going to transform this loop:
     //
     // preheader --> header
@@ -1997,6 +2001,7 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
 
     assert((preheader->bbFlags & BBF_LOOP_PREHEADER) != 0);
 
+
     // Make a new pre-header block for the fast loop. The previous preheader will jump to it.
     JITDUMP("Create new preheader block for fast loop\n");
 
@@ -2005,6 +2010,7 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
     fastPreheader->bbWeight     = fastPreheader->isRunRarely() ? BB_ZERO_WEIGHT : ambientWeight;
     fastPreheader->bbNatLoopNum = ambientLoop;
     fastPreheader->bbFlags |= BBF_LOOP_PREHEADER;
+
 
     if (fastPreheader->JumpsToNext())
     {
@@ -3003,6 +3009,11 @@ bool Compiler::optObtainLoopCloningOpts(LoopCloneContext* context)
         if (loop->AnalyzeIteration(&iterInfo))
         {
             context->SetLoopIterInfo(loop->GetIndex(), new (this, CMK_LoopClone) NaturalLoopIterInfo(iterInfo));
+        }
+
+        if (optIsLoopClonable(loop, context) && optIdentifyLoopOptInfo(loop, context))
+        {
+            result = true;
         }
 
         if (optIsLoopClonable(loop, context) && optIdentifyLoopOptInfo(loop, context))
