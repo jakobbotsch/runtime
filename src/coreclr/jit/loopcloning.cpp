@@ -1966,6 +1966,7 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
 
     assert(loop->EntryEdges().size() == 1);
     BasicBlock* preheader = loop->EntryEdges()[0]->getSourceBlock();
+    JITDUMP("  Preheader: " FMT_BB "\n", preheader->bbNum);
     // The ambient weight might be higher than we computed above. Be safe by
     // taking the max with the head block's weight.
     ambientWeight = max(ambientWeight, preheader->bbWeight);
@@ -1980,6 +1981,7 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
     // This is the containing loop, if any -- to label any blocks we create that are outside
     // the loop being cloned.
     unsigned char ambientLoop = preheader->bbNatLoopNum; //m_newToOldLoop[loop->GetIndex()]->lpParent;
+    JITDUMP("Ambient loop: " FMT_LP "\n", ambientLoop);
     if (m_newToOldLoop[loop->GetIndex()] != nullptr)
     {
         assert(preheader->bbNatLoopNum == ambientLoop);
@@ -2024,7 +2026,10 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
 
     // 'preheader' is no longer the loop preheader; 'fastPreheader' is!
     preheader->bbFlags &= ~BBF_LOOP_PREHEADER;
-    optUpdateLoopHead((unsigned)(m_newToOldLoop[loop->GetIndex()] - optLoopTable), preheader, fastPreheader);
+    if (m_newToOldLoop[loop->GetIndex()] != nullptr)
+    {
+        optUpdateLoopHead((unsigned)(m_newToOldLoop[loop->GetIndex()] - optLoopTable), preheader, fastPreheader);
+    }
 
     // We are going to create blocks after the lexical last block. If it falls
     // out of the loop then insert an explicit jump and insert after that
@@ -2047,8 +2052,7 @@ void Compiler::optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* contex
         JITDUMP("Adding " FMT_BB " after " FMT_BB "\n", bottomRedirBlk->bbNum, bottom->bbNum);
         bottomRedirBlk->bbWeight = bottomRedirBlk->isRunRarely() ? BB_ZERO_WEIGHT : ambientWeight;
 
-        // This is in the scope of a surrounding loop, if one exists -- the parent of the loop we're cloning.
-        bottomRedirBlk->bbNatLoopNum = ambientLoop;
+        bottomRedirBlk->bbNatLoopNum = m_newToOldLoop[loop->GetIndex()] == nullptr ? bottomNext->bbNatLoopNum : ambientLoop;
 
         fgAddRefPred(bottomRedirBlk, bottom);
         JITDUMP("Adding " FMT_BB " -> " FMT_BB "\n", bottom->bbNum, bottomRedirBlk->bbNum);
@@ -3200,6 +3204,26 @@ PhaseStatus Compiler::optCloneLoops()
 
         m_dfs   = fgComputeDfs();
         m_loops = FlowGraphNaturalLoops::Find(m_dfs);
+
+        m_newToOldLoop = m_loops->NumLoops() == 0 ? nullptr : (new (this, CMK_Loops) LoopDsc*[m_loops->NumLoops()]{});
+        m_oldToNewLoop = new (this, CMK_Loops) FlowGraphNaturalLoop*[BasicBlock::MAX_LOOP_NUM]{};
+
+        for (FlowGraphNaturalLoop* loop : m_loops->InReversePostOrder())
+        {
+            BasicBlock* head = loop->GetHeader();
+            if (head->bbNatLoopNum == BasicBlock::NOT_IN_LOOP)
+                continue;
+
+            LoopDsc* dsc = &optLoopTable[head->bbNatLoopNum];
+            if (dsc->lpEntry != head)
+                continue;
+
+            assert(m_oldToNewLoop[head->bbNatLoopNum] == nullptr);
+            assert(m_newToOldLoop[loop->GetIndex()] == nullptr);
+            m_oldToNewLoop[head->bbNatLoopNum] = loop;
+            m_newToOldLoop[loop->GetIndex()]   = dsc;
+        }
+
     }
 
 #ifdef DEBUG
