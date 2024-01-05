@@ -1811,7 +1811,7 @@ void Compiler::fgDumpFlowGraphLoops(FILE* file)
             m_indent += 4;
 
             fprintf(m_file, "%*slabel = \"" FMT_LP, m_indent, "", loop->GetIndex());
-            if (comp->m_newToOldLoop[loop->GetIndex()] != nullptr)
+            if (comp->optLoopTableValid && (comp->m_newToOldLoop[loop->GetIndex()] != nullptr))
             {
                 fprintf(m_file, " (old: " FMT_LP ")\";\n",
                         (unsigned)(comp->m_newToOldLoop[loop->GetIndex()] - comp->optLoopTable));
