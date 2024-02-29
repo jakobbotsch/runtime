@@ -65,11 +65,14 @@ struct Scev
 
     bool GetConstantValue(Compiler* comp, int64_t* cns);
 
+    template <typename TVisitor>
+    ScevVisit Visit(TVisitor visitor);
+
+    static bool Equals(Scev* left, Scev* right);
+
 #ifdef DEBUG
     void Dump(Compiler* comp);
 #endif
-    template <typename TVisitor>
-    ScevVisit Visit(TVisitor visitor);
 };
 
 struct ScevConstant : Scev
