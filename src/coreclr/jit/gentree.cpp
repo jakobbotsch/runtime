@@ -3230,14 +3230,17 @@ AGAIN:
 
 //------------------------------------------------------------------------------
 // gtHasLocalsWithAddrOp:
-//   Check if this tree contains locals with lvHasLdAddrOp or
+//   Check if this tree contains local store/use with lvHasLdAddrOp or
 //   IsAddressExposed() flags set. Does a full tree walk.
 //
 // Paramters:
 //   tree - the tree
 //
 // Return Value:
-//    True if any sub tree is such a local.
+//   True if any sub tree is such a local.
+//
+// Remarks:
+//   LCL_ADDR occurrences are ignored by this function.
 //
 bool Compiler::gtHasLocalsWithAddrOp(GenTree* tree)
 {
@@ -3255,10 +3258,13 @@ bool Compiler::gtHasLocalsWithAddrOp(GenTree* tree)
 
         fgWalkResult PreOrderVisit(GenTree** use, GenTree* user)
         {
-            LclVarDsc* varDsc = m_compiler->lvaGetDesc((*use)->AsLclVarCommon());
-            if (varDsc->lvHasLdAddrOp || varDsc->IsAddressExposed())
+            if (!(*use)->OperIs(GT_LCL_ADDR))
             {
-                return WALK_ABORT;
+                LclVarDsc* varDsc = m_compiler->lvaGetDesc((*use)->AsLclVarCommon());
+                if (varDsc->lvHasLdAddrOp || varDsc->IsAddressExposed())
+                {
+                    return WALK_ABORT;
+                }
             }
 
             return WALK_CONTINUE;
