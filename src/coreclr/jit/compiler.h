@@ -230,9 +230,14 @@ class LclSsaVarDsc
     bool m_hasGlobalUse = false;
 
 public:
-    LclSsaVarDsc() {}
+    LclSsaVarDsc()
+    {
+    }
 
-    LclSsaVarDsc(BasicBlock* block) : m_block(block) {}
+    LclSsaVarDsc(BasicBlock* block)
+        : m_block(block)
+    {
+    }
 
     LclSsaVarDsc(BasicBlock* block, GenTreeLclVarCommon* defNode)
         : m_block(block)
@@ -360,7 +365,12 @@ class SsaDefArray
 
 public:
     // Construct an empty SsaDefArray.
-    SsaDefArray() : m_array(nullptr), m_arraySize(0), m_count(0) {}
+    SsaDefArray()
+        : m_array(nullptr)
+        , m_arraySize(0)
+        , m_count(0)
+    {
+    }
 
     // Reset the array (used only if the SSA form is reconstructed).
     void Reset()
@@ -11733,15 +11743,26 @@ class DomTreeVisitor
 protected:
     Compiler* m_compiler;
 
-    DomTreeVisitor(Compiler* compiler) : m_compiler(compiler) {}
+    DomTreeVisitor(Compiler* compiler)
+        : m_compiler(compiler)
+    {
+    }
 
-    void Begin() {}
+    void Begin()
+    {
+    }
 
-    void PreOrderVisit(BasicBlock* block) {}
+    void PreOrderVisit(BasicBlock* block)
+    {
+    }
 
-    void PostOrderVisit(BasicBlock* block) {}
+    void PostOrderVisit(BasicBlock* block)
+    {
+    }
 
-    void End() {}
+    void End()
+    {
+    }
 
 private:
     void WalkTree(const DomTreeNode* tree)
@@ -11812,7 +11833,10 @@ class EHClauses
         EHblkDsc* m_ehDsc;
 
     public:
-        iterator(EHblkDsc* ehDsc) : m_ehDsc(ehDsc) {}
+        iterator(EHblkDsc* ehDsc)
+            : m_ehDsc(ehDsc)
+        {
+        }
 
         EHblkDsc* operator*() const
         {

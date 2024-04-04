@@ -57,8 +57,18 @@ public:
 class JitPrimeInfo
 {
 public:
-    constexpr JitPrimeInfo() : prime(0), magic(0), shift(0) {}
-    constexpr JitPrimeInfo(unsigned p, unsigned m, unsigned s) : prime(p), magic(m), shift(s) {}
+    constexpr JitPrimeInfo()
+        : prime(0)
+        , magic(0)
+        , shift(0)
+    {
+    }
+    constexpr JitPrimeInfo(unsigned p, unsigned m, unsigned s)
+        : prime(p)
+        , magic(m)
+        , shift(s)
+    {
+    }
     unsigned prime;
     unsigned magic;
     unsigned shift;
@@ -496,7 +506,10 @@ public:
     class KeyIterator : public NodeIterator
     {
     public:
-        KeyIterator(const JitHashTable* hash, bool begin) : NodeIterator(hash, begin) {}
+        KeyIterator(const JitHashTable* hash, bool begin)
+            : NodeIterator(hash, begin)
+        {
+        }
 
         Key operator*() const
         {
@@ -508,7 +521,10 @@ public:
     class ValueIterator : public NodeIterator
     {
     public:
-        ValueIterator(const JitHashTable* hash, bool begin) : NodeIterator(hash, begin) {}
+        ValueIterator(const JitHashTable* hash, bool begin)
+            : NodeIterator(hash, begin)
+        {
+        }
 
         Value operator*() const
         {
@@ -521,7 +537,10 @@ public:
     class KeyValueIterator : public NodeIterator
     {
     public:
-        KeyValueIterator(const JitHashTable* hash, bool begin) : NodeIterator(hash, begin) {}
+        KeyValueIterator(const JitHashTable* hash, bool begin)
+            : NodeIterator(hash, begin)
+        {
+        }
 
         // We could return a new <key,value> struct, but why bother copying data?
         Node* operator*() const
@@ -536,7 +555,10 @@ public:
         const JitHashTable* const m_hash;
 
     public:
-        KeyIteration(const JitHashTable* hash) : m_hash(hash) {}
+        KeyIteration(const JitHashTable* hash)
+            : m_hash(hash)
+        {
+        }
 
         KeyIterator begin() const
         {
@@ -555,7 +577,10 @@ public:
         const JitHashTable* const m_hash;
 
     public:
-        ValueIteration(const JitHashTable* hash) : m_hash(hash) {}
+        ValueIteration(const JitHashTable* hash)
+            : m_hash(hash)
+        {
+        }
 
         ValueIterator begin() const
         {
@@ -574,7 +599,10 @@ public:
         const JitHashTable* const m_hash;
 
     public:
-        KeyValueIteration(const JitHashTable* hash) : m_hash(hash) {}
+        KeyValueIteration(const JitHashTable* hash)
+            : m_hash(hash)
+        {
+        }
 
         KeyValueIterator begin() const
         {

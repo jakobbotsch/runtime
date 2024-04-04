@@ -204,7 +204,11 @@ void Compiler::optCSE_GetMaskData(GenTree* tree, optCSE_MaskData* pMaskData)
             DoPreOrder = true,
         };
 
-        MaskDataWalker(Compiler* comp, optCSE_MaskData* maskData) : GenTreeVisitor(comp), m_maskData(maskData) {}
+        MaskDataWalker(Compiler* comp, optCSE_MaskData* maskData)
+            : GenTreeVisitor(comp)
+            , m_maskData(maskData)
+        {
+        }
 
         fgWalkResult PreOrderVisit(GenTree** use, GenTree* user)
         {
@@ -1186,7 +1190,11 @@ class CSE_DataFlow
     EXPSET_TP m_preMergeOut;
 
 public:
-    CSE_DataFlow(Compiler* pCompiler) : m_comp(pCompiler), m_preMergeOut(BitVecOps::UninitVal()) {}
+    CSE_DataFlow(Compiler* pCompiler)
+        : m_comp(pCompiler)
+        , m_preMergeOut(BitVecOps::UninitVal())
+    {
+    }
 
     // At the start of the merge function of the dataflow equations, initialize premerge state (to detect changes.)
     void StartMerge(BasicBlock* block)
@@ -2200,7 +2208,10 @@ void CSE_HeuristicRandom::ConsiderCandidates()
 //  This creates the replay CSE heuristic. It does CSEs specifed by
 //  the ArrayConfig parsing of JitReplayCSE.
 //
-CSE_HeuristicReplay::CSE_HeuristicReplay(Compiler* pCompiler) : CSE_HeuristicCommon(pCompiler) {}
+CSE_HeuristicReplay::CSE_HeuristicReplay(Compiler* pCompiler)
+    : CSE_HeuristicCommon(pCompiler)
+{
+}
 
 //------------------------------------------------------------------------
 // Announce: describe heuristic in jit dump

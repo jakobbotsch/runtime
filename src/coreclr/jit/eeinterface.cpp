@@ -156,8 +156,9 @@ void Compiler::eePrintType(StringPrinter* printer, CORINFO_CLASS_HANDLE clsHnd, 
         return;
     }
 
-    eeAppendPrint(printer, [&](char* buffer, size_t bufferSize, size_t* requiredBufferSize)
-                  { return info.compCompHnd->printClassName(clsHnd, buffer, bufferSize, requiredBufferSize); });
+    eeAppendPrint(printer, [&](char* buffer, size_t bufferSize, size_t* requiredBufferSize) {
+        return info.compCompHnd->printClassName(clsHnd, buffer, bufferSize, requiredBufferSize);
+    });
 
     if (!includeInstantiation)
     {
@@ -254,8 +255,9 @@ void Compiler::eePrintMethod(StringPrinter*        printer,
         printer->Append(':');
     }
 
-    eeAppendPrint(printer, [&](char* buffer, size_t bufferSize, size_t* requiredBufferSize)
-                  { return info.compCompHnd->printMethodName(methHnd, buffer, bufferSize, requiredBufferSize); });
+    eeAppendPrint(printer, [&](char* buffer, size_t bufferSize, size_t* requiredBufferSize) {
+        return info.compCompHnd->printMethodName(methHnd, buffer, bufferSize, requiredBufferSize);
+    });
 
     if (includeMethodInstantiation && (sig->sigInst.methInstCount > 0))
     {
@@ -362,8 +364,9 @@ void Compiler::eePrintField(StringPrinter* printer, CORINFO_FIELD_HANDLE fld, bo
         printer->Append(':');
     }
 
-    eeAppendPrint(printer, [&](char* buffer, size_t bufferSize, size_t* requiredBufferSize)
-                  { return info.compCompHnd->printFieldName(fld, buffer, bufferSize, requiredBufferSize); });
+    eeAppendPrint(printer, [&](char* buffer, size_t bufferSize, size_t* requiredBufferSize) {
+        return info.compCompHnd->printFieldName(fld, buffer, bufferSize, requiredBufferSize);
+    });
 }
 
 //------------------------------------------------------------------------
@@ -395,17 +398,15 @@ const char* Compiler::eeGetMethodFullName(
 
     StringPrinter        p(getAllocator(CMK_DebugOnly), buffer, bufferSize);
     CORINFO_CLASS_HANDLE clsHnd  = NO_CLASS_HANDLE;
-    bool                 success = eeRunFunctorWithSPMIErrorTrap(
-        [&]()
-        {
-            clsHnd = info.compCompHnd->getMethodClass(hnd);
-            CORINFO_SIG_INFO sig;
-            eeGetMethodSig(hnd, &sig);
-            eePrintMethod(&p, clsHnd, hnd, &sig,
-                                          /* includeClassInstantiation */ true,
-                                          /* includeMethodInstantiation */ true,
-                                          /* includeSignature */ true, includeReturnType, includeThisSpecifier);
-        });
+    bool                 success = eeRunFunctorWithSPMIErrorTrap([&]() {
+        clsHnd = info.compCompHnd->getMethodClass(hnd);
+        CORINFO_SIG_INFO sig;
+        eeGetMethodSig(hnd, &sig);
+        eePrintMethod(&p, clsHnd, hnd, &sig,
+                                      /* includeClassInstantiation */ true,
+                                      /* includeMethodInstantiation */ true,
+                                      /* includeSignature */ true, includeReturnType, includeThisSpecifier);
+    });
 
     if (success)
     {
@@ -415,17 +416,15 @@ const char* Compiler::eeGetMethodFullName(
     // Try without signature
     p.Truncate(0);
 
-    success = eeRunFunctorWithSPMIErrorTrap(
-        [&]()
-        {
-            eePrintMethod(&p, clsHnd, hnd,
-                          /* sig */ nullptr,
-                          /* includeClassInstantiation */ false,
-                          /* includeMethodInstantiation */ false,
-                          /* includeSignature */ false,
-                          /* includeReturnType */ false,
-                          /* includeThisSpecifier */ false);
-        });
+    success = eeRunFunctorWithSPMIErrorTrap([&]() {
+        eePrintMethod(&p, clsHnd, hnd,
+                      /* sig */ nullptr,
+                      /* includeClassInstantiation */ false,
+                      /* includeMethodInstantiation */ false,
+                      /* includeSignature */ false,
+                      /* includeReturnType */ false,
+                      /* includeThisSpecifier */ false);
+    });
 
     if (success)
     {
@@ -435,17 +434,15 @@ const char* Compiler::eeGetMethodFullName(
     // Try with bare minimum
     p.Truncate(0);
 
-    success = eeRunFunctorWithSPMIErrorTrap(
-        [&]()
-        {
-            eePrintMethod(&p, nullptr, hnd,
-                          /* sig */ nullptr,
-                          /* includeClassInstantiation */ false,
-                          /* includeMethodInstantiation */ false,
-                          /* includeSignature */ false,
-                          /* includeReturnType */ false,
-                          /* includeThisSpecifier */ false);
-        });
+    success = eeRunFunctorWithSPMIErrorTrap([&]() {
+        eePrintMethod(&p, nullptr, hnd,
+                      /* sig */ nullptr,
+                      /* includeClassInstantiation */ false,
+                      /* includeMethodInstantiation */ false,
+                      /* includeSignature */ false,
+                      /* includeReturnType */ false,
+                      /* includeThisSpecifier */ false);
+    });
 
     if (success)
     {
@@ -475,17 +472,15 @@ const char* Compiler::eeGetMethodFullName(
 const char* Compiler::eeGetMethodName(CORINFO_METHOD_HANDLE methHnd, char* buffer, size_t bufferSize)
 {
     StringPrinter p(getAllocator(CMK_DebugOnly), buffer, bufferSize);
-    bool          success = eeRunFunctorWithSPMIErrorTrap(
-        [&]()
-        {
-            eePrintMethod(&p, NO_CLASS_HANDLE, methHnd,
-                                   /* sig */ nullptr,
-                                   /* includeClassInstantiation */ false,
-                                   /* includeMethodInstantiation */ false,
-                                   /* includeSignature */ false,
-                                   /* includeReturnType */ false,
-                                   /* includeThisSpecifier */ false);
-        });
+    bool          success = eeRunFunctorWithSPMIErrorTrap([&]() {
+        eePrintMethod(&p, NO_CLASS_HANDLE, methHnd,
+                               /* sig */ nullptr,
+                               /* includeClassInstantiation */ false,
+                               /* includeMethodInstantiation */ false,
+                               /* includeSignature */ false,
+                               /* includeReturnType */ false,
+                               /* includeThisSpecifier */ false);
+    });
 
     if (!success)
     {

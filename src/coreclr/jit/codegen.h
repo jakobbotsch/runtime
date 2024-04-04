@@ -317,7 +317,12 @@ protected:
         regNumber reg2;
         bool      useSaveNextPair;
 
-        RegPair(regNumber reg1) : reg1(reg1), reg2(REG_NA), useSaveNextPair(false) {}
+        RegPair(regNumber reg1)
+            : reg1(reg1)
+            , reg2(REG_NA)
+            , useSaveNextPair(false)
+        {
+        }
 
         RegPair(regNumber reg1, regNumber reg2)
             : reg1(reg1)
@@ -1361,7 +1366,9 @@ protected:
     void     genNumberOperandUse(GenTree* const operand, int& useNum) const;
     void     genCheckConsumeNode(GenTree* const node);
 #else  // !DEBUG
-    inline void genCheckConsumeNode(GenTree* treeNode) {}
+    inline void genCheckConsumeNode(GenTree* treeNode)
+    {
+    }
 #endif // DEBUG
 
     /*
@@ -1476,9 +1483,18 @@ public:
         };
 
     public:
-        OperandDesc(CORINFO_FIELD_HANDLE fieldHnd) : m_kind(OperandKind::ClsVar), m_fieldHnd(fieldHnd) {}
+        OperandDesc(CORINFO_FIELD_HANDLE fieldHnd)
+            : m_kind(OperandKind::ClsVar)
+            , m_fieldHnd(fieldHnd)
+        {
+        }
 
-        OperandDesc(int varNum, uint16_t offset) : m_kind(OperandKind::Local), m_varNum(varNum), m_offset(offset) {}
+        OperandDesc(int varNum, uint16_t offset)
+            : m_kind(OperandKind::Local)
+            , m_varNum(varNum)
+            , m_offset(offset)
+        {
+        }
 
         OperandDesc(GenTreeIndir* indir)
             : m_kind(OperandKind::Indir)
@@ -1503,7 +1519,11 @@ public:
         {
         }
 
-        OperandDesc(regNumber reg) : m_kind(OperandKind::Reg), m_reg(reg) {}
+        OperandDesc(regNumber reg)
+            : m_kind(OperandKind::Reg)
+            , m_reg(reg)
+        {
+        }
 
         OperandKind GetKind() const
         {

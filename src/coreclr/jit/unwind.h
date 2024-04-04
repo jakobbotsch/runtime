@@ -23,7 +23,7 @@ const unsigned MAX_PROLOG_SIZE_BYTES = 44;
 const unsigned MAX_EPILOG_SIZE_BYTES = 44;
 #define UWC_END                    0xFF // "end" unwind code
 #define UW_MAX_FRAGMENT_SIZE_BYTES (1U << 19)
-#define UW_MAX_CODE_WORDS_COUNT 15 // Max number that can be encoded in the "Code Words" field of the .pdata record
+#define UW_MAX_CODE_WORDS_COUNT    15 // Max number that can be encoded in the "Code Words" field of the .pdata record
 #define UW_MAX_EPILOG_START_INDEX                                                                                      \
     0xFFU // Max number that can be encoded in the "Epilog Start Index" field
           // of the .pdata record
@@ -90,10 +90,17 @@ class UnwindInfo;
 class UnwindBase
 {
 protected:
-    UnwindBase(Compiler* comp) : uwiComp(comp) {}
+    UnwindBase(Compiler* comp)
+        : uwiComp(comp)
+    {
+    }
 
-    UnwindBase() {}
-    ~UnwindBase() {}
+    UnwindBase()
+    {
+    }
+    ~UnwindBase()
+    {
+    }
 
     Compiler* uwiComp;
 };
@@ -253,8 +260,12 @@ public:
     // Copy the prolog codes from another prolog
     void CopyFrom(UnwindPrologCodes* pCopyFrom);
 
-    UnwindPrologCodes() {}
-    ~UnwindPrologCodes() {}
+    UnwindPrologCodes()
+    {
+    }
+    ~UnwindPrologCodes()
+    {
+    }
 
 #ifdef DEBUG
     void Dump(int indent = 0);
@@ -425,8 +436,12 @@ public:
 #endif // !TARGET_RISCV64
     }
 
-    UnwindEpilogCodes() {}
-    ~UnwindEpilogCodes() {}
+    UnwindEpilogCodes()
+    {
+    }
+    ~UnwindEpilogCodes()
+    {
+    }
 
 #ifdef DEBUG
     void Dump(int indent = 0);
@@ -534,8 +549,12 @@ public:
     // Match the codes to a set of epilog codes
     int Match(UnwindEpilogInfo* pEpi);
 
-    UnwindEpilogInfo() {}
-    ~UnwindEpilogInfo() {}
+    UnwindEpilogInfo()
+    {
+    }
+    ~UnwindEpilogInfo()
+    {
+    }
 
 #ifdef DEBUG
     void Dump(int indent = 0);
@@ -650,8 +669,12 @@ public:
     void Allocate(
         CorJitFuncKind funKind, void* pHotCode, void* pColdCode, UNATIVE_OFFSET funcEndOffset, bool isHotCode);
 
-    UnwindFragmentInfo() {}
-    ~UnwindFragmentInfo() {}
+    UnwindFragmentInfo()
+    {
+    }
+    ~UnwindFragmentInfo()
+    {
+    }
 
 #ifdef DEBUG
     void Dump(int indent = 0);
@@ -780,8 +803,12 @@ public:
 
     void CaptureLocation();
 
-    UnwindInfo() {}
-    ~UnwindInfo() {}
+    UnwindInfo()
+    {
+    }
+    ~UnwindInfo()
+    {
+    }
 
 #ifdef DEBUG
 
@@ -790,7 +817,9 @@ public:
     // the last instruction added in the emitter.
     void CheckOpsize(BYTE b1);
 #elif defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
-    void CheckOpsize(BYTE b1) {} // nothing to do; all instructions are 4 bytes
+    void CheckOpsize(BYTE b1)
+    {
+    } // nothing to do; all instructions are 4 bytes
 #endif // defined(TARGET_ARM64)
 
     void Dump(bool isHotCode, int indent = 0);

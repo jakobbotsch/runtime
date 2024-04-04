@@ -2676,8 +2676,7 @@ void CodeGen::genCodeForMemmove(GenTreeBlk* tree)
             tempRegs[i] = tree->ExtractTempReg(RBM_ALLFLOAT);
         }
 
-        auto emitSimdLoadStore = [&](bool load)
-        {
+        auto emitSimdLoadStore = [&](bool load) {
             unsigned    offset      = 0;
             int         regIndex    = 0;
             instruction simdMov     = simdUnalignedMovIns();
@@ -2723,8 +2722,7 @@ void CodeGen::genCodeForMemmove(GenTreeBlk* tree)
         // Here we work with size 1..15 (x64)
         assert((size > 0) && (size < XMM_REGSIZE_BYTES));
 
-        auto emitScalarLoadStore = [&](bool load, int size, regNumber tempReg, int offset)
-        {
+        auto emitScalarLoadStore = [&](bool load, int size, regNumber tempReg, int offset) {
             var_types memType;
             switch (size)
             {
@@ -3234,8 +3232,7 @@ void CodeGen::genCodeForInitBlkUnroll(GenTreeBlk* node)
         instruction simdMov      = simdUnalignedMovIns();
         unsigned    bytesWritten = 0;
 
-        auto emitSimdMovs = [&]()
-        {
+        auto emitSimdMovs = [&]() {
             if (dstLclNum != BAD_VAR_NUM)
             {
                 emit->emitIns_S_R(simdMov, EA_ATTR(regSize), srcXmmReg, dstLclNum, dstOffset);
@@ -3526,8 +3523,7 @@ void CodeGen::genCodeForCpBlkUnroll(GenTreeBlk* node)
 
         instruction simdMov = simdUnalignedMovIns();
 
-        auto emitSimdMovs = [&]()
-        {
+        auto emitSimdMovs = [&]() {
             if (srcLclNum != BAD_VAR_NUM)
             {
                 emit->emitIns_R_S(simdMov, EA_ATTR(regSize), tempReg, srcLclNum, srcOffset);

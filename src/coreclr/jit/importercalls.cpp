@@ -2202,8 +2202,7 @@ void Compiler::impPopArgsForSwiftCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, 
                     else
                     {
                         unsigned relOffset  = 0;
-                        auto     addSegment = [=, &loweredNode, &relOffset](var_types type)
-                        {
+                        auto     addSegment = [=, &loweredNode, &relOffset](var_types type) {
                             GenTree* val = gtNewLclFldNode(structVal->GetLclNum(), type,
                                                                structVal->GetLclOffs() + offset + relOffset);
 
@@ -6114,7 +6113,10 @@ void Compiler::impCheckForPInvokeCall(
 class SpillRetExprHelper
 {
 public:
-    SpillRetExprHelper(Compiler* comp) : comp(comp) {}
+    SpillRetExprHelper(Compiler* comp)
+        : comp(comp)
+    {
+    }
 
     void StoreRetExprResultsInArgs(GenTreeCall* call)
     {
@@ -8430,14 +8432,13 @@ void Compiler::impCheckCanInline(GenTreeCall*           call,
     param.ppInlineCandidateInfo = ppInlineCandidateInfo;
 
     bool success = eeRunWithErrorTrap<Param>(
-        [](Param* pParam)
-        {
-            // Cache some frequently accessed state.
-            //
-            Compiler* const       compiler     = pParam->pThis;
-            COMP_HANDLE           compCompHnd  = compiler->info.compCompHnd;
-            CORINFO_METHOD_HANDLE ftn          = pParam->fncHandle;
-            InlineResult* const   inlineResult = pParam->result;
+        [](Param* pParam) {
+        // Cache some frequently accessed state.
+        //
+        Compiler* const       compiler     = pParam->pThis;
+        COMP_HANDLE           compCompHnd  = compiler->info.compCompHnd;
+        CORINFO_METHOD_HANDLE ftn          = pParam->fncHandle;
+        InlineResult* const   inlineResult = pParam->result;
 
 #ifdef DEBUG
         if (JitConfig.JitNoInline())
@@ -8450,21 +8451,21 @@ void Compiler::impCheckCanInline(GenTreeCall*           call,
         JITDUMP("\nCheckCanInline: fetching method info for inline candidate %s -- context %p\n",
                 compiler->eeGetMethodName(ftn), compiler->dspPtr(pParam->exactContextHnd));
 
-            if (pParam->exactContextHnd == METHOD_BEING_COMPILED_CONTEXT())
-            {
-                JITDUMP("Current method context\n");
-            }
-            else if ((((size_t)pParam->exactContextHnd & CORINFO_CONTEXTFLAGS_MASK) == CORINFO_CONTEXTFLAGS_METHOD))
-            {
-                JITDUMP("Method context: %s\n",
-                        compiler->eeGetMethodFullName((CORINFO_METHOD_HANDLE)pParam->exactContextHnd));
-            }
-            else
-            {
-                JITDUMP("Class context: %s\n",
-                        compiler->eeGetClassName(
-                            (CORINFO_CLASS_HANDLE)((size_t)pParam->exactContextHnd & ~CORINFO_CONTEXTFLAGS_MASK)));
-            }
+        if (pParam->exactContextHnd == METHOD_BEING_COMPILED_CONTEXT())
+        {
+            JITDUMP("Current method context\n");
+        }
+        else if ((((size_t)pParam->exactContextHnd & CORINFO_CONTEXTFLAGS_MASK) == CORINFO_CONTEXTFLAGS_METHOD))
+        {
+            JITDUMP("Method context: %s\n",
+                    compiler->eeGetMethodFullName((CORINFO_METHOD_HANDLE)pParam->exactContextHnd));
+        }
+        else
+        {
+            JITDUMP("Class context: %s\n",
+                    compiler->eeGetClassName(
+                        (CORINFO_CLASS_HANDLE)((size_t)pParam->exactContextHnd & ~CORINFO_CONTEXTFLAGS_MASK)));
+        }
 
         // Fetch method info. This may fail, if the method doesn't have IL.
         //

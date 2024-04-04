@@ -2833,7 +2833,11 @@ class RegGraph
     ArrayStack<RegNode*> m_nodes;
 
 public:
-    RegGraph(Compiler* compiler) : m_comp(compiler), m_nodes(compiler->getAllocator(CMK_Codegen)) {}
+    RegGraph(Compiler* compiler)
+        : m_comp(compiler)
+        , m_nodes(compiler->getAllocator(CMK_Codegen))
+    {
+    }
 
     RegNode* GetOrAdd(regNumber reg, var_types type)
     {
@@ -6352,8 +6356,7 @@ void CodeGen::genReportRichDebugInfoInlineTreeToFile(FILE* file, InlineContext* 
         fprintf(file, "\"ILOffset\":%u,", context->GetLocation().GetOffset());
         fprintf(file, "\"LocationFlags\":%u,", (uint32_t)context->GetLocation().EncodeSourceTypes());
         fprintf(file, "\"ExactILOffset\":%u,", context->GetActualCallOffset());
-        auto append = [&]()
-        {
+        auto append = [&]() {
             char        buffer[256];
             const char* methodName = compiler->eeGetMethodName(context->GetCallee(), buffer, sizeof(buffer));
             fprintf(file, "\"MethodName\":\"%s\",", methodName);

@@ -129,9 +129,17 @@ inline const char* GCtypeStr(GCtype gcType)
 class emitLocation
 {
 public:
-    emitLocation() : ig(nullptr), codePos(0) {}
+    emitLocation()
+        : ig(nullptr)
+        , codePos(0)
+    {
+    }
 
-    emitLocation(insGroup* _ig) : ig(_ig), codePos(0) {}
+    emitLocation(insGroup* _ig)
+        : ig(_ig)
+        , codePos(0)
+    {
+    }
 
     emitLocation(insGroup* _ig, unsigned _codePos)
     {
@@ -143,7 +151,11 @@ public:
         CaptureLocation(emit);
     }
 
-    emitLocation(void* emitCookie) : ig((insGroup*)emitCookie), codePos(0) {}
+    emitLocation(void* emitCookie)
+        : ig((insGroup*)emitCookie)
+        , codePos(0)
+    {
+    }
 
     // A constructor for code that needs to call it explicitly.
     void Init()
@@ -284,10 +296,10 @@ struct insGroup
 #define IGF_BYREF_REGS     0x0002 // new set of live by-ref registers
 #define IGF_FUNCLET_PROLOG 0x0004 // this group belongs to a funclet prolog
 #define IGF_FUNCLET_EPILOG 0x0008 // this group belongs to a funclet epilog.
-#define IGF_EPILOG 0x0010         // this group belongs to a main function epilog
-#define IGF_NOGCINTERRUPT 0x0020  // this IG is in a no-interrupt region (prolog, epilog, etc.)
-#define IGF_UPD_ISZ 0x0040        // some instruction sizes updated
-#define IGF_PLACEHOLDER 0x0080    // this is a placeholder group, to be filled in later
+#define IGF_EPILOG         0x0010 // this group belongs to a main function epilog
+#define IGF_NOGCINTERRUPT  0x0020 // this IG is in a no-interrupt region (prolog, epilog, etc.)
+#define IGF_UPD_ISZ        0x0040 // some instruction sizes updated
+#define IGF_PLACEHOLDER    0x0080 // this is a placeholder group, to be filled in later
 #define IGF_EXTEND                                                                                                     \
     0x0100 // this block is conceptually an extension of the previous block
            // and the emitter should continue to track GC info as if there was no new block.
@@ -678,7 +690,9 @@ protected:
         { // not used for LOONGARCH64.
             return (insFormat)0;
         }
-        void idInsFmt(insFormat insFmt) {}
+        void idInsFmt(insFormat insFmt)
+        {
+        }
 #elif defined(TARGET_RISCV64)
         insFormat idInsFmt() const
         {
@@ -797,11 +811,11 @@ protected:
 #endif
 
 #ifdef TARGET_LOONGARCH64
-                                   // TODO-LoongArch64: maybe delete on future.
-            opSize _idOpSize : 3; // operand size: 0=1 , 1=2 , 2=4 , 3=8, 4=16
-        insOpts    _idInsOpt : 6; // loongarch options for special: placeholders. e.g emitIns_R_C, also identifying the
-                                  // accessing a local on stack.
-        unsigned _idLclVar : 1;   // access a local on stack.
+                                    // TODO-LoongArch64: maybe delete on future.
+        opSize  _idOpSize : 3;  // operand size: 0=1 , 1=2 , 2=4 , 3=8, 4=16
+        insOpts _idInsOpt : 6;  // loongarch options for special: placeholders. e.g emitIns_R_C, also identifying the
+                                // accessing a local on stack.
+        unsigned _idLclVar : 1; // access a local on stack.
 #endif
 
 #ifdef TARGET_RISCV64
@@ -2317,7 +2331,11 @@ protected:
         EpilogList*  elNext;
         emitLocation elLoc;
 
-        EpilogList() : elNext(nullptr), elLoc() {}
+        EpilogList()
+            : elNext(nullptr)
+            , elLoc()
+        {
+        }
     };
 
     EpilogList* emitEpilogList; // per method epilog list - head
@@ -3265,7 +3283,13 @@ public:
         UNATIVE_OFFSET dsdOffs;
         UNATIVE_OFFSET alignment; // in bytes, defaults to 4
 
-        dataSecDsc() : dsdList(nullptr), dsdLast(nullptr), dsdOffs(0), alignment(4) {}
+        dataSecDsc()
+            : dsdList(nullptr)
+            , dsdLast(nullptr)
+            , dsdOffs(0)
+            , alignment(4)
+        {
+        }
     };
 
     dataSecDsc emitConsDsc;

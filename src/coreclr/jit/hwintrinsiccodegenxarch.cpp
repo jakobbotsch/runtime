@@ -319,8 +319,7 @@ void CodeGen::genHWIntrinsic(GenTreeHWIntrinsic* node)
                         {
                             regNumber targetReg  = node->GetRegNum();
                             GenTree*  rmOp       = node->Op(1);
-                            auto      emitSwCase = [&](int8_t i)
-                            {
+                            auto      emitSwCase = [&](int8_t i) {
                                 insOpts newInstOptions = AddEmbRoundingMode(instOptions, i);
                                 genHWIntrinsic_R_RM(node, ins, simdSize, targetReg, rmOp, newInstOptions);
                             };
@@ -332,8 +331,7 @@ void CodeGen::genHWIntrinsic(GenTreeHWIntrinsic* node)
                         }
                         case 2:
                         {
-                            auto emitSwCase = [&](int8_t i)
-                            {
+                            auto emitSwCase = [&](int8_t i) {
                                 insOpts newInstOptions = AddEmbRoundingMode(instOptions, i);
                                 genHWIntrinsic_R_R_RM(node, ins, simdSize, newInstOptions);
                             };
@@ -500,8 +498,7 @@ void CodeGen::genHWIntrinsic(GenTreeHWIntrinsic* node)
                 }
                 else if (HWIntrinsicInfo::isImmOp(intrinsicId, op2))
                 {
-                    auto emitSwCase = [&](int8_t i)
-                    {
+                    auto emitSwCase = [&](int8_t i) {
                         if (HWIntrinsicInfo::CopiesUpperBits(intrinsicId))
                         {
                             assert(!op1->isContained());
@@ -1372,8 +1369,7 @@ void CodeGen::genNonTableDrivenHWIntrinsicsJumpTableFallback(GenTreeHWIntrinsic*
             // This intrinsic has several overloads, only the ones with floating number inputs should reach this part.
             assert(varTypeIsFloating(baseType));
             GenTree* rmOp       = node->Op(1);
-            auto     emitSwCase = [&](int8_t i)
-            {
+            auto     emitSwCase = [&](int8_t i) {
                 insOpts newInstOptions = AddEmbRoundingMode(instOptions, i);
                 genHWIntrinsic_R_RM(node, ins, attr, targetReg, rmOp, newInstOptions);
             };
@@ -1394,8 +1390,7 @@ void CodeGen::genNonTableDrivenHWIntrinsicsJumpTableFallback(GenTreeHWIntrinsic*
             attr          = emitTypeSize(targetType);
             GenTree* rmOp = node->Op(1);
 
-            auto emitSwCase = [&](int8_t i)
-            {
+            auto emitSwCase = [&](int8_t i) {
                 insOpts newInstOptions = AddEmbRoundingMode(instOptions, i);
                 genHWIntrinsic_R_RM(node, ins, attr, targetReg, rmOp, newInstOptions);
             };
@@ -1409,8 +1404,7 @@ void CodeGen::genNonTableDrivenHWIntrinsicsJumpTableFallback(GenTreeHWIntrinsic*
         case NI_AVX512F_X64_ConvertScalarToVector128Double:
         {
             assert(varTypeIsLong(baseType));
-            auto emitSwCase = [&](int8_t i)
-            {
+            auto emitSwCase = [&](int8_t i) {
                 insOpts newInstOptions = AddEmbRoundingMode(instOptions, i);
                 genHWIntrinsic_R_R_RM(node, ins, EA_8BYTE, newInstOptions);
             };
@@ -1442,8 +1436,7 @@ void CodeGen::genNonTableDrivenHWIntrinsicsJumpTableFallback(GenTreeHWIntrinsic*
             regNumber op1Reg = op1->GetRegNum();
             regNumber op2Reg = op2->GetRegNum();
 
-            auto emitSwCase = [&](int8_t i)
-            {
+            auto emitSwCase = [&](int8_t i) {
                 insOpts newInstOptions = AddEmbRoundingMode(instOptions, i);
                 genHWIntrinsic_R_R_R_RM(ins, attr, targetReg, op1Reg, op2Reg, op3, newInstOptions);
             };

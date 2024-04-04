@@ -567,52 +567,50 @@ bool emitter::AreUpperBitsZero(regNumber reg, emitAttr size)
 
     bool result = false;
 
-    emitPeepholeIterateLastInstrs(
-        [&](instrDesc* id)
+    emitPeepholeIterateLastInstrs([&](instrDesc* id) {
+        if (emitIsInstrWritingToReg(id, reg))
         {
-            if (emitIsInstrWritingToReg(id, reg))
+            switch (id->idIns())
             {
-                switch (id->idIns())
-                {
-                    // Conservative.
-                    case INS_call:
-                        return PEEPHOLE_ABORT;
+                // Conservative.
+                case INS_call:
+                    return PEEPHOLE_ABORT;
 
-                    // These instructions sign-extend.
-                    case INS_cwde:
-                    case INS_cdq:
-                    case INS_movsx:
-                    case INS_movsxd:
-                        return PEEPHOLE_ABORT;
+                // These instructions sign-extend.
+                case INS_cwde:
+                case INS_cdq:
+                case INS_movsx:
+                case INS_movsxd:
+                    return PEEPHOLE_ABORT;
 
-                    case INS_movzx:
-                        if ((size == EA_1BYTE) || (size == EA_2BYTE))
-                        {
-                            result = (id->idOpSize() <= size);
-                        }
-                        // movzx always zeroes the upper 32 bits.
-                        else if (size == EA_4BYTE)
-                        {
-                            result = true;
-                        }
-                        return PEEPHOLE_ABORT;
+                case INS_movzx:
+                    if ((size == EA_1BYTE) || (size == EA_2BYTE))
+                    {
+                        result = (id->idOpSize() <= size);
+                    }
+                    // movzx always zeroes the upper 32 bits.
+                    else if (size == EA_4BYTE)
+                    {
+                        result = true;
+                    }
+                    return PEEPHOLE_ABORT;
 
-                    default:
-                        break;
-                }
-
-                // otherwise rely on operation size.
-                if (size == EA_4BYTE)
-                {
-                    result = (id->idOpSize() == EA_4BYTE);
-                }
-                return PEEPHOLE_ABORT;
+                default:
+                    break;
             }
-            else
+
+            // otherwise rely on operation size.
+            if (size == EA_4BYTE)
             {
-                return PEEPHOLE_CONTINUE;
+                result = (id->idOpSize() == EA_4BYTE);
             }
-        });
+            return PEEPHOLE_ABORT;
+        }
+        else
+        {
+            return PEEPHOLE_CONTINUE;
+        }
+    });
 
     return result;
 }
@@ -648,41 +646,39 @@ bool emitter::AreUpperBitsSignExtended(regNumber reg, emitAttr size)
 
     bool result = false;
 
-    emitPeepholeIterateLastInstrs(
-        [&](instrDesc* id)
+    emitPeepholeIterateLastInstrs([&](instrDesc* id) {
+        if (emitIsInstrWritingToReg(id, reg))
         {
-            if (emitIsInstrWritingToReg(id, reg))
+            switch (id->idIns())
             {
-                switch (id->idIns())
-                {
-                    // Conservative.
-                    case INS_call:
-                        return PEEPHOLE_ABORT;
+                // Conservative.
+                case INS_call:
+                    return PEEPHOLE_ABORT;
 
-                    case INS_movsx:
-                    case INS_movsxd:
-                        if ((size == EA_1BYTE) || (size == EA_2BYTE))
-                        {
-                            result = (id->idOpSize() <= size);
-                        }
-                        // movsx/movsxd always sign extends to 8 bytes. W-bit is set.
-                        else if (size == EA_4BYTE)
-                        {
-                            result = true;
-                        }
-                        break;
+                case INS_movsx:
+                case INS_movsxd:
+                    if ((size == EA_1BYTE) || (size == EA_2BYTE))
+                    {
+                        result = (id->idOpSize() <= size);
+                    }
+                    // movsx/movsxd always sign extends to 8 bytes. W-bit is set.
+                    else if (size == EA_4BYTE)
+                    {
+                        result = true;
+                    }
+                    break;
 
-                    default:
-                        break;
-                }
-
-                return PEEPHOLE_ABORT;
+                default:
+                    break;
             }
-            else
-            {
-                return PEEPHOLE_CONTINUE;
-            }
-        });
+
+            return PEEPHOLE_ABORT;
+        }
+        else
+        {
+            return PEEPHOLE_CONTINUE;
+        }
+    });
 
     return result;
 }
@@ -893,43 +889,41 @@ bool emitter::IsRedundantCmp(emitAttr size, regNumber reg1, regNumber reg2)
 
     bool result = false;
 
-    emitPeepholeIterateLastInstrs(
-        [&](instrDesc* id)
+    emitPeepholeIterateLastInstrs([&](instrDesc* id) {
+        instruction ins = id->idIns();
+
+        switch (ins)
         {
-            instruction ins = id->idIns();
-
-            switch (ins)
+            case INS_cmp:
             {
-                case INS_cmp:
-                {
-                    // We only care about 'cmp reg, reg'.
-                    if (id->idInsFmt() != IF_RRD_RRD)
-                        return PEEPHOLE_ABORT;
-
-                    if ((id->idReg1() == reg1) && (id->idReg2() == reg2))
-                    {
-                        result = (size == id->idOpSize());
-                    }
-
+                // We only care about 'cmp reg, reg'.
+                if (id->idInsFmt() != IF_RRD_RRD)
                     return PEEPHOLE_ABORT;
+
+                if ((id->idReg1() == reg1) && (id->idReg2() == reg2))
+                {
+                    result = (size == id->idOpSize());
                 }
 
-                default:
-                    break;
-            }
-
-            if (emitDoesInsModifyFlags(ins))
-            {
                 return PEEPHOLE_ABORT;
             }
 
-            if (emitIsInstrWritingToReg(id, reg1) || emitIsInstrWritingToReg(id, reg2))
-            {
-                return PEEPHOLE_ABORT;
-            }
+            default:
+                break;
+        }
 
-            return PEEPHOLE_CONTINUE;
-        });
+        if (emitDoesInsModifyFlags(ins))
+        {
+            return PEEPHOLE_ABORT;
+        }
+
+        if (emitIsInstrWritingToReg(id, reg1) || emitIsInstrWritingToReg(id, reg2))
+        {
+            return PEEPHOLE_ABORT;
+        }
+
+        return PEEPHOLE_CONTINUE;
+    });
 
     return result;
 }

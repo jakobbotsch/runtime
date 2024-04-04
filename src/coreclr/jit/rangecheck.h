@@ -83,9 +83,15 @@ struct Limit
         keUnknown,   // The limit could not be determined.
     };
 
-    Limit() : type(keUndef) {}
+    Limit()
+        : type(keUndef)
+    {
+    }
 
-    Limit(LimitType type) : type(type) {}
+    Limit(LimitType type)
+        : type(type)
+    {
+    }
 
     Limit(LimitType type, int cns)
         : cns(cns)
@@ -244,9 +250,17 @@ struct Range
     Limit uLimit;
     Limit lLimit;
 
-    Range(const Limit& limit) : uLimit(limit), lLimit(limit) {}
+    Range(const Limit& limit)
+        : uLimit(limit)
+        , lLimit(limit)
+    {
+    }
 
-    Range(const Limit& lLimit, const Limit& uLimit) : uLimit(uLimit), lLimit(lLimit) {}
+    Range(const Limit& lLimit, const Limit& uLimit)
+        : uLimit(uLimit)
+        , lLimit(lLimit)
+    {
+    }
 
     Limit& UpperLimit()
     {

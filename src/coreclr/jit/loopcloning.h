@@ -196,7 +196,14 @@ struct ArrIndex
     unsigned                      rank;     // Rank of the array
     BasicBlock*                   useBlock; // Block where the [] occurs
 
-    ArrIndex(CompAllocator alloc) : arrLcl(BAD_VAR_NUM), indLcls(alloc), bndsChks(alloc), rank(0), useBlock(nullptr) {}
+    ArrIndex(CompAllocator alloc)
+        : arrLcl(BAD_VAR_NUM)
+        , indLcls(alloc)
+        , bndsChks(alloc)
+        , rank(0)
+        , useBlock(nullptr)
+    {
+    }
 
 #ifdef DEBUG
     void Print(unsigned dim = -1);
@@ -234,7 +241,10 @@ struct LcOptInfo
     };
 
     OptType optType;
-    LcOptInfo(OptType optType) : optType(optType) {}
+    LcOptInfo(OptType optType)
+        : optType(optType)
+    {
+    }
 
     OptType GetOptType()
     {
@@ -399,7 +409,11 @@ struct LC_Array
     int dim; // "dim" = which index to invoke arrLen on, if -1 invoke on the whole array
              //     Example 1: a[0][1][2] and dim =  2 implies a[0][1].length
              //     Example 2: a[0][1][2] and dim = -1 implies a[0][1][2].length
-    LC_Array() : type(Invalid), dim(-1) {}
+    LC_Array()
+        : type(Invalid)
+        , dim(-1)
+    {
+    }
     LC_Array(ArrType type, ArrIndex* arrIndex, int dim, OperType oper)
         : type(type)
         , arrIndex(arrIndex)
@@ -408,7 +422,13 @@ struct LC_Array
     {
     }
 
-    LC_Array(ArrType type, ArrIndex* arrIndex, OperType oper) : type(type), arrIndex(arrIndex), oper(oper), dim(-1) {}
+    LC_Array(ArrType type, ArrIndex* arrIndex, OperType oper)
+        : type(type)
+        , arrIndex(arrIndex)
+        , oper(oper)
+        , dim(-1)
+    {
+    }
 
     // Equality operator
     bool operator==(const LC_Array& that) const
@@ -488,13 +508,19 @@ private:
         };
     };
 
-    LC_Ident(IdentType type) : type(type) {}
+    LC_Ident(IdentType type)
+        : type(type)
+    {
+    }
 
 public:
     // The type of this object
     IdentType type;
 
-    LC_Ident() : type(Invalid) {}
+    LC_Ident()
+        : type(Invalid)
+    {
+    }
 
     // Equality operator
     bool operator==(const LC_Ident& that) const
@@ -682,8 +708,15 @@ struct LC_Expr
     }
 #endif
 
-    LC_Expr() : type(Invalid) {}
-    explicit LC_Expr(const LC_Ident& ident) : ident(ident), type(Ident) {}
+    LC_Expr()
+        : type(Invalid)
+    {
+    }
+    explicit LC_Expr(const LC_Ident& ident)
+        : ident(ident)
+        , type(Ident)
+    {
+    }
 
     // Convert LC_Expr into a tree node.
     GenTree* ToGenTree(Compiler* comp, BasicBlock* bb);
@@ -718,7 +751,9 @@ struct LC_Condition
     // Check if two conditions can be combined to yield one condition.
     bool Combines(const LC_Condition& cond, LC_Condition* newCond);
 
-    LC_Condition() {}
+    LC_Condition()
+    {
+    }
     LC_Condition(genTreeOps oper, const LC_Expr& op1, const LC_Expr& op2, bool asUnsigned = false)
         : op1(op1)
         , op2(op2)
@@ -755,7 +790,12 @@ struct LC_ArrayDeref
 
     unsigned level;
 
-    LC_ArrayDeref(const LC_Array& array, unsigned level) : array(array), children(nullptr), level(level) {}
+    LC_ArrayDeref(const LC_Array& array, unsigned level)
+        : array(array)
+        , children(nullptr)
+        , level(level)
+    {
+    }
 
     LC_ArrayDeref* Find(unsigned lcl);
 

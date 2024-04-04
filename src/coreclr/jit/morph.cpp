@@ -3609,8 +3609,9 @@ GenTree* Compiler::fgMorphMultiregStructArg(CallArg* arg)
     {
         assert(structSize <= MAX_ARG_REG_COUNT * TARGET_POINTER_SIZE);
 
-        auto getSlotType = [layout](unsigned inx)
-        { return (layout != nullptr) ? layout->GetGCPtrType(inx) : TYP_I_IMPL; };
+        auto getSlotType = [layout](unsigned inx) {
+            return (layout != nullptr) ? layout->GetGCPtrType(inx) : TYP_I_IMPL;
+        };
 
         // Here, we will set the sizes "rounded up" and then adjust the type of the last element below.
         for (unsigned inx = 0, offset = 0; inx < elemCount; inx++)
@@ -3957,21 +3958,19 @@ void Compiler::fgMakeOutgoingStructArgCopy(GenTreeCall* call, CallArg* arg)
     // We do not reuse within a statement.
     if (!opts.MinOpts())
     {
-        found = ForEachHbvBitSet(*fgAvailableOutgoingArgTemps,
-                                 [&](indexType lclNum)
-                                 {
-                                     LclVarDsc*   varDsc = lvaGetDesc((unsigned)lclNum);
-                                     ClassLayout* layout = varDsc->GetLayout();
-                                     if (!layout->IsBlockLayout() && (layout->GetClassHandle() == copyBlkClass))
-                                     {
-                                         tmp = (unsigned)lclNum;
-                                         JITDUMP("reusing outgoing struct arg V%02u\n", tmp);
-                                         fgAvailableOutgoingArgTemps->clearBit(lclNum);
-                                         return HbvWalk::Abort;
-                                     }
+        found = ForEachHbvBitSet(*fgAvailableOutgoingArgTemps, [&](indexType lclNum) {
+            LclVarDsc*   varDsc = lvaGetDesc((unsigned)lclNum);
+            ClassLayout* layout = varDsc->GetLayout();
+            if (!layout->IsBlockLayout() && (layout->GetClassHandle() == copyBlkClass))
+            {
+                tmp = (unsigned)lclNum;
+                JITDUMP("reusing outgoing struct arg V%02u\n", tmp);
+                fgAvailableOutgoingArgTemps->clearBit(lclNum);
+                return HbvWalk::Abort;
+            }
 
-                                     return HbvWalk::Continue;
-                                 }) == HbvWalk::Abort;
+            return HbvWalk::Continue;
+        }) == HbvWalk::Abort;
     }
 
     // Create the CopyBlk tree and insert it.
@@ -5330,8 +5329,7 @@ bool Compiler::fgCanFastTailCall(GenTreeCall* callee, const char** failReason)
     unsigned calleeArgStackSize = 0;
     unsigned callerArgStackSize = info.compArgStackSize;
 
-    auto reportFastTailCallDecision = [&](const char* thisFailReason)
-    {
+    auto reportFastTailCallDecision = [&](const char* thisFailReason) {
         if (failReason != nullptr)
         {
             *failReason = thisFailReason;
@@ -5659,8 +5657,7 @@ GenTree* Compiler::fgMorphPotentialTailCall(GenTreeCall* call)
     // It cannot be an inline candidate
     assert(!call->IsInlineCandidate());
 
-    auto failTailCall = [&](const char* reason, unsigned lclNum = BAD_VAR_NUM)
-    {
+    auto failTailCall = [&](const char* reason, unsigned lclNum = BAD_VAR_NUM) {
 #ifdef DEBUG
         if (verbose)
         {
@@ -6858,8 +6855,7 @@ GenTree* Compiler::getRuntimeLookupTree(CORINFO_RESOLVED_TOKEN* pResolvedToken,
 
     ArrayStack<GenTree*> stmts(getAllocator(CMK_ArrayStack));
 
-    auto cloneTree = [&](GenTree** tree DEBUGARG(const char* reason)) -> GenTree*
-    {
+    auto cloneTree = [&](GenTree** tree DEBUGARG(const char* reason)) -> GenTree* {
         if (!((*tree)->gtFlags & GTF_GLOB_EFFECT))
         {
             GenTree* clone = gtClone(*tree, true);
@@ -7776,8 +7772,7 @@ GenTree* Compiler::fgMorphCall(GenTreeCall* call)
             }
 
 #ifdef DEBUG
-            auto resetMorphedFlag = [](GenTree** slot, fgWalkData* data) -> fgWalkResult
-            {
+            auto resetMorphedFlag = [](GenTree** slot, fgWalkData* data) -> fgWalkResult {
                 (*slot)->gtDebugFlags &= ~GTF_DEBUG_NODE_MORPHED;
                 return WALK_CONTINUE;
             };
@@ -11327,8 +11322,7 @@ GenTree* Compiler::fgOptimizeRelationalComparisonWithCasts(GenTreeOp* cmp)
         return cmp;
     }
 
-    auto supportedOp = [](GenTree* op)
-    {
+    auto supportedOp = [](GenTree* op) {
         if (op->IsIntegralConst())
         {
             return true;
@@ -11358,8 +11352,7 @@ GenTree* Compiler::fgOptimizeRelationalComparisonWithCasts(GenTreeOp* cmp)
         return cmp;
     }
 
-    auto isUpperZero = [this](GenTree* op)
-    {
+    auto isUpperZero = [this](GenTree* op) {
         if (op->IsIntegralConst())
         {
             int64_t lng = op->AsIntConCommon()->LngValue();
@@ -11385,8 +11378,7 @@ GenTree* Compiler::fgOptimizeRelationalComparisonWithCasts(GenTreeOp* cmp)
 
         cmp->SetUnsigned();
 
-        auto transform = [this](GenTree** use)
-        {
+        auto transform = [this](GenTree** use) {
             if ((*use)->IsIntegralConst())
             {
                 (*use)->BashToConst(static_cast<int>((*use)->AsIntConCommon()->LngValue()));
@@ -12877,8 +12869,7 @@ void Compiler::fgAssertionGen(GenTree* tree)
     // Helper to note when an existing assertion has been
     // brought back to life.
     //
-    auto announce = [&](AssertionIndex apIndex, const char* condition)
-    {
+    auto announce = [&](AssertionIndex apIndex, const char* condition) {
 #ifdef DEBUG
         if (verbose)
         {
@@ -13500,7 +13491,10 @@ void Compiler::fgMorphStmtBlockOps(BasicBlock* block, Statement* stmt)
             DoPostOrder = true,
         };
 
-        Visitor(Compiler* comp) : GenTreeVisitor(comp) {}
+        Visitor(Compiler* comp)
+            : GenTreeVisitor(comp)
+        {
+        }
 
         fgWalkResult PostOrderVisit(GenTree** use, GenTree* user)
         {
@@ -14972,7 +14966,10 @@ PhaseStatus Compiler::fgMarkImplicitByRefCopyOmissionCandidates()
             UseExecutionOrder = true,
         };
 
-        Visitor(Compiler* comp) : GenTreeVisitor(comp) {}
+        Visitor(Compiler* comp)
+            : GenTreeVisitor(comp)
+        {
+        }
 
         fgWalkResult PreOrderVisit(GenTree** use, GenTree* user)
         {

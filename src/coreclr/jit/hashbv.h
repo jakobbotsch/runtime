@@ -124,7 +124,9 @@ public:
 
 public:
     hashBvNode(indexType base);
-    hashBvNode() {}
+    hashBvNode()
+    {
+    }
     static hashBvNode* Create(indexType base, Compiler* comp);
     void               Reconstruct(indexType base);
     int                numElements()

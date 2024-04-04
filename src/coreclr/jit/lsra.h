@@ -83,10 +83,16 @@ struct RefInfo
     RefPosition* ref;
     GenTree*     treeNode;
 
-    RefInfo(RefPosition* r, GenTree* t) : ref(r), treeNode(t) {}
+    RefInfo(RefPosition* r, GenTree* t)
+        : ref(r)
+        , treeNode(t)
+    {
+    }
 
     // default constructor for data structures
-    RefInfo() {}
+    RefInfo()
+    {
+    }
 };
 
 //------------------------------------------------------------------------
@@ -103,7 +109,10 @@ class RefInfoListNode final : public RefInfo
     RefInfoListNode* m_next; // The next node in the list
 
 public:
-    RefInfoListNode(RefPosition* r, GenTree* t) : RefInfo(r, t) {}
+    RefInfoListNode(RefPosition* r, GenTree* t)
+        : RefInfo(r, t)
+    {
+    }
 
     //------------------------------------------------------------------------
     // RefInfoListNode::Next: Returns the next node in the list.
@@ -128,7 +137,11 @@ class RefInfoList final
     RefInfoListNode* m_tail; // The tail of the list
 
 public:
-    RefInfoList() : m_head(nullptr), m_tail(nullptr) {}
+    RefInfoList()
+        : m_head(nullptr)
+        , m_tail(nullptr)
+    {
+    }
 
     RefInfoList(RefInfoListNode* node)
         : m_head(node)

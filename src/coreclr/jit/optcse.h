@@ -31,9 +31,13 @@ protected:
 #endif
 
 public:
-    virtual void Initialize() {}
+    virtual void Initialize()
+    {
+    }
 
-    virtual void SortCandidates() {}
+    virtual void SortCandidates()
+    {
+    }
 
     virtual bool PromotionCheck(CSE_Candidate* candidate)
     {
@@ -58,7 +62,9 @@ public:
         return false;
     }
 
-    virtual void AdjustHeuristic(CSE_Candidate* candidate) {}
+    virtual void AdjustHeuristic(CSE_Candidate* candidate)
+    {
+    }
 
     virtual const char* Name() const
     {

@@ -162,7 +162,10 @@ class MemoryKindIterator
     int value;
 
 public:
-    explicit inline MemoryKindIterator(int val) : value(val) {}
+    explicit inline MemoryKindIterator(int val)
+        : value(val)
+    {
+    }
     inline MemoryKindIterator& operator++()
     {
         ++value;
@@ -189,7 +192,9 @@ public:
 // Empty struct that allows enumerating memory kinds via `for(MemoryKind kind : allMemoryKinds())`
 struct allMemoryKinds
 {
-    inline allMemoryKinds() {}
+    inline allMemoryKinds()
+    {
+    }
     inline MemoryKindIterator begin()
     {
         return MemoryKindIterator(0);
@@ -240,7 +245,10 @@ class PredEdgeList
     };
 
 public:
-    PredEdgeList(FlowEdge* pred) : m_begin(pred) {}
+    PredEdgeList(FlowEdge* pred)
+        : m_begin(pred)
+    {
+    }
 
     iterator begin() const
     {
@@ -291,7 +299,10 @@ class PredBlockList
     };
 
 public:
-    PredBlockList(FlowEdge* pred) : m_begin(pred) {}
+    PredBlockList(FlowEdge* pred)
+        : m_begin(pred)
+    {
+    }
 
     iterator begin() const
     {
@@ -314,7 +325,10 @@ class BBArrayIterator
     FlowEdge* const* m_edgeEntry;
 
 public:
-    BBArrayIterator(FlowEdge* const* edgeEntry) : m_edgeEntry(edgeEntry) {}
+    BBArrayIterator(FlowEdge* const* edgeEntry)
+        : m_edgeEntry(edgeEntry)
+    {
+    }
 
     BasicBlock* operator*() const;
 
@@ -341,7 +355,10 @@ class FlowEdgeArrayIterator
     FlowEdge* const* m_edgeEntry;
 
 public:
-    FlowEdgeArrayIterator(FlowEdge* const* edgeEntry) : m_edgeEntry(edgeEntry) {}
+    FlowEdgeArrayIterator(FlowEdge* const* edgeEntry)
+        : m_edgeEntry(edgeEntry)
+    {
+    }
 
     FlowEdge* operator*() const
     {
@@ -1619,7 +1636,11 @@ public:
             return m_ssaNum;
         }
 
-        MemoryPhiArg(unsigned ssaNum, MemoryPhiArg* nextArg = nullptr) : m_ssaNum(ssaNum), m_nextArg(nextArg) {}
+        MemoryPhiArg(unsigned ssaNum, MemoryPhiArg* nextArg = nullptr)
+            : m_ssaNum(ssaNum)
+            , m_nextArg(nextArg)
+        {
+        }
 
         void* operator new(size_t sz, class Compiler* comp);
     };
@@ -1759,7 +1780,12 @@ public:
     Statement* FirstNonPhiDef() const;
     Statement* FirstNonPhiDefOrCatchArgStore() const;
 
-    BasicBlock() : bbStmtList(nullptr), bbLiveIn(VarSetOps::UninitVal()), bbLiveOut(VarSetOps::UninitVal()) {}
+    BasicBlock()
+        : bbStmtList(nullptr)
+        , bbLiveIn(VarSetOps::UninitVal())
+        , bbLiveOut(VarSetOps::UninitVal())
+    {
+    }
 
     // Iteratable collection of successors of a block.
     template <typename TPosition>
@@ -1769,7 +1795,11 @@ public:
         BasicBlock* m_block;
 
     public:
-        Successors(Compiler* comp, BasicBlock* block) : m_comp(comp), m_block(block) {}
+        Successors(Compiler* comp, BasicBlock* block)
+            : m_comp(comp)
+            , m_block(block)
+        {
+        }
 
         class iterator
         {
@@ -1778,9 +1808,17 @@ public:
             TPosition   m_pos;
 
         public:
-            iterator(Compiler* comp, BasicBlock* block) : m_comp(comp), m_block(block), m_pos(comp, block) {}
+            iterator(Compiler* comp, BasicBlock* block)
+                : m_comp(comp)
+                , m_block(block)
+                , m_pos(comp, block)
+            {
+            }
 
-            iterator() : m_pos() {}
+            iterator()
+                : m_pos()
+            {
+            }
 
             void operator++(void)
             {
@@ -1851,7 +1889,10 @@ public:
     class BBSuccList : private SuccList
     {
     public:
-        BBSuccList(const BasicBlock* block) : SuccList(block) {}
+        BBSuccList(const BasicBlock* block)
+            : SuccList(block)
+        {
+        }
 
         BBArrayIterator begin() const
         {
@@ -1871,7 +1912,10 @@ public:
     class BBSuccEdgeList : private SuccList
     {
     public:
-        BBSuccEdgeList(const BasicBlock* block) : SuccList(block) {}
+        BBSuccEdgeList(const BasicBlock* block)
+            : SuccList(block)
+        {
+        }
 
         FlowEdgeArrayIterator begin() const
         {
@@ -1932,7 +1976,11 @@ public:
         };
 
     public:
-        BBCompilerSuccList(Compiler* comp, BasicBlock* block) : m_comp(comp), m_block(block) {}
+        BBCompilerSuccList(Compiler* comp, BasicBlock* block)
+            : m_comp(comp)
+            , m_block(block)
+        {
+        }
 
         iterator begin() const
         {
@@ -1993,7 +2041,11 @@ public:
         };
 
     public:
-        BBCompilerSuccEdgeList(Compiler* comp, BasicBlock* block) : m_comp(comp), m_block(block) {}
+        BBCompilerSuccEdgeList(Compiler* comp, BasicBlock* block)
+            : m_comp(comp)
+            , m_block(block)
+        {
+        }
 
         iterator begin() const
         {
@@ -2101,7 +2153,10 @@ class BasicBlockIterator
     BasicBlock* m_block;
 
 public:
-    BasicBlockIterator(BasicBlock* block) : m_block(block) {}
+    BasicBlockIterator(BasicBlock* block)
+        : m_block(block)
+    {
+    }
 
     BasicBlock* operator*() const
     {
@@ -2135,7 +2190,10 @@ class BasicBlockSimpleList
     BasicBlock* m_begin;
 
 public:
-    BasicBlockSimpleList(BasicBlock* begin) : m_begin(begin) {}
+    BasicBlockSimpleList(BasicBlock* begin)
+        : m_begin(begin)
+    {
+    }
 
     BasicBlockIterator begin() const
     {
@@ -2205,7 +2263,11 @@ struct BBswtDesc
     bool bbsHasDefault;      // true if last switch case is a default case
     bool bbsHasDominantCase; // true if switch has a dominant case
 
-    BBswtDesc() : bbsHasDefault(true), bbsHasDominantCase(false) {}
+    BBswtDesc()
+        : bbsHasDefault(true)
+        , bbsHasDominantCase(false)
+    {
+    }
 
     BBswtDesc(const BBswtDesc* other);
 
@@ -2254,7 +2316,11 @@ struct BBehfDesc
     FlowEdge** bbeSuccs; // array of `FlowEdge*` pointing to BBJ_EHFINALLYRET block successors
     unsigned   bbeCount; // size of `bbeSuccs` array
 
-    BBehfDesc() : bbeSuccs(nullptr), bbeCount(0) {}
+    BBehfDesc()
+        : bbeSuccs(nullptr)
+        , bbeCount(0)
+    {
+    }
 
     BBehfDesc(Compiler* comp, const BBehfDesc* other);
 };
@@ -2362,9 +2428,17 @@ struct BasicBlockList
     BasicBlockList* next;  // The next BasicBlock in the list, nullptr for end of list.
     BasicBlock*     block; // The BasicBlock of interest.
 
-    BasicBlockList() : next(nullptr), block(nullptr) {}
+    BasicBlockList()
+        : next(nullptr)
+        , block(nullptr)
+    {
+    }
 
-    BasicBlockList(BasicBlock* blk, BasicBlockList* rest) : next(rest), block(blk) {}
+    BasicBlockList(BasicBlock* blk, BasicBlockList* rest)
+        : next(rest)
+        , block(blk)
+    {
+    }
 };
 
 // FlowEdge implementations (that are required to be defined after the declaration of BasicBlock)

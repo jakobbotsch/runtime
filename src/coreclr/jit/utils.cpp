@@ -1189,21 +1189,19 @@ void NodeCounts::dump(FILE* output)
         sorted[i].count = static_cast<unsigned>(m_counts[i]);
     }
 
-    jitstd::sort(sorted, sorted + ArrLen(sorted),
-                 [](const Entry& lhs, const Entry& rhs)
-                 {
-                     if (lhs.count > rhs.count)
-                     {
-                         return true;
-                     }
+    jitstd::sort(sorted, sorted + ArrLen(sorted), [](const Entry& lhs, const Entry& rhs) {
+        if (lhs.count > rhs.count)
+        {
+            return true;
+        }
 
-                     if (lhs.count < rhs.count)
-                     {
-                         return false;
-                     }
+        if (lhs.count < rhs.count)
+        {
+            return false;
+        }
 
-                     return static_cast<unsigned>(lhs.oper) < static_cast<unsigned>(rhs.oper);
-                 });
+        return static_cast<unsigned>(lhs.oper) < static_cast<unsigned>(rhs.oper);
+    });
 
     for (const Entry& entry : sorted)
     {
@@ -2159,7 +2157,10 @@ double CachedCyclesPerSecond()
 }
 
 #ifdef FEATURE_JIT_METHOD_PERF
-CycleCount::CycleCount() : cps(CachedCyclesPerSecond()) {}
+CycleCount::CycleCount()
+    : cps(CachedCyclesPerSecond())
+{
+}
 
 bool CycleCount::GetCycles(unsigned __int64* time)
 {

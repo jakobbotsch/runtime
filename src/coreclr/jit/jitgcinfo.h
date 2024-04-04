@@ -23,7 +23,9 @@ struct RegSlotIdKey
     unsigned short m_regNum;
     unsigned short m_flags;
 
-    RegSlotIdKey() {}
+    RegSlotIdKey()
+    {
+    }
 
     RegSlotIdKey(unsigned short regNum, unsigned flags)
         : m_regNum(regNum)
@@ -49,7 +51,9 @@ struct StackSlotIdKey
     bool           m_fpRel;
     unsigned short m_flags;
 
-    StackSlotIdKey() {}
+    StackSlotIdKey()
+    {
+    }
 
     StackSlotIdKey(int offset, bool fpRel, unsigned flags)
         : m_offset(offset)

@@ -2653,21 +2653,19 @@ void LinearScan::buildIntervals()
                 VarSetOps::DiffD(compiler, expUseSet, nextBlock->bbLiveIn);
             }
 
-            block->VisitAllSuccs(compiler,
-                                 [=, &expUseSet](BasicBlock* succ)
-                                 {
-                                     if (VarSetOps::IsEmpty(compiler, expUseSet))
-                                     {
-                                         return BasicBlockVisit::Abort;
-                                     }
+            block->VisitAllSuccs(compiler, [=, &expUseSet](BasicBlock* succ) {
+                if (VarSetOps::IsEmpty(compiler, expUseSet))
+                {
+                    return BasicBlockVisit::Abort;
+                }
 
-                                     if (!isBlockVisited(succ))
-                                     {
-                                         VarSetOps::DiffD(compiler, expUseSet, succ->bbLiveIn);
-                                     }
+                if (!isBlockVisited(succ))
+                {
+                    VarSetOps::DiffD(compiler, expUseSet, succ->bbLiveIn);
+                }
 
-                                     return BasicBlockVisit::Continue;
-                                 });
+                return BasicBlockVisit::Continue;
+            });
 
             if (!VarSetOps::IsEmpty(compiler, expUseSet))
             {

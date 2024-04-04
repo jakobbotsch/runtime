@@ -67,7 +67,10 @@
 class IndirectCallTransformer
 {
 public:
-    IndirectCallTransformer(Compiler* compiler) : compiler(compiler) {}
+    IndirectCallTransformer(Compiler* compiler)
+        : compiler(compiler)
+    {
+    }
 
     //------------------------------------------------------------------------
     // Run: run transformation for each block.
@@ -366,7 +369,9 @@ private:
         }
 
         // FixupRetExpr: no action needed as we handle this in the importer.
-        virtual void FixupRetExpr() {}
+        virtual void FixupRetExpr()
+        {
+        }
 
         //------------------------------------------------------------------------
         // CreateCheck: create check block, that checks fat pointer bit set.

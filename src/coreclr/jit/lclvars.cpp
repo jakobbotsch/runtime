@@ -2604,8 +2604,9 @@ void Compiler::StructPromotionHelper::SortStructFields()
     if (!structPromotionInfo.fieldsSorted)
     {
         jitstd::sort(structPromotionInfo.fields, structPromotionInfo.fields + structPromotionInfo.fieldCnt,
-                     [](const lvaStructFieldInfo& lhs, const lvaStructFieldInfo& rhs)
-                     { return lhs.fldOffset < rhs.fldOffset; });
+                     [](const lvaStructFieldInfo& lhs, const lvaStructFieldInfo& rhs) {
+            return lhs.fldOffset < rhs.fldOffset;
+        });
         structPromotionInfo.fieldsSorted = true;
     }
 }
@@ -3302,8 +3303,7 @@ void Compiler::makeExtraStructQueries(CORINFO_CLASS_HANDLE structHandle, int lev
 #endif
 
     // In a lambda since this requires a lot of stack and this function is recursive.
-    auto queryLayout = [this, structHandle]()
-    {
+    auto queryLayout = [this, structHandle]() {
         CORINFO_TYPE_LAYOUT_NODE nodes[256];
         size_t                   numNodes = ArrLen(nodes);
         info.compCompHnd->getTypeLayout(structHandle, nodes, &numNodes);

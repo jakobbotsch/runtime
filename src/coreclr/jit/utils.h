@@ -88,7 +88,11 @@ class IteratorPair
     TIterator m_end;
 
 public:
-    IteratorPair(TIterator begin, TIterator end) : m_begin(begin), m_end(end) {}
+    IteratorPair(TIterator begin, TIterator end)
+        : m_begin(begin)
+        , m_end(end)
+    {
+    }
 
     inline TIterator begin()
     {
@@ -245,7 +249,11 @@ private:
 class ConfigIntArray
 {
 public:
-    ConfigIntArray() : m_values(nullptr), m_length(0) {}
+    ConfigIntArray()
+        : m_values(nullptr)
+        , m_length(0)
+    {
+    }
 
     // Ensure the string has been parsed.
     void EnsureInit(const WCHAR* str)
@@ -277,7 +285,11 @@ private:
 class ConfigDoubleArray
 {
 public:
-    ConfigDoubleArray() : m_values(nullptr), m_length(0) {}
+    ConfigDoubleArray()
+        : m_values(nullptr)
+        , m_length(0)
+    {
+    }
 
     // Ensure the string has been parsed.
     void EnsureInit(const WCHAR* str)

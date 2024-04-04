@@ -1568,7 +1568,12 @@ struct MapMethodDefsData
     BasicBlock* block;
     Statement*  stmt;
 
-    MapMethodDefsData(RangeCheck* rc, BasicBlock* block, Statement* stmt) : rc(rc), block(block), stmt(stmt) {}
+    MapMethodDefsData(RangeCheck* rc, BasicBlock* block, Statement* stmt)
+        : rc(rc)
+        , block(block)
+        , stmt(stmt)
+    {
+    }
 };
 
 Compiler::fgWalkResult MapMethodDefsVisitor(GenTree** ptr, Compiler::fgWalkData* data)

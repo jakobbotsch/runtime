@@ -10929,8 +10929,7 @@ void Compiler::impPoisonImplicitByrefsBeforeReturn()
         ClassLayout* layout = dsc->GetLayout();
         assert(layout != nullptr);
 
-        auto poisonBlock = [this, lclNum](unsigned start, unsigned count)
-        {
+        auto poisonBlock = [this, lclNum](unsigned start, unsigned count) {
             if (count <= 0)
             {
                 return;

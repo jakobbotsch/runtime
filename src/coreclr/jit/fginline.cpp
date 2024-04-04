@@ -214,7 +214,10 @@ public:
         UseExecutionOrder = true,
     };
 
-    SubstitutePlaceholdersAndDevirtualizeWalker(Compiler* comp) : GenTreeVisitor(comp) {}
+    SubstitutePlaceholdersAndDevirtualizeWalker(Compiler* comp)
+        : GenTreeVisitor(comp)
+    {
+    }
 
     bool MadeChanges()
     {
@@ -1172,10 +1175,9 @@ void Compiler::fgInvokeInlineeCompiler(GenTreeCall* call, InlineResult* inlineRe
     param.inlineCandidateInfo = inlineCandidateInfo;
     param.inlineInfo          = &inlineInfo;
     bool success              = eeRunWithErrorTrap<Param>(
-        [](Param* pParam)
-        {
-            // Init the local var info of the inlinee
-            pParam->pThis->impInlineInitVars(pParam->inlineInfo);
+        [](Param* pParam) {
+        // Init the local var info of the inlinee
+        pParam->pThis->impInlineInitVars(pParam->inlineInfo);
 
         if (pParam->inlineInfo->inlineResult->IsCandidate())
         {
@@ -1211,31 +1213,31 @@ void Compiler::fgInvokeInlineeCompiler(GenTreeCall* call, InlineResult* inlineRe
                          pParam->pThis->eeGetMethodFullName(pParam->fncHandle),
                          pParam->pThis->dspPtr(pParam->inlineInfo->tokenLookupContextHandle)));
 
-                // The inline context is part of debug info and must be created
-                // before we start creating statements; we lazily create it as
-                // late as possible, which is here.
-                pParam->inlineInfo->inlineContext =
-                    pParam->inlineInfo->InlineRoot->m_inlineStrategy
-                        ->NewContext(pParam->inlineInfo->inlineCandidateInfo->inlinersContext,
-                                                  pParam->inlineInfo->iciStmt, pParam->inlineInfo->iciCall);
-                pParam->inlineInfo->argCnt                   = pParam->inlineCandidateInfo->methInfo.args.totalILArgs();
-                pParam->inlineInfo->tokenLookupContextHandle = pParam->inlineCandidateInfo->exactContextHnd;
+            // The inline context is part of debug info and must be created
+            // before we start creating statements; we lazily create it as
+            // late as possible, which is here.
+            pParam->inlineInfo->inlineContext =
+                pParam->inlineInfo->InlineRoot->m_inlineStrategy
+                    ->NewContext(pParam->inlineInfo->inlineCandidateInfo->inlinersContext, pParam->inlineInfo->iciStmt,
+                                              pParam->inlineInfo->iciCall);
+            pParam->inlineInfo->argCnt                   = pParam->inlineCandidateInfo->methInfo.args.totalILArgs();
+            pParam->inlineInfo->tokenLookupContextHandle = pParam->inlineCandidateInfo->exactContextHnd;
 
-                JITLOG_THIS(pParam->pThis,
-                                         (LL_INFO100000, "INLINER: inlineInfo.tokenLookupContextHandle for %s set to 0x%p:\n",
-                             pParam->pThis->eeGetMethodFullName(pParam->fncHandle),
-                             pParam->pThis->dspPtr(pParam->inlineInfo->tokenLookupContextHandle)));
+            JITLOG_THIS(pParam->pThis,
+                                     (LL_INFO100000, "INLINER: inlineInfo.tokenLookupContextHandle for %s set to 0x%p:\n",
+                         pParam->pThis->eeGetMethodFullName(pParam->fncHandle),
+                         pParam->pThis->dspPtr(pParam->inlineInfo->tokenLookupContextHandle)));
 
-                JitFlags compileFlagsForInlinee = *pParam->pThis->opts.jitFlags;
+            JitFlags compileFlagsForInlinee = *pParam->pThis->opts.jitFlags;
 
-                // The following flags are lost when inlining.
-                // (This is checked in Compiler::compInitOptions().)
-                compileFlagsForInlinee.Clear(JitFlags::JIT_FLAG_BBINSTR);
-                compileFlagsForInlinee.Clear(JitFlags::JIT_FLAG_BBINSTR_IF_LOOPS);
-                compileFlagsForInlinee.Clear(JitFlags::JIT_FLAG_PROF_ENTERLEAVE);
-                compileFlagsForInlinee.Clear(JitFlags::JIT_FLAG_DEBUG_EnC);
-                compileFlagsForInlinee.Clear(JitFlags::JIT_FLAG_REVERSE_PINVOKE);
-                compileFlagsForInlinee.Clear(JitFlags::JIT_FLAG_TRACK_TRANSITIONS);
+            // The following flags are lost when inlining.
+            // (This is checked in Compiler::compInitOptions().)
+            compileFlagsForInlinee.Clear(JitFlags::JIT_FLAG_BBINSTR);
+            compileFlagsForInlinee.Clear(JitFlags::JIT_FLAG_BBINSTR_IF_LOOPS);
+            compileFlagsForInlinee.Clear(JitFlags::JIT_FLAG_PROF_ENTERLEAVE);
+            compileFlagsForInlinee.Clear(JitFlags::JIT_FLAG_DEBUG_EnC);
+            compileFlagsForInlinee.Clear(JitFlags::JIT_FLAG_REVERSE_PINVOKE);
+            compileFlagsForInlinee.Clear(JitFlags::JIT_FLAG_TRACK_TRANSITIONS);
 
 #ifdef DEBUG
             if (pParam->pThis->verbose)

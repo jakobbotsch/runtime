@@ -57,7 +57,11 @@ template <typename A>
 class ActionPhase final : public Phase
 {
 public:
-    ActionPhase(Compiler* _compiler, Phases _phase, A _action) : Phase(_compiler, _phase), action(_action) {}
+    ActionPhase(Compiler* _compiler, Phases _phase, A _action)
+        : Phase(_compiler, _phase)
+        , action(_action)
+    {
+    }
 
 protected:
     virtual PhaseStatus DoPhase() override

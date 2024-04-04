@@ -2251,7 +2251,11 @@ public:
 class InitBlockUnrollHelper
 {
 public:
-    InitBlockUnrollHelper(int dstOffset, unsigned byteCount) : dstStartOffset(dstOffset), byteCount(byteCount) {}
+    InitBlockUnrollHelper(int dstOffset, unsigned byteCount)
+        : dstStartOffset(dstOffset)
+        , byteCount(byteCount)
+    {
+    }
 
     int GetDstOffset() const
     {
@@ -3097,8 +3101,7 @@ void CodeGen::genCodeForMemmove(GenTreeBlk* tree)
     regNumber src  = genConsumeReg(srcIndir->Addr());
     unsigned  size = tree->Size();
 
-    auto emitLoadStore = [&](bool load, unsigned regSize, regNumber tempReg, unsigned offset)
-    {
+    auto emitLoadStore = [&](bool load, unsigned regSize, regNumber tempReg, unsigned offset) {
         var_types memType;
         switch (regSize)
         {
@@ -3147,8 +3150,7 @@ void CodeGen::genCodeForMemmove(GenTreeBlk* tree)
             tempRegs[i] = tree->ExtractTempReg(RBM_ALLFLOAT);
         }
 
-        auto emitSimdLoadStore = [&](bool load)
-        {
+        auto emitSimdLoadStore = [&](bool load) {
             unsigned offset   = 0;
             int      regIndex = 0;
             do

@@ -3077,9 +3077,9 @@ ValueNum ValueNumStore::VNForMapSelectInner(ValueNumKind vnk, var_types type, Va
         FlowGraphNaturalLoop* loop = m_pComp->m_blockToLoop->GetLoop(m_pComp->compCurBB);
         if (loop != nullptr)
         {
-            memoryDependencies.ForEach(
-                [this](ValueNum vn)
-                { m_pComp->optRecordLoopMemoryDependence(m_pComp->compCurTree, m_pComp->compCurBB, vn); });
+            memoryDependencies.ForEach([this](ValueNum vn) {
+                m_pComp->optRecordLoopMemoryDependence(m_pComp->compCurTree, m_pComp->compCurBB, vn);
+            });
         }
     }
 
@@ -3110,12 +3110,10 @@ void ValueNumStore::MapSelectWorkCacheEntry::SetMemoryDependencies(Compiler* com
     }
 
     size_t i = 0;
-    set.ForEach(
-        [&i, arr](ValueNum vn)
-        {
-            arr[i] = vn;
-            i++;
-        });
+    set.ForEach([&i, arr](ValueNum vn) {
+        arr[i] = vn;
+        i++;
+    });
 }
 
 //------------------------------------------------------------------------------
@@ -3456,8 +3454,9 @@ TailCall:
                                 GetMapSelectWorkCache()->Set(fstruct, entry);
                             }
 
-                            recMemoryDependencies.ForEach([this, &memoryDependencies](ValueNum vn)
-                                                          { memoryDependencies.Add(m_pComp, vn); });
+                            recMemoryDependencies.ForEach([this, &memoryDependencies](ValueNum vn) {
+                                memoryDependencies.Add(m_pComp, vn);
+                            });
 
                             return sameSelResult;
                         }
@@ -4827,8 +4826,7 @@ ValueNum ValueNumStore::EvalUsingMathIdentity(var_types typ, VNFunc func, ValueN
     // (0 + x) == x
     // (x + 0) == x
     // This identity does not apply for floating point (when x == -0.0).
-    auto identityForAddition = [=]() -> ValueNum
-    {
+    auto identityForAddition = [=]() -> ValueNum {
         if (!varTypeIsFloating(typ))
         {
             ValueNum ZeroVN = VNZeroForType(typ);
@@ -4848,8 +4846,7 @@ ValueNum ValueNumStore::EvalUsingMathIdentity(var_types typ, VNFunc func, ValueN
     // (x - 0) == x
     // (x - x) == 0
     // This identity does not apply for floating point (when x == -0.0).
-    auto identityForSubtraction = [=](bool ovf) -> ValueNum
-    {
+    auto identityForSubtraction = [=](bool ovf) -> ValueNum {
         if (!varTypeIsFloating(typ))
         {
             ValueNum ZeroVN = VNZeroForType(typ);
@@ -4900,8 +4897,7 @@ ValueNum ValueNumStore::EvalUsingMathIdentity(var_types typ, VNFunc func, ValueN
     };
 
     // These identities do not apply for floating point.
-    auto identityForMultiplication = [=]() -> ValueNum
-    {
+    auto identityForMultiplication = [=]() -> ValueNum {
         if (!varTypeIsFloating(typ))
         {
             // (0 * x) == 0
@@ -5663,9 +5659,8 @@ void Compiler::fgValueNumberLocalStore(GenTree*             storeNode,
     // Should not have been recorded as updating the GC heap.
     assert(!GetMemorySsaMap(GcHeap)->Lookup(storeNode));
 
-    auto processDef =
-        [=](unsigned defLclNum, unsigned defSsaNum, ssize_t defOffset, unsigned defSize, ValueNumPair defValue)
-    {
+    auto processDef = [=](unsigned defLclNum, unsigned defSsaNum, ssize_t defOffset, unsigned defSize,
+                          ValueNumPair defValue) {
         LclVarDsc* defVarDsc = lvaGetDesc(defLclNum);
 
         if (defSsaNum != SsaConfig::RESERVED_SSA_NUM)
@@ -11163,8 +11158,7 @@ bool Compiler::fgValueNumberConstLoad(GenTreeIndir* tree)
     }
 
     // Is given VN representing a frozen object handle
-    auto isCnsObjHandle = [](ValueNumStore* vnStore, ValueNum vn, CORINFO_OBJECT_HANDLE* handle) -> bool
-    {
+    auto isCnsObjHandle = [](ValueNumStore* vnStore, ValueNum vn, CORINFO_OBJECT_HANDLE* handle) -> bool {
         if (vnStore->IsVNObjHandle(vn))
         {
             *handle = vnStore->ConstantObjHandle(vn);
@@ -12009,8 +12003,7 @@ void Compiler::fgValueNumberHWIntrinsic(GenTreeHWIntrinsic* tree)
             JITDUMP("\n");
         }
 
-        auto getOperandVNs = [this, addr](GenTree* operand, ValueNumPair* pNormVNPair, ValueNumPair* pExcVNPair)
-        {
+        auto getOperandVNs = [this, addr](GenTree* operand, ValueNumPair* pNormVNPair, ValueNumPair* pExcVNPair) {
             vnStore->VNPUnpackExc(operand->gtVNPair, pNormVNPair, pExcVNPair);
 
             // If we have a load operation we will use the fgValueNumberByrefExposedLoad
@@ -13755,17 +13748,14 @@ void Compiler::fgDebugCheckExceptionSets()
             assert(tree->gtVNPair.BothDefined() || tree->OperIs(GT_PHI_ARG));
 
             ValueNumPair operandsExcSet = vnStore->VNPForEmptyExcSet();
-            tree->VisitOperands(
-                [&](GenTree* operand) -> GenTree::VisitResult
-                {
-                    CheckTree(operand, vnStore);
+            tree->VisitOperands([&](GenTree* operand) -> GenTree::VisitResult {
+                CheckTree(operand, vnStore);
 
-                    ValueNumPair operandVNP =
-                        operand->gtVNPair.BothDefined() ? operand->gtVNPair : vnStore->VNPForVoid();
-                    operandsExcSet = vnStore->VNPUnionExcSet(operandVNP, operandsExcSet);
+                ValueNumPair operandVNP = operand->gtVNPair.BothDefined() ? operand->gtVNPair : vnStore->VNPForVoid();
+                operandsExcSet          = vnStore->VNPUnionExcSet(operandVNP, operandsExcSet);
 
-                    return GenTree::VisitResult::Continue;
-                });
+                return GenTree::VisitResult::Continue;
+            });
 
             // Currently, we fail to properly maintain the exception sets for trees with user calls.
             if ((tree->gtFlags & GTF_CALL) != 0)
@@ -13947,7 +13937,11 @@ void Compiler::vnPrint(ValueNum vn, unsigned level)
 #endif // DEBUG
 
 // Methods of ValueNumPair.
-ValueNumPair::ValueNumPair() : m_liberal(ValueNumStore::NoVN), m_conservative(ValueNumStore::NoVN) {}
+ValueNumPair::ValueNumPair()
+    : m_liberal(ValueNumStore::NoVN)
+    , m_conservative(ValueNumStore::NoVN)
+{
+}
 
 bool ValueNumPair::BothDefined() const
 {

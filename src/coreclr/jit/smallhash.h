@@ -369,7 +369,10 @@ public:
         }
 
     public:
-        KeyValuePair() : m_bucket(nullptr) {}
+        KeyValuePair()
+            : m_bucket(nullptr)
+        {
+        }
 
         inline TKey& Key()
         {
@@ -409,7 +412,12 @@ public:
         }
 
     public:
-        Iterator() : m_buckets(nullptr), m_numBuckets(0), m_index(0) {}
+        Iterator()
+            : m_buckets(nullptr)
+            , m_numBuckets(0)
+            , m_index(0)
+        {
+        }
 
         KeyValuePair operator*() const
         {
@@ -638,7 +646,10 @@ class HashTable final : public HashTableBase<TKey, TValue, TKeyInfo, TAllocator>
     }
 
 public:
-    HashTable(TAllocator alloc) : TBase(alloc, nullptr, 0) {}
+    HashTable(TAllocator alloc)
+        : TBase(alloc, nullptr, 0)
+    {
+    }
 
     HashTable(TAllocator alloc, unsigned initialSize)
         : TBase(alloc, alloc.template allocate<TBase::Bucket>(RoundUp(initialSize)), RoundUp(initialSize))
@@ -670,7 +681,10 @@ class SmallHashTable final : public HashTableBase<TKey, TValue, TKeyInfo, TAlloc
     typename TBase::Bucket m_inlineBuckets[RoundedNumInlineBuckets];
 
 public:
-    SmallHashTable(TAllocator alloc) : TBase(alloc, m_inlineBuckets, RoundedNumInlineBuckets) {}
+    SmallHashTable(TAllocator alloc)
+        : TBase(alloc, m_inlineBuckets, RoundedNumInlineBuckets)
+    {
+    }
 };
 
 #endif // _SMALLHASHTABLE_H_
