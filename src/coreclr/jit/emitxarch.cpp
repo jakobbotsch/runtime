@@ -1293,10 +1293,10 @@ bool emitter::TakesEvexPrefix(const instrDesc* id) const
 #define DEFAULT_BYTE_EVEX_PREFIX 0x62F07C0800000000ULL
 
 #define DEFAULT_BYTE_EVEX_PREFIX_MASK 0xFFFFFFFF00000000ULL
-#define BBIT_IN_BYTE_EVEX_PREFIX 0x0000001000000000ULL
-#define LBIT_IN_BYTE_EVEX_PREFIX 0x0000002000000000ULL
+#define BBIT_IN_BYTE_EVEX_PREFIX      0x0000001000000000ULL
+#define LBIT_IN_BYTE_EVEX_PREFIX      0x0000002000000000ULL
 #define LPRIMEBIT_IN_BYTE_EVEX_PREFIX 0x0000004000000000ULL
-#define ZBIT_IN_BYTE_EVEX_PREFIX 0x0000008000000000ULL
+#define ZBIT_IN_BYTE_EVEX_PREFIX      0x0000008000000000ULL
 
 //------------------------------------------------------------------------
 // AddEvexPrefix: Add default EVEX prefix with only LL' bits set.
@@ -1466,9 +1466,9 @@ bool emitter::TakesVexPrefix(instruction ins) const
 //   01  - 66     (66 0F - packed double)
 //   10  - F3     (F3 0F - scalar float
 //   11  - F2     (F2 0F - scalar double)
-#define DEFAULT_3BYTE_VEX_PREFIX 0xC4E07800000000ULL
+#define DEFAULT_3BYTE_VEX_PREFIX      0xC4E07800000000ULL
 #define DEFAULT_3BYTE_VEX_PREFIX_MASK 0xFFFFFF00000000ULL
-#define LBIT_IN_3BYTE_VEX_PREFIX 0x00000400000000ULL
+#define LBIT_IN_3BYTE_VEX_PREFIX      0x00000400000000ULL
 emitter::code_t emitter::AddVexPrefix(instruction ins, code_t code, emitAttr attr)
 {
     // The 2-byte VEX encoding is preferred when possible, but actually emitting
@@ -3869,7 +3869,6 @@ inline UNATIVE_OFFSET emitter::emitInsSizeSVCalcDisp(instrDesc* id, code_t code,
 #endif
                 {
                     // Dev10 804810 - failing this assert can lead to bad codegen and runtime crashes
-                    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef UNIX_AMD64_ABI
                     const LclVarDsc* varDsc         = emitComp->lvaGetDesc(var);
@@ -4152,7 +4151,6 @@ UNATIVE_OFFSET emitter::emitInsSizeAM(instrDesc* id, code_t code)
         if (reg == REG_NA)
         {
             /* The address is of the form "[disp]" */
-            CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef TARGET_X86
             // Special case: "mov eax, [disp]" and "mov [disp], eax" can use a smaller 1-byte encoding.
@@ -15776,7 +15774,6 @@ BYTE* emitter::emitOutputLJ(insGroup* ig, BYTE* dst, instrDesc* i)
     if (dstOffs <= srcOffs)
     {
         // This is a backward jump - distance is known at this point
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if DEBUG_EMIT
         if (id->idDebugOnlyInfo()->idNum == (unsigned)INTERESTING_JUMP_NUM || INTERESTING_JUMP_NUM == 0)
@@ -17211,7 +17208,6 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
             if (ins == INS_pop)
             {
                 // The offset in "pop [ESP+xxx]" is relative to the new ESP value
-                CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if !FEATURE_FIXED_OUT_ARGS
                 emitCurStackLvl -= sizeof(int);

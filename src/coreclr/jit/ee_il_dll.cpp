@@ -211,7 +211,9 @@ void SetJitTls(void* value)
 
 #if defined(DEBUG)
 
-JitTls::JitTls(ICorJitInfo* jitInfo) : m_compiler(nullptr), m_logEnv(jitInfo)
+JitTls::JitTls(ICorJitInfo* jitInfo)
+    : m_compiler(nullptr)
+    , m_logEnv(jitInfo)
 {
     m_next = reinterpret_cast<JitTls*>(GetJitTls());
     SetJitTls(this);
@@ -361,7 +363,6 @@ unsigned Compiler::eeGetArgSize(CorInfoType corInfoType, CORINFO_CLASS_HANDLE ty
 
     // Everything fits into a single 'slot' size
     // to accommodate irregular sized structs, they are passed byref
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef UNIX_AMD64_ABI
     if (varTypeIsStruct(argType))
@@ -390,7 +391,6 @@ unsigned Compiler::eeGetArgSize(CorInfoType corInfoType, CORINFO_CLASS_HANDLE ty
 
         // For each target that supports passing struct args in multiple registers
         // apply the target specific rules for them here:
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if FEATURE_MULTIREG_ARGS
 #if defined(TARGET_ARM64)
@@ -1403,7 +1403,9 @@ bool Compiler::eeRunWithSPMIErrorTrapImp(void (*function)(void*), void* param)
 unsigned Compiler::eeTryGetClassSize(CORINFO_CLASS_HANDLE clsHnd)
 {
     unsigned classSize = UINT_MAX;
-    eeRunFunctorWithSPMIErrorTrap([&]() { classSize = info.compCompHnd->getClassSize(clsHnd); });
+    eeRunFunctorWithSPMIErrorTrap([&]() {
+        classSize = info.compCompHnd->getClassSize(clsHnd);
+    });
 
     return classSize;
 }

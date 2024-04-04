@@ -16,7 +16,7 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 #define _UTILS_H_
 
 #include "safemath.h"
-#include "clr_std/type_traits"
+#include <type_traits>
 #include "iallocator.h"
 #include "hostallocator.h"
 #include "cycletimer.h"
@@ -114,7 +114,8 @@ struct ConstLog2
 {
     enum
     {
-        value = ConstLog2<val / 2, acc + 1>::value
+        value = ConstLog2 < val / 2,
+        acc + 1 > ::value
     };
 };
 
@@ -398,7 +399,8 @@ template <typename T>
 class ScopedSetVariable
 {
 public:
-    ScopedSetVariable(T* pVariable, T value) : m_pVariable(pVariable)
+    ScopedSetVariable(T* pVariable, T value)
+        : m_pVariable(pVariable)
     {
         m_oldValue   = *m_pVariable;
         *m_pVariable = value;
@@ -436,7 +438,8 @@ class PhasedVar
 public:
     PhasedVar()
 #ifdef DEBUG
-        : m_initialized(false), m_writePhase(true)
+        : m_initialized(false)
+        , m_writePhase(true)
 #endif // DEBUG
     {
     }
@@ -698,7 +701,9 @@ class MethodSet
         MethodInfo* m_next;
 
         MethodInfo(char* methodName, int methodHash)
-            : m_MethodName(methodName), m_MethodHash(methodHash), m_next(nullptr)
+            : m_MethodName(methodName)
+            , m_MethodHash(methodHash)
+            , m_next(nullptr)
         {
         }
     };
@@ -1023,7 +1028,8 @@ private:
 class CritSecHolder
 {
 public:
-    CritSecHolder(CritSecObject& critSec) : m_CritSec(critSec)
+    CritSecHolder(CritSecObject& critSec)
+        : m_CritSec(critSec)
     {
         ClrEnterCriticalSection(m_CritSec.Val());
     }

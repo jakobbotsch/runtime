@@ -92,7 +92,8 @@ GenTree* MorphInitBlockHelper::MorphInitBlock(Compiler* comp, GenTree* tree)
 //    Most class members are initialized via in-class member initializers.
 //
 MorphInitBlockHelper::MorphInitBlockHelper(Compiler* comp, GenTree* store, bool initBlock = true)
-    : m_comp(comp), m_initBlock(initBlock)
+    : m_comp(comp)
+    , m_initBlock(initBlock)
 {
     assert(store->OperIsStore());
     assert((m_initBlock == store->OperIsInitBlkOp()) && (!m_initBlock == store->OperIsCopyBlkOp()));

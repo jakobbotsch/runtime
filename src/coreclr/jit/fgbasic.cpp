@@ -899,7 +899,10 @@ BasicBlock* Compiler::fgLookupBB(unsigned addr)
 class FgStack
 {
 public:
-    FgStack() : slot0(SLOT_INVALID), slot1(SLOT_INVALID), depth(0)
+    FgStack()
+        : slot0(SLOT_INVALID)
+        , slot1(SLOT_INVALID)
+        , depth(0)
     {
         // Empty
     }
@@ -5632,7 +5635,6 @@ bool Compiler::fgEhAllowsMoveBlock(BasicBlock* bBefore, BasicBlock* bAfter)
 void Compiler::fgMoveBlocksAfter(BasicBlock* bStart, BasicBlock* bEnd, BasicBlock* insertAfterBlk)
 {
     /* We have decided to insert the block(s) after 'insertAfterBlk' */
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
     if (verbose)
@@ -5739,7 +5741,6 @@ BasicBlock* Compiler::fgRelocateEHRange(unsigned regionIndex, FG_RELOCATE_TYPE r
     // 1. Verify that all the blocks in the range are either all rarely run or not rarely run.
     // When creating funclets, we ignore the run rarely flag, as we need to be able to move any blocks
     // in the range.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if !defined(FEATURE_EH_FUNCLETS)
     bool isRare;

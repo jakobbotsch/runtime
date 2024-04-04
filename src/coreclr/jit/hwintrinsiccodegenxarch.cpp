@@ -562,7 +562,9 @@ void CodeGen::genHWIntrinsic(GenTreeHWIntrinsic* node)
 
                 if (HWIntrinsicInfo::isImmOp(intrinsicId, op3))
                 {
-                    auto emitSwCase = [&](int8_t i) { genHWIntrinsic_R_R_RM_I(node, ins, simdSize, i); };
+                    auto emitSwCase = [&](int8_t i) {
+                        genHWIntrinsic_R_R_RM_I(node, ins, simdSize, i);
+                    };
 
                     if (op3->IsCnsIntOrI())
                     {
@@ -656,7 +658,9 @@ void CodeGen::genHWIntrinsic(GenTreeHWIntrinsic* node)
 
                 if (HWIntrinsicInfo::isImmOp(intrinsicId, op4))
                 {
-                    auto emitSwCase = [&](int8_t i) { genHWIntrinsic_R_R_R_RM_I(node, ins, simdSize, i); };
+                    auto emitSwCase = [&](int8_t i) {
+                        genHWIntrinsic_R_R_R_RM_I(node, ins, simdSize, i);
+                    };
 
                     if (op4->IsCnsIntOrI())
                     {
@@ -2062,7 +2066,9 @@ void CodeGen::genSSE41Intrinsic(GenTreeHWIntrinsic* node)
             instruction ins  = HWIntrinsicInfo::lookupIns(intrinsicId, baseType);
             emitAttr    attr = emitActualTypeSize(node->TypeGet());
 
-            auto emitSwCase = [&](int8_t i) { inst_RV_TT_IV(ins, attr, targetReg, op1, i); };
+            auto emitSwCase = [&](int8_t i) {
+                inst_RV_TT_IV(ins, attr, targetReg, op1, i);
+            };
 
             if (op2->IsCnsIntOrI())
             {

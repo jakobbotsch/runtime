@@ -54,7 +54,9 @@ public:
 
     typeInfo(CORINFO_CLASS_HANDLE cls) : m_type(TYP_REF), m_cls(cls) {}
 
-    typeInfo(methodPointerInfo* methodPointerInfo) : m_type(TYP_I_IMPL), m_methodPointerInfo(methodPointerInfo)
+    typeInfo(methodPointerInfo* methodPointerInfo)
+        : m_type(TYP_I_IMPL)
+        , m_methodPointerInfo(methodPointerInfo)
     {
         assert(methodPointerInfo != nullptr);
         assert(methodPointerInfo->m_token.hMethod != nullptr);

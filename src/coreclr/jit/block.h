@@ -1166,11 +1166,11 @@ public:
     const char* dspToString(int blockNumPadding = 0) const;
 #endif // DEBUG
 
-#define BB_UNITY_WEIGHT 100.0        // how much a normal execute once block weighs
-#define BB_UNITY_WEIGHT_UNSIGNED 100 // how much a normal execute once block weighs
-#define BB_LOOP_WEIGHT_SCALE 8.0     // synthetic profile scale factor for loops
-#define BB_ZERO_WEIGHT 0.0
-#define BB_MAX_WEIGHT FLT_MAX // maximum finite weight  -- needs rethinking.
+#define BB_UNITY_WEIGHT          100.0 // how much a normal execute once block weighs
+#define BB_UNITY_WEIGHT_UNSIGNED 100   // how much a normal execute once block weighs
+#define BB_LOOP_WEIGHT_SCALE     8.0   // synthetic profile scale factor for loops
+#define BB_ZERO_WEIGHT           0.0
+#define BB_MAX_WEIGHT            FLT_MAX // maximum finite weight  -- needs rethinking.
 
     weight_t bbWeight; // The dynamic execution weight of this block
 
@@ -1518,11 +1518,11 @@ public:
     bool hasEHBoundaryOut() const;
 
 // Some non-zero value that will not collide with real tokens for bbCatchTyp
-#define BBCT_NONE 0x00000000
-#define BBCT_FAULT 0xFFFFFFFC
-#define BBCT_FINALLY 0xFFFFFFFD
-#define BBCT_FILTER 0xFFFFFFFE
-#define BBCT_FILTER_HANDLER 0xFFFFFFFF
+#define BBCT_NONE                   0x00000000
+#define BBCT_FAULT                  0xFFFFFFFC
+#define BBCT_FINALLY                0xFFFFFFFD
+#define BBCT_FILTER                 0xFFFFFFFE
+#define BBCT_FILTER_HANDLER         0xFFFFFFFF
 #define handlerGetsXcptnObj(hndTyp) ((hndTyp) != BBCT_NONE && (hndTyp) != BBCT_FAULT && (hndTyp) != BBCT_FINALLY)
 
     // TODO-Cleanup: Get rid of bbStkDepth and use bbStackDepthOnEntry() instead
@@ -1905,7 +1905,9 @@ public:
 
         public:
             iterator(Compiler* comp, BasicBlock* block, unsigned succNum)
-                : m_comp(comp), m_block(block), m_succNum(succNum)
+                : m_comp(comp)
+                , m_block(block)
+                , m_succNum(succNum)
             {
             }
 
@@ -1964,7 +1966,9 @@ public:
 
         public:
             iterator(Compiler* comp, BasicBlock* block, unsigned succNum)
-                : m_comp(comp), m_block(block), m_succNum(succNum)
+                : m_comp(comp)
+                , m_block(block)
+                , m_succNum(succNum)
             {
             }
 
@@ -2159,7 +2163,9 @@ class BasicBlockRangeList
     BasicBlock* m_end;
 
 public:
-    BasicBlockRangeList(BasicBlock* begin, BasicBlock* end) : m_begin(begin), m_end(end)
+    BasicBlockRangeList(BasicBlock* begin, BasicBlock* end)
+        : m_begin(begin)
+        , m_end(end)
     {
         assert(begin != nullptr);
         assert(end != nullptr);
@@ -2224,7 +2230,8 @@ struct BBswtDesc
 // BBSwitchTargetList out-of-class-declaration implementations (here due to C++ ordering requirements).
 //
 
-inline BBSwitchTargetList::BBSwitchTargetList(BBswtDesc* bbsDesc) : m_bbsDesc(bbsDesc)
+inline BBSwitchTargetList::BBSwitchTargetList(BBswtDesc* bbsDesc)
+    : m_bbsDesc(bbsDesc)
 {
     assert(m_bbsDesc != nullptr);
     assert(m_bbsDesc->bbsDstTab != nullptr);
@@ -2255,7 +2262,8 @@ struct BBehfDesc
 // BBEhfSuccList out-of-class-declaration implementations (here due to C++ ordering requirements).
 //
 
-inline BBEhfSuccList::BBEhfSuccList(BBehfDesc* bbeDesc) : m_bbeDesc(bbeDesc)
+inline BBEhfSuccList::BBEhfSuccList(BBehfDesc* bbeDesc)
+    : m_bbeDesc(bbeDesc)
 {
     assert(m_bbeDesc != nullptr);
     assert((m_bbeDesc->bbeSuccs != nullptr) || (m_bbeDesc->bbeCount == 0));
@@ -2380,7 +2388,8 @@ inline BasicBlock* BBArrayIterator::operator*() const
 
 // Pred list iterator implementations (that are required to be defined after the declaration of BasicBlock and FlowEdge)
 
-inline PredEdgeList::iterator::iterator(FlowEdge* pred) : m_pred(pred)
+inline PredEdgeList::iterator::iterator(FlowEdge* pred)
+    : m_pred(pred)
 {
 #ifdef DEBUG
     m_next = (m_pred == nullptr) ? nullptr : m_pred->getNextPredEdge();
@@ -2402,7 +2411,8 @@ inline PredEdgeList::iterator& PredEdgeList::iterator::operator++()
 }
 
 template <bool allowEdits>
-inline PredBlockList<allowEdits>::iterator::iterator(FlowEdge* pred) : m_pred(pred)
+inline PredBlockList<allowEdits>::iterator::iterator(FlowEdge* pred)
+    : m_pred(pred)
 {
     bool initNextPointer = allowEdits;
     INDEBUG(initNextPointer = true);

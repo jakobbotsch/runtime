@@ -758,7 +758,6 @@ var_types Compiler::getArgTypeForStruct(CORINFO_CLASS_HANDLE clsHnd,
         {
             // We have a (large) struct that can't be replaced with a "primitive" type
             // and can't be passed in multiple registers
-            CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if defined(TARGET_X86) || defined(TARGET_ARM) || defined(UNIX_AMD64_ABI)
 
@@ -1159,7 +1158,8 @@ struct FileLine
 
     FileLine() : m_file(nullptr), m_line(0), m_condStr(nullptr) {}
 
-    FileLine(const char* file, unsigned line, const char* condStr) : m_line(line)
+    FileLine(const char* file, unsigned line, const char* condStr)
+        : m_line(line)
     {
         size_t newSize = (strlen(file) + 1) * sizeof(char);
         m_file         = HostAllocator::getHostAllocator().allocate<char>(newSize);
@@ -1901,7 +1901,6 @@ void Compiler::compInit(ArenaAllocator*       pAlloc,
         //
         // Initialize all the per-method statistics gathering data structures.
         //
-        CLANG_FORMAT_COMMENT_ANCHOR;
 #if LOOP_HOIST_STATS
         m_loopsConsidered             = 0;
         m_curLoopHasHoistedExpression = false;
@@ -2272,7 +2271,6 @@ void Compiler::compSetProcessor()
     //
     // Processor specific optimizations
     //
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
     CORINFO_InstructionSetFlags instructionSetFlags = jitFlags.GetInstructionSetFlags();
     opts.compSupportsISA.Reset();
@@ -2873,7 +2871,6 @@ void Compiler::compInitOptions(JitFlags* jitFlags)
     // The rest of the opts fields that we initialize here
     // should only be used when we generate code for the method
     // They should not be used when importing or inlining
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if FEATURE_TAILCALL_OPT
     opts.compTailCallLoopOpt = true;
@@ -4792,7 +4789,9 @@ void Compiler::compCompile(void** methodCodePtr, uint32_t* methodCodeSize, JitFl
     {
         // Tail merge
         //
-        DoPhase(this, PHASE_HEAD_TAIL_MERGE, [this]() { return fgHeadTailMerge(true); });
+        DoPhase(this, PHASE_HEAD_TAIL_MERGE, [this]() {
+            return fgHeadTailMerge(true);
+        });
 
         // Merge common throw blocks
         //
@@ -4918,7 +4917,9 @@ void Compiler::compCompile(void** methodCodePtr, uint32_t* methodCodeSize, JitFl
 
         // Second pass of tail merge
         //
-        DoPhase(this, PHASE_HEAD_TAIL_MERGE2, [this]() { return fgHeadTailMerge(false); });
+        DoPhase(this, PHASE_HEAD_TAIL_MERGE2, [this]() {
+            return fgHeadTailMerge(false);
+        });
 
         // Canonicalize entry to give a unique dominator tree root
         //
@@ -5273,7 +5274,9 @@ void Compiler::compCompile(void** methodCodePtr, uint32_t* methodCodeSize, JitFl
 
     // Now that lowering is completed we can proceed to perform register allocation
     //
-    auto linearScanPhase = [this]() { m_pLinearScan->doLinearScan(); };
+    auto linearScanPhase = [this]() {
+        m_pLinearScan->doLinearScan();
+    };
     DoPhase(this, PHASE_LINEAR_SCAN, linearScanPhase);
 
     // Copied from rpPredictRegUse()
@@ -5650,7 +5653,7 @@ void Compiler::SplitTreesRandomly()
     rng.Init(info.compMethodHash() ^ 0x077cc4d4);
 
     // Splitting creates a lot of new locals. Set a limit on how many we end up creating here.
-    unsigned maxLvaCount = max(lvaCount * 2, 50000);
+    unsigned maxLvaCount = max(lvaCount * 2, 50000u);
 
     for (BasicBlock* block : Blocks())
     {
@@ -5712,7 +5715,7 @@ void Compiler::SplitTreesRandomly()
 void Compiler::SplitTreesRemoveCommas()
 {
     // Splitting creates a lot of new locals. Set a limit on how many we end up creating here.
-    unsigned maxLvaCount = max(lvaCount * 2, 50000);
+    unsigned maxLvaCount = max(lvaCount * 2, 50000u);
 
     for (BasicBlock* block : Blocks())
     {
@@ -5816,7 +5819,6 @@ void Compiler::generatePatchpointInfo()
     //
     // For arm64, if the frame pointer is not at the top of the frame, we need to adjust the
     // offset.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if defined(TARGET_AMD64)
     // We add +TARGET_POINTER_SIZE here is to account for the slot that Jit_Patchpoint
@@ -5916,7 +5918,7 @@ void Compiler::generatePatchpointInfo()
     // Record callee save registers.
     // Currently only needed for x64.
     //
-    regMaskTP rsPushRegs = codeGen->regSet.rsGetModifiedRegsMask() & RBM_CALLEE_SAVED;
+    regMaskTP rsPushRegs = codeGen->regSet.rsGetModifiedCalleeSavedRegsMask();
     rsPushRegs |= RBM_FPBASE;
     patchpointInfo->SetCalleeSaveRegisters((uint64_t)rsPushRegs);
     JITDUMP("--OSR-- Tier0 callee saves: ");
@@ -7521,7 +7523,7 @@ void Compiler::compInitVarScopeMap()
     compVarScopeMap = new (getAllocator()) VarNumToScopeDscMap(getAllocator());
 
     // 599 prime to limit huge allocations; for ex: duplicated scopes on single var.
-    compVarScopeMap->Reallocate(min(info.compVarScopesCount, 599));
+    compVarScopeMap->Reallocate(min(info.compVarScopesCount, 599u));
 
     for (unsigned i = 0; i < info.compVarScopesCount; ++i)
     {
@@ -8935,7 +8937,8 @@ void CompTimeSummaryInfo::Print(FILE* f)
     fprintf(f, "\n");
 }
 
-JitTimer::JitTimer(unsigned byteCodeSize) : m_info(byteCodeSize)
+JitTimer::JitTimer(unsigned byteCodeSize)
+    : m_info(byteCodeSize)
 {
 #if MEASURE_CLRAPI_CALLS
     m_CLRcallInvokes = 0;
@@ -9850,7 +9853,6 @@ JITDBGAPI void __cdecl cTreeFlags(Compiler* comp, GenTree* tree)
         chars += printf("flags=");
 
         // Node flags
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if defined(DEBUG)
         if (tree->gtDebugFlags & GTF_DEBUG_NODE_LARGE)

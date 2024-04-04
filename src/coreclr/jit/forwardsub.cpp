@@ -191,7 +191,9 @@ public:
         UseExecutionOrder = true
     };
 
-    ForwardSubVisitor(Compiler* compiler, unsigned lclNum) : GenTreeVisitor(compiler), m_lclNum(lclNum)
+    ForwardSubVisitor(Compiler* compiler, unsigned lclNum)
+        : GenTreeVisitor(compiler)
+        , m_lclNum(lclNum)
     {
         LclVarDsc* dsc = compiler->lvaGetDesc(m_lclNum);
         if (dsc->lvIsStructField)

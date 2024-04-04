@@ -310,7 +310,6 @@ BasicBlock* Compiler::fgCreateGCPoll(GCPollType pollType, BasicBlock* block)
         // Create a GT_EQ node that checks against g_TrapReturningThreads.  True jumps to Bottom,
         // false falls through to poll.  Add this to the end of Top.  Top is now BBJ_COND.  Bottom is
         // now a jump target
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef ENABLE_FAST_GCPOLL_HELPER
         // Prefer the fast gc poll helepr over the double indirection
@@ -1823,7 +1822,8 @@ private:
     bool mergingReturns = false;
 
 public:
-    MergedReturns(Compiler* comp) : comp(comp)
+    MergedReturns(Compiler* comp)
+        : comp(comp)
     {
         comp->fgReturnCount = 0;
     }
@@ -3589,7 +3589,9 @@ GenTree* Compiler::fgSetTreeSeq(GenTree* tree, bool isLIR)
         };
 
         SetTreeSeqVisitor(Compiler* compiler, GenTree* tree, bool isLIR)
-            : GenTreeVisitor<SetTreeSeqVisitor>(compiler), m_prevNode(tree), m_isLIR(isLIR)
+            : GenTreeVisitor<SetTreeSeqVisitor>(compiler)
+            , m_prevNode(tree)
+            , m_isLIR(isLIR)
         {
             INDEBUG(tree->gtSeqNum = 0);
         }
@@ -3689,7 +3691,8 @@ class GCSafePointSuccessorEnumerator
 public:
     // Constructs an enumerator of successors to be used for checking for GC
     // safe point cycles.
-    GCSafePointSuccessorEnumerator(Compiler* comp, BasicBlock* block) : m_block(block)
+    GCSafePointSuccessorEnumerator(Compiler* comp, BasicBlock* block)
+        : m_block(block)
     {
         m_numSuccs = 0;
         block->VisitRegularSuccs(comp,
@@ -3923,15 +3926,6 @@ void Compiler::fgSetBlockOrder(BasicBlock* block)
     }
 
     return firstNode;
-}
-
-void Compiler::fgLclFldAssign(unsigned lclNum)
-{
-    assert(varTypeIsStruct(lvaTable[lclNum].lvType));
-    if (lvaTable[lclNum].lvPromoted && lvaTable[lclNum].lvFieldCnt > 1)
-    {
-        lvaSetVarDoNotEnregister(lclNum DEBUGARG(DoNotEnregisterReason::LocalField));
-    }
 }
 
 #ifdef DEBUG
@@ -4220,7 +4214,9 @@ unsigned FlowGraphNaturalLoop::NumLoopBlocks()
 //   dfs - A DFS tree.
 //
 FlowGraphNaturalLoops::FlowGraphNaturalLoops(const FlowGraphDfsTree* dfsTree)
-    : m_dfsTree(dfsTree), m_loops(m_dfsTree->GetCompiler()->getAllocator(CMK_Loops)), m_improperLoopHeaders(0)
+    : m_dfsTree(dfsTree)
+    , m_loops(m_dfsTree->GetCompiler()->getAllocator(CMK_Loops))
+    , m_improperLoopHeaders(0)
 {
 }
 
@@ -6137,7 +6133,9 @@ FlowGraphDominatorTree* FlowGraphDominatorTree::Build(const FlowGraphDfsTree* df
 
     public:
         NumberDomTreeVisitor(Compiler* comp, unsigned* preorderNums, unsigned* postorderNums)
-            : DomTreeVisitor(comp), m_preorderNums(preorderNums), m_postorderNums(postorderNums)
+            : DomTreeVisitor(comp)
+            , m_preorderNums(preorderNums)
+            , m_postorderNums(postorderNums)
         {
         }
 

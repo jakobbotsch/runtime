@@ -28,7 +28,10 @@ LIR::Use::Use(const Use& other)
 //
 // Return Value:
 //
-LIR::Use::Use(Range& range, GenTree** edge, GenTree* user) : m_range(&range), m_edge(edge), m_user(user)
+LIR::Use::Use(Range& range, GenTree** edge, GenTree* user)
+    : m_range(&range)
+    , m_edge(edge)
+    , m_user(user)
 {
     AssertIsValid();
 }
@@ -280,7 +283,9 @@ unsigned LIR::Use::ReplaceWithLclVar(Compiler* compiler, unsigned lclNum, GenTre
 
 LIR::ReadOnlyRange::ReadOnlyRange() : m_firstNode(nullptr), m_lastNode(nullptr) {}
 
-LIR::ReadOnlyRange::ReadOnlyRange(ReadOnlyRange&& other) : m_firstNode(other.m_firstNode), m_lastNode(other.m_lastNode)
+LIR::ReadOnlyRange::ReadOnlyRange(ReadOnlyRange&& other)
+    : m_firstNode(other.m_firstNode)
+    , m_lastNode(other.m_lastNode)
 {
 #ifdef DEBUG
     other.m_firstNode = nullptr;
@@ -297,7 +302,9 @@ LIR::ReadOnlyRange::ReadOnlyRange(ReadOnlyRange&& other) : m_firstNode(other.m_f
 //    firstNode - The first node in the range.
 //    lastNode  - The last node in the range.
 //
-LIR::ReadOnlyRange::ReadOnlyRange(GenTree* firstNode, GenTree* lastNode) : m_firstNode(firstNode), m_lastNode(lastNode)
+LIR::ReadOnlyRange::ReadOnlyRange(GenTree* firstNode, GenTree* lastNode)
+    : m_firstNode(firstNode)
+    , m_lastNode(lastNode)
 {
     assert((m_firstNode == nullptr) == (m_lastNode == nullptr));
     assert((m_firstNode == m_lastNode) || (Contains(m_lastNode)));

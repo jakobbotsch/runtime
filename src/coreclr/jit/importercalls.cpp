@@ -100,7 +100,7 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
 
     // Swift calls that might throw use a SwiftError* arg that requires additional IR to handle,
     // so if we're importing a Swift call, look for this type in the signature
-    CallArg* swiftErrorArg = nullptr;
+    GenTree* swiftErrorNode = nullptr;
 
     /*-------------------------------------------------------------------------
      * First create the call node
@@ -587,7 +587,6 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
            tailcall to a function with a different number of arguments, we
            are hosed. There are ways around this (caller remembers esp value,
            varargs is not caller-pop, etc), but not worth it. */
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef TARGET_X86
         if (canTailCall)
@@ -669,7 +668,7 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
 
         checkForSmallType = true;
 
-        impPopArgsForUnmanagedCall(call->AsCall(), sig, &swiftErrorArg);
+        impPopArgsForUnmanagedCall(call->AsCall(), sig, &swiftErrorNode);
 
         goto DONE;
     }
@@ -1502,9 +1501,9 @@ DONE_CALL:
 #ifdef SWIFT_SUPPORT
     // If call is a Swift call with error handling, append additional IR
     // to handle storing the error register's value post-call.
-    if (swiftErrorArg != nullptr)
+    if (swiftErrorNode != nullptr)
     {
-        impAppendSwiftErrorStore(call->AsCall(), swiftErrorArg);
+        impAppendSwiftErrorStore(swiftErrorNode);
     }
 #endif // SWIFT_SUPPORT
 
@@ -1844,17 +1843,18 @@ GenTreeCall* Compiler::impImportIndirectCall(CORINFO_SIG_INFO* sig, const DebugI
 // Arguments:
 //    call - The unmanaged call
 //    sig  - The signature of the call site
-//    swiftErrorArg - [out] If this is a Swift call with a SwiftError* argument, then the argument is returned here.
-//                    Otherwise left at its existing value.
+//    swiftErrorNode - [out] If this is a Swift call with a SwiftError* argument,
+//                     then swiftErrorNode points to the node.
+//                     Otherwise left at its existing value.
 //
-void Compiler::impPopArgsForUnmanagedCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, CallArg** swiftErrorArg)
+void Compiler::impPopArgsForUnmanagedCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, GenTree** swiftErrorNode)
 {
     assert(call->gtFlags & GTF_CALL_UNMANAGED);
 
 #ifdef SWIFT_SUPPORT
     if (call->unmgdCallConv == CorInfoCallConvExtension::Swift)
     {
-        impPopArgsForSwiftCall(call, sig, swiftErrorArg);
+        impPopArgsForSwiftCall(call, sig, swiftErrorNode);
         return;
     }
 #endif
@@ -2000,12 +2000,12 @@ const CORINFO_SWIFT_LOWERING* Compiler::GetSwiftLowering(CORINFO_CLASS_HANDLE hC
 // impPopArgsForSwiftCall: Pop arguments from IL stack to a Swift pinvoke node.
 //
 // Arguments:
-//    call          - The Swift call
-//    sig           - The signature of the call site
-//    swiftErrorArg - [out] An argument that represents the SwiftError*
-//                    argument. Left at its existing value if no such argument exists.
+//    call           - The Swift call
+//    sig            - The signature of the call site
+//    swiftErrorNode - [out] Pointer to the SwiftError* argument.
+//                     Left at its existing value if no such argument exists.
 //
-void Compiler::impPopArgsForSwiftCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, CallArg** swiftErrorArg)
+void Compiler::impPopArgsForSwiftCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, GenTree** swiftErrorNode)
 {
     JITDUMP("Creating args for Swift call [%06u]\n", dspTreeID(call));
 
@@ -2023,13 +2023,12 @@ void Compiler::impPopArgsForSwiftCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, 
     {
         CORINFO_CLASS_HANDLE argClass;
         CorInfoType          argType         = strip(info.compCompHnd->getArgType(sig, sigArg, &argClass));
-        bool                 argIsByrefOrPtr = false;
+        const bool           argIsByrefOrPtr = (argType == CORINFO_TYPE_BYREF) || (argType == CORINFO_TYPE_PTR);
 
-        if ((argType == CORINFO_TYPE_BYREF) || (argType == CORINFO_TYPE_PTR))
+        if (argIsByrefOrPtr)
         {
-            argClass        = info.compCompHnd->getArgClass(sig, sigArg);
-            argType         = info.compCompHnd->getChildType(argClass, &argClass);
-            argIsByrefOrPtr = true;
+            argClass = info.compCompHnd->getArgClass(sig, sigArg);
+            argType  = info.compCompHnd->getChildType(argClass, &argClass);
         }
 
         if (argType != CORINFO_TYPE_VALUECLASS)
@@ -2115,10 +2114,9 @@ void Compiler::impPopArgsForSwiftCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, 
     DISPTREE(call);
     JITDUMP("\n");
 
-    if (swiftErrorIndex != sig->numArgs)
-    {
-        *swiftErrorArg = call->gtArgs.GetArgByIndex(swiftErrorIndex);
-    }
+    // Get SwiftError* arg (if it exists) before modifying the arg list
+    CallArg* const swiftErrorArg =
+        (swiftErrorIndex != sig->numArgs) ? call->gtArgs.GetArgByIndex(swiftErrorIndex) : nullptr;
 
     // Now expand struct args that must be lowered into primitives
     unsigned argIndex = 0;
@@ -2207,7 +2205,7 @@ void Compiler::impPopArgsForSwiftCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, 
                         auto     addSegment = [=, &loweredNode, &relOffset](var_types type)
                         {
                             GenTree* val = gtNewLclFldNode(structVal->GetLclNum(), type,
-                                                           structVal->GetLclOffs() + offset + relOffset);
+                                                               structVal->GetLclOffs() + offset + relOffset);
 
                             if (loweredType == TYP_LONG)
                             {
@@ -2217,7 +2215,7 @@ void Compiler::impPopArgsForSwiftCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, 
                             if (relOffset > 0)
                             {
                                 val = gtNewOperNode(GT_LSH, genActualType(loweredType), val,
-                                                    gtNewIconNode(relOffset * 8));
+                                                        gtNewIconNode(relOffset * 8));
                             }
 
                             if (loweredNode == nullptr)
@@ -2262,6 +2260,23 @@ void Compiler::impPopArgsForSwiftCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, 
         arg = insertAfter->GetNext();
     }
 
+    if (swiftErrorArg != nullptr)
+    {
+        // Before calling a Swift method that may throw, the error register must be cleared,
+        // as we will check for a nonzero error value after the call returns.
+        // By adding a well-known "sentinel" argument that uses the error register,
+        // the JIT will emit code for clearing the error register before the call,
+        // and will mark the error register as busy so it isn't used to hold the function call's address.
+        GenTree* const errorSentinelValueNode = gtNewIconNode(0);
+        call->gtArgs.InsertAfter(this, swiftErrorArg,
+                                 NewCallArg::Primitive(errorSentinelValueNode).WellKnown(WellKnownArg::SwiftError));
+
+        // Swift call isn't going to use the SwiftError* arg, so don't bother emitting it
+        assert(swiftErrorNode != nullptr);
+        *swiftErrorNode = swiftErrorArg->GetNode();
+        call->gtArgs.Remove(swiftErrorArg);
+    }
+
 #ifdef DEBUG
     if (verbose && call->TypeIs(TYP_STRUCT) && (sig->retTypeClass != NO_CLASS_HANDLE))
     {
@@ -2292,39 +2307,22 @@ void Compiler::impPopArgsForSwiftCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, 
 
 //------------------------------------------------------------------------
 // impAppendSwiftErrorStore: Append IR to store the Swift error register value
-// to the SwiftError* argument specified by swiftErrorArg, post-Swift call
+// to the SwiftError* argument represented by swiftErrorNode, post-Swift call
 //
 // Arguments:
-//    call - the Swift call
-//    swiftErrorArg - the SwiftError* argument passed to call
+//    swiftErrorNode - the SwiftError* argument
 //
-void Compiler::impAppendSwiftErrorStore(GenTreeCall* call, CallArg* const swiftErrorArg)
+void Compiler::impAppendSwiftErrorStore(GenTree* const swiftErrorNode)
 {
-    assert(call != nullptr);
-    assert(call->unmgdCallConv == CorInfoCallConvExtension::Swift);
-    assert(swiftErrorArg != nullptr);
-
-    GenTree* const argNode = swiftErrorArg->GetNode();
-    assert(argNode != nullptr);
+    assert(swiftErrorNode != nullptr);
 
     // Store the error register value to where the SwiftError* points to
     GenTree* errorRegNode = new (this, GT_SWIFT_ERROR) GenTree(GT_SWIFT_ERROR, TYP_I_IMPL);
     errorRegNode->SetHasOrderingSideEffect();
     errorRegNode->gtFlags |= (GTF_CALL | GTF_GLOB_REF);
 
-    GenTreeStoreInd* swiftErrorStore = gtNewStoreIndNode(argNode->TypeGet(), argNode, errorRegNode);
+    GenTreeStoreInd* swiftErrorStore = gtNewStoreIndNode(swiftErrorNode->TypeGet(), swiftErrorNode, errorRegNode);
     impAppendTree(swiftErrorStore, CHECK_SPILL_ALL, impCurStmtDI, false);
-
-    // Before calling a Swift method that may throw, the error register must be cleared for the error check to work.
-    // By adding a well-known "sentinel" argument that uses the error register,
-    // the JIT will emit code for clearing the error register before the call, and will mark the error register as busy
-    // so that it isn't used to hold the function call's address.
-    GenTree* errorSentinelValueNode = gtNewIconNode(0);
-    call->gtArgs.InsertAfter(this, swiftErrorArg,
-                             NewCallArg::Primitive(errorSentinelValueNode).WellKnown(WellKnownArg::SwiftError));
-
-    // Swift call isn't going to use the SwiftError* arg, so don't bother emitting it
-    call->gtArgs.Remove(swiftErrorArg);
 }
 #endif // SWIFT_SUPPORT
 
@@ -8442,15 +8440,15 @@ void Compiler::impCheckCanInline(GenTreeCall*           call,
             InlineResult* const   inlineResult = pParam->result;
 
 #ifdef DEBUG
-            if (JitConfig.JitNoInline())
-            {
-                inlineResult->NoteFatal(InlineObservation::CALLEE_IS_JIT_NOINLINE);
-                return;
-            }
+        if (JitConfig.JitNoInline())
+        {
+            inlineResult->NoteFatal(InlineObservation::CALLEE_IS_JIT_NOINLINE);
+            return;
+        }
 #endif
 
-            JITDUMP("\nCheckCanInline: fetching method info for inline candidate %s -- context %p\n",
-                    compiler->eeGetMethodName(ftn), compiler->dspPtr(pParam->exactContextHnd));
+        JITDUMP("\nCheckCanInline: fetching method info for inline candidate %s -- context %p\n",
+                compiler->eeGetMethodName(ftn), compiler->dspPtr(pParam->exactContextHnd));
 
             if (pParam->exactContextHnd == METHOD_BEING_COMPILED_CONTEXT())
             {
@@ -8468,127 +8466,126 @@ void Compiler::impCheckCanInline(GenTreeCall*           call,
                             (CORINFO_CLASS_HANDLE)((size_t)pParam->exactContextHnd & ~CORINFO_CONTEXTFLAGS_MASK)));
             }
 
-            // Fetch method info. This may fail, if the method doesn't have IL.
+        // Fetch method info. This may fail, if the method doesn't have IL.
+        //
+        CORINFO_METHOD_INFO methInfo;
+        if (!compCompHnd->getMethodInfo(ftn, &methInfo, pParam->exactContextHnd))
+        {
+            inlineResult->NoteFatal(InlineObservation::CALLEE_NO_METHOD_INFO);
+            return;
+        }
+
+        // Profile data allows us to avoid early "too many IL bytes" outs.
+        //
+        inlineResult->NoteBool(InlineObservation::CALLSITE_HAS_PROFILE_WEIGHTS,
+                               compiler->fgHaveSufficientProfileWeights());
+        inlineResult->NoteBool(InlineObservation::CALLSITE_INSIDE_THROW_BLOCK, compiler->compCurBB->KindIs(BBJ_THROW));
+
+        bool const forceInline = (pParam->methAttr & CORINFO_FLG_FORCEINLINE) != 0;
+
+        compiler->impCanInlineIL(ftn, &methInfo, forceInline, inlineResult);
+
+        if (inlineResult->IsFailure())
+        {
+            assert(inlineResult->IsNever());
+            return;
+        }
+
+        // Speculatively check if initClass() can be done.
+        // If it can be done, we will try to inline the method.
+        CorInfoInitClassResult const initClassResult =
+            compCompHnd->initClass(nullptr /* field */, ftn /* method */, pParam->exactContextHnd /* context */);
+
+        if (initClassResult & CORINFO_INITCLASS_DONT_INLINE)
+        {
+            inlineResult->NoteFatal(InlineObservation::CALLSITE_CANT_CLASS_INIT);
+            return;
+        }
+
+        // Given the VM the final say in whether to inline or not.
+        // This should be last since for verifiable code, this can be expensive
+        //
+        CorInfoInline const vmResult = compCompHnd->canInline(compiler->info.compMethodHnd, ftn);
+
+        if (vmResult == INLINE_FAIL)
+        {
+            inlineResult->NoteFatal(InlineObservation::CALLSITE_IS_VM_NOINLINE);
+        }
+        else if (vmResult == INLINE_NEVER)
+        {
+            inlineResult->NoteFatal(InlineObservation::CALLEE_IS_VM_NOINLINE);
+        }
+
+        if (inlineResult->IsFailure())
+        {
+            // The VM already self-reported this failure, so mark it specially
+            // so the JIT doesn't also try reporting it.
             //
-            CORINFO_METHOD_INFO methInfo;
-            if (!compCompHnd->getMethodInfo(ftn, &methInfo, pParam->exactContextHnd))
-            {
-                inlineResult->NoteFatal(InlineObservation::CALLEE_NO_METHOD_INFO);
-                return;
-            }
+            inlineResult->SetVMFailure();
+            return;
+        }
 
-            // Profile data allows us to avoid early "too many IL bytes" outs.
-            //
-            inlineResult->NoteBool(InlineObservation::CALLSITE_HAS_PROFILE_WEIGHTS,
-                                   compiler->fgHaveSufficientProfileWeights());
-            inlineResult->NoteBool(InlineObservation::CALLSITE_INSIDE_THROW_BLOCK,
-                                   compiler->compCurBB->KindIs(BBJ_THROW));
+        // Get the method's class properties
+        //
+        CORINFO_CLASS_HANDLE clsHandle = compCompHnd->getMethodClass(ftn);
+        unsigned const       clsAttr   = compCompHnd->getClassAttribs(clsHandle);
 
-            bool const forceInline = (pParam->methAttr & CORINFO_FLG_FORCEINLINE) != 0;
-
-            compiler->impCanInlineIL(ftn, &methInfo, forceInline, inlineResult);
-
-            if (inlineResult->IsFailure())
-            {
-                assert(inlineResult->IsNever());
-                return;
-            }
-
-            // Speculatively check if initClass() can be done.
-            // If it can be done, we will try to inline the method.
-            CorInfoInitClassResult const initClassResult =
-                compCompHnd->initClass(nullptr /* field */, ftn /* method */, pParam->exactContextHnd /* context */);
-
-            if (initClassResult & CORINFO_INITCLASS_DONT_INLINE)
-            {
-                inlineResult->NoteFatal(InlineObservation::CALLSITE_CANT_CLASS_INIT);
-                return;
-            }
-
-            // Given the VM the final say in whether to inline or not.
-            // This should be last since for verifiable code, this can be expensive
-            //
-            CorInfoInline const vmResult = compCompHnd->canInline(compiler->info.compMethodHnd, ftn);
-
-            if (vmResult == INLINE_FAIL)
-            {
-                inlineResult->NoteFatal(InlineObservation::CALLSITE_IS_VM_NOINLINE);
-            }
-            else if (vmResult == INLINE_NEVER)
-            {
-                inlineResult->NoteFatal(InlineObservation::CALLEE_IS_VM_NOINLINE);
-            }
-
-            if (inlineResult->IsFailure())
-            {
-                // The VM already self-reported this failure, so mark it specially
-                // so the JIT doesn't also try reporting it.
-                //
-                inlineResult->SetVMFailure();
-                return;
-            }
-
-            // Get the method's class properties
-            //
-            CORINFO_CLASS_HANDLE clsHandle = compCompHnd->getMethodClass(ftn);
-            unsigned const       clsAttr   = compCompHnd->getClassAttribs(clsHandle);
-
-            // Return type
-            //
-            var_types const fncRetType = pParam->call->TypeGet();
+        // Return type
+        //
+        var_types const fncRetType = pParam->call->TypeGet();
 
 #ifdef DEBUG
-            var_types fncRealRetType = JITtype2varType(methInfo.args.retType);
+        var_types fncRealRetType = JITtype2varType(methInfo.args.retType);
 
-            assert((genActualType(fncRealRetType) == genActualType(fncRetType)) ||
-                   // <BUGNUM> VSW 288602 </BUGNUM>
-                   // In case of IJW, we allow to assign a native pointer to a BYREF.
-                   (fncRetType == TYP_BYREF && methInfo.args.retType == CORINFO_TYPE_PTR) ||
-                   (varTypeIsStruct(fncRetType) && (fncRealRetType == TYP_STRUCT)));
+        assert((genActualType(fncRealRetType) == genActualType(fncRetType)) ||
+               // <BUGNUM> VSW 288602 </BUGNUM>
+               // In case of IJW, we allow to assign a native pointer to a BYREF.
+               (fncRetType == TYP_BYREF && methInfo.args.retType == CORINFO_TYPE_PTR) ||
+               (varTypeIsStruct(fncRetType) && (fncRealRetType == TYP_STRUCT)));
 #endif
 
-            // Allocate an InlineCandidateInfo structure,
+        // Allocate an InlineCandidateInfo structure,
+        //
+        // Or, reuse the existing GuardedDevirtualizationCandidateInfo,
+        // which was pre-allocated to have extra room.
+        //
+        InlineCandidateInfo* pInfo;
+
+        if (pParam->call->IsGuardedDevirtualizationCandidate())
+        {
+            pInfo = pParam->call->GetGDVCandidateInfo(pParam->candidateIndex);
+        }
+        else
+        {
+            pInfo = new (pParam->pThis, CMK_Inlining) InlineCandidateInfo;
+
+            // Null out bits we don't use when we're just inlining
             //
-            // Or, reuse the existing GuardedDevirtualizationCandidateInfo,
-            // which was pre-allocated to have extra room.
-            //
-            InlineCandidateInfo* pInfo;
+            pInfo->guardedClassHandle              = nullptr;
+            pInfo->guardedMethodHandle             = nullptr;
+            pInfo->guardedMethodUnboxedEntryHandle = nullptr;
+            pInfo->likelihood                      = 0;
+            pInfo->requiresInstMethodTableArg      = false;
+        }
 
-            if (pParam->call->IsGuardedDevirtualizationCandidate())
-            {
-                pInfo = pParam->call->GetGDVCandidateInfo(pParam->candidateIndex);
-            }
-            else
-            {
-                pInfo = new (pParam->pThis, CMK_Inlining) InlineCandidateInfo;
+        pInfo->methInfo                       = methInfo;
+        pInfo->ilCallerHandle                 = pParam->pThis->info.compMethodHnd;
+        pInfo->clsHandle                      = clsHandle;
+        pInfo->exactContextHnd                = pParam->exactContextHnd;
+        pInfo->retExpr                        = nullptr;
+        pInfo->preexistingSpillTemp           = BAD_VAR_NUM;
+        pInfo->clsAttr                        = clsAttr;
+        pInfo->methAttr                       = pParam->methAttr;
+        pInfo->initClassResult                = initClassResult;
+        pInfo->fncRetType                     = fncRetType;
+        pInfo->exactContextNeedsRuntimeLookup = false;
+        pInfo->inlinersContext                = pParam->pThis->compInlineContext;
 
-                // Null out bits we don't use when we're just inlining
-                //
-                pInfo->guardedClassHandle              = nullptr;
-                pInfo->guardedMethodHandle             = nullptr;
-                pInfo->guardedMethodUnboxedEntryHandle = nullptr;
-                pInfo->likelihood                      = 0;
-                pInfo->requiresInstMethodTableArg      = false;
-            }
-
-            pInfo->methInfo                       = methInfo;
-            pInfo->ilCallerHandle                 = pParam->pThis->info.compMethodHnd;
-            pInfo->clsHandle                      = clsHandle;
-            pInfo->exactContextHnd                = pParam->exactContextHnd;
-            pInfo->retExpr                        = nullptr;
-            pInfo->preexistingSpillTemp           = BAD_VAR_NUM;
-            pInfo->clsAttr                        = clsAttr;
-            pInfo->methAttr                       = pParam->methAttr;
-            pInfo->initClassResult                = initClassResult;
-            pInfo->fncRetType                     = fncRetType;
-            pInfo->exactContextNeedsRuntimeLookup = false;
-            pInfo->inlinersContext                = pParam->pThis->compInlineContext;
-
-            // Note exactContextNeedsRuntimeLookup is reset later on,
-            // over in impMarkInlineCandidate.
-            //
-            *(pParam->ppInlineCandidateInfo) = pInfo;
-        },
+        // Note exactContextNeedsRuntimeLookup is reset later on,
+        // over in impMarkInlineCandidate.
+        //
+        *(pParam->ppInlineCandidateInfo) = pInfo;
+    },
         &param);
 
     if (!success)

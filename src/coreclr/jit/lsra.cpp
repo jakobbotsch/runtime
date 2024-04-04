@@ -815,7 +815,6 @@ LinearScan::LinearScan(Compiler* theCompiler)
 #endif
 
     // Initialize the availableRegs to use for each TYP_*
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #define DEF_TP(tn, nm, jitType, sz, sze, asze, st, al, regTyp, regFld, csr, ctr, tf)                                   \
     availableRegs[static_cast<int>(TYP_##tn)] = &regFld;
@@ -1988,7 +1987,6 @@ void LinearScan::identifyCandidates()
             // We maintain two sets of FP vars - those that meet the first threshold of weighted ref Count,
             // and those that meet the second (see the definitions of thresholdFPRefCntWtd and maybeFPRefCntWtd
             // above).
-            CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if FEATURE_PARTIAL_SIMD_CALLEE_SAVE
             // Additionally, when we are generating code for a target with partial SIMD callee-save
@@ -2065,7 +2063,6 @@ void LinearScan::identifyCandidates()
     // registers current include the number of fp vars, whether there are loops, and whether there are
     // multiple exits.  These have been selected somewhat empirically, but there is probably room for
     // more tuning.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
     if (VERBOSE)
@@ -3008,7 +3005,6 @@ regNumber LinearScan::allocateReg(Interval*                currentInterval,
         if (regSelector->isSpilling())
         {
             // We're spilling.
-            CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef TARGET_ARM
             if (currentInterval->registerType == TYP_DOUBLE)
@@ -5440,7 +5436,6 @@ void LinearScan::allocateRegistersMinimal()
     }
 
     // Free registers to clear associated intervals for resolution phase
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
     if (getLsraExtendLifeTimes())
@@ -6741,7 +6736,6 @@ void LinearScan::allocateRegisters()
 #endif // JIT32_GCENCODER
 
     // Free registers to clear associated intervals for resolution phase
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
     if (getLsraExtendLifeTimes())
@@ -9937,7 +9931,7 @@ const char* LinearScan::getStatName(unsigned stat)
 #define LSRA_STAT_DEF(stat, name) name,
 #include "lsra_stats.h"
 #undef LSRA_STAT_DEF
-#define REG_SEL_DEF(stat, value, shortname, orderSeqId) #stat,
+#define REG_SEL_DEF(stat, value, shortname, orderSeqId)      #stat,
 #define BUSY_REG_SEL_DEF(stat, value, shortname, orderSeqId) REG_SEL_DEF(stat, value, shortname, orderSeqId)
 #include "lsra_score.h"
     };

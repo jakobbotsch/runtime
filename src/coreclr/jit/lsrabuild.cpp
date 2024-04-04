@@ -78,7 +78,8 @@ RefInfoListNode* RefInfoList::removeListNode(GenTree* node, unsigned multiRegIdx
 //    compiler    - The compiler context.
 //    preallocate - The number of nodes to preallocate.
 //
-RefInfoListNodePool::RefInfoListNodePool(Compiler* compiler, unsigned preallocate) : m_compiler(compiler)
+RefInfoListNodePool::RefInfoListNodePool(Compiler* compiler, unsigned preallocate)
+    : m_compiler(compiler)
 {
     if (preallocate > 0)
     {
@@ -2582,7 +2583,6 @@ void LinearScan::buildIntervals()
             // is at a new location and doesn't interfere with the uses.
             // For multi-reg local stores, the 'BuildMultiRegStoreLoc' method will further increment the
             // location by 2 for each destination register beyond the first.
-            CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
             node->gtSeqNum = currentLoc;

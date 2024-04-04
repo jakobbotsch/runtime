@@ -80,7 +80,9 @@ struct ScevConstant : Scev
 struct ScevLocal : Scev
 {
     ScevLocal(var_types type, unsigned lclNum, unsigned ssaNum)
-        : Scev(ScevOper::Local, type), LclNum(lclNum), SsaNum(ssaNum)
+        : Scev(ScevOper::Local, type)
+        , LclNum(lclNum)
+        , SsaNum(ssaNum)
     {
     }
 
@@ -110,7 +112,9 @@ struct ScevBinop : ScevUnop
 struct ScevAddRec : Scev
 {
     ScevAddRec(var_types type, Scev* start, Scev* step DEBUGARG(FlowGraphNaturalLoop* loop))
-        : Scev(ScevOper::AddRec, type), Start(start), Step(step) DEBUGARG(Loop(loop))
+        : Scev(ScevOper::AddRec, type)
+        , Start(start)
+        , Step(step) DEBUGARG(Loop(loop))
     {
     }
 

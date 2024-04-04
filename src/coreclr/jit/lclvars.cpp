@@ -72,7 +72,8 @@ void Compiler::lvaInit()
     lvaRetAddrVar       = BAD_VAR_NUM;
 
 #ifdef SWIFT_SUPPORT
-    lvaSwiftSelfArg = BAD_VAR_NUM;
+    lvaSwiftSelfArg  = BAD_VAR_NUM;
+    lvaSwiftErrorArg = BAD_VAR_NUM;
 #endif
 
     lvaInlineeReturnSpillTemp = BAD_VAR_NUM;
@@ -622,7 +623,7 @@ void Compiler::lvaInitUserArgs(InitVarDscInfo* varDscInfo, unsigned skipArgs, un
     const unsigned argSigLen = info.compMethodInfo->args.numArgs;
 
     // We will process at most takeArgs arguments from the signature after skipping skipArgs arguments
-    const int64_t numUserArgs = min(takeArgs, (argSigLen - (int64_t)skipArgs));
+    const int64_t numUserArgs = min((int64_t)takeArgs, (argSigLen - (int64_t)skipArgs));
 
     // If there are no user args or less than skipArgs args, return here since there's no work to do.
     if (numUserArgs <= 0)
@@ -662,7 +663,7 @@ void Compiler::lvaInitUserArgs(InitVarDscInfo* varDscInfo, unsigned skipArgs, un
 
 #ifdef SWIFT_SUPPORT
         if ((info.compCallConv == CorInfoCallConvExtension::Swift) &&
-            lvaInitSpecialSwiftParam(varDscInfo, strip(corInfoType), typeHnd))
+            lvaInitSpecialSwiftParam(argLst, varDscInfo, strip(corInfoType), typeHnd))
         {
             continue;
         }
@@ -1366,19 +1367,32 @@ void Compiler::lvaInitUserArgs(InitVarDscInfo* varDscInfo, unsigned skipArgs, un
 
 #ifdef SWIFT_SUPPORT
 //-----------------------------------------------------------------------------
-// lvaInitSpecialSwiftParam:
-//  If the parameter is a special Swift parameter then initialize it and return true.
+// lvaInitSpecialSwiftParam: Initialize SwiftSelf/SwiftError* parameters.
 //
 // Parameters:
+//   argHnd  - Handle for this parameter in the method's signature
 //   varDsc  - LclVarDsc* for the parameter
 //   type    - Type of the parameter
 //   typeHnd - Class handle for the type of the parameter
 //
-// Remarks:
-//   Handles SwiftSelf.
+// Returns:
+//   true if parameter was initialized
 //
-bool Compiler::lvaInitSpecialSwiftParam(InitVarDscInfo* varDscInfo, CorInfoType type, CORINFO_CLASS_HANDLE typeHnd)
+bool Compiler::lvaInitSpecialSwiftParam(CORINFO_ARG_LIST_HANDLE argHnd,
+                                        InitVarDscInfo*         varDscInfo,
+                                        CorInfoType             type,
+                                        CORINFO_CLASS_HANDLE    typeHnd)
 {
+    const bool argIsByrefOrPtr = (type == CORINFO_TYPE_BYREF) || (type == CORINFO_TYPE_PTR);
+
+    if (argIsByrefOrPtr)
+    {
+        // For primitive types, we don't expect to be passed a CORINFO_CLASS_HANDLE; look up the actual handle
+        assert(typeHnd == nullptr);
+        CORINFO_CLASS_HANDLE clsHnd = info.compCompHnd->getArgClass(&info.compMethodInfo->args, argHnd);
+        type                        = info.compCompHnd->getChildType(clsHnd, &typeHnd);
+    }
+
     if (type != CORINFO_TYPE_VALUECLASS)
     {
         return false;
@@ -1393,7 +1407,17 @@ bool Compiler::lvaInitSpecialSwiftParam(InitVarDscInfo* varDscInfo, CorInfoType 
     const char* className = info.compCompHnd->getClassNameFromMetadata(typeHnd, &namespaceName);
     if ((strcmp(className, "SwiftSelf") == 0) && (strcmp(namespaceName, "System.Runtime.InteropServices.Swift") == 0))
     {
-        LclVarDsc* varDsc = varDscInfo->varDsc;
+        if (argIsByrefOrPtr)
+        {
+            BADCODE("Expected SwiftSelf struct, got pointer/reference");
+        }
+
+        if (lvaSwiftSelfArg != BAD_VAR_NUM)
+        {
+            BADCODE("Duplicate SwiftSelf parameter");
+        }
+
+        LclVarDsc* const varDsc = varDscInfo->varDsc;
         varDsc->SetArgReg(REG_SWIFT_SELF);
         varDsc->SetOtherArgReg(REG_NA);
         varDsc->lvIsRegArg = true;
@@ -1401,6 +1425,34 @@ bool Compiler::lvaInitSpecialSwiftParam(InitVarDscInfo* varDscInfo, CorInfoType 
         compArgSize += TARGET_POINTER_SIZE;
 
         lvaSwiftSelfArg = varDscInfo->varNum;
+        return true;
+    }
+
+    if ((strcmp(className, "SwiftError") == 0) && (strcmp(namespaceName, "System.Runtime.InteropServices.Swift") == 0))
+    {
+        if (!argIsByrefOrPtr)
+        {
+            BADCODE("Expected SwiftError pointer/reference, got struct");
+        }
+
+        if (lvaSwiftErrorArg != BAD_VAR_NUM)
+        {
+            BADCODE("Duplicate SwiftError* parameter");
+        }
+
+        // We won't actually be passing this SwiftError* in REG_SWIFT_ERROR (or any register, for that matter).
+        // We will check for this quirk when generating the prolog,
+        // and ensure this fake parameter doesn't take any registers/stack space
+        LclVarDsc* const varDsc = varDscInfo->varDsc;
+        varDsc->SetArgReg(REG_SWIFT_ERROR);
+        varDsc->SetOtherArgReg(REG_NA);
+        varDsc->lvIsRegArg = true;
+        lvaSwiftErrorArg   = varDscInfo->varNum;
+
+        // Instead, all usages of the SwiftError* parameter will be redirected to this pseudolocal.
+        lvaSwiftErrorLocal = lvaGrabTempWithImplicitUse(false DEBUGARG("SwiftError pseudolocal"));
+        lvaSetStruct(lvaSwiftErrorLocal, typeHnd, false);
+        lvaSetVarAddrExposed(lvaSwiftErrorLocal DEBUGARG(AddressExposedReason::ESCAPE_ADDRESS));
         return true;
     }
 
@@ -1643,6 +1695,10 @@ void Compiler::lvaClassifyParameterABI(Classifier& classifier)
         {
             wellKnownArg = WellKnownArg::SwiftSelf;
         }
+        else if (i == lvaSwiftErrorArg)
+        {
+            wellKnownArg = WellKnownArg::SwiftError;
+        }
 #endif
 
         lvaParameterPassingInfo[i] = classifier.Classify(this, dsc->TypeGet(), structLayout, wellKnownArg);
@@ -1760,7 +1816,7 @@ void Compiler::lvaClassifyParameterABI()
             }
         }
     }
-#endif
+#endif // DEBUG
 }
 
 /*****************************************************************************
@@ -1925,7 +1981,9 @@ void Compiler::lvSetMinOptsDoNotEnreg()
 // Arguments:
 //   compiler - pointer to a compiler to get access to an allocator, compHandle etc.
 //
-Compiler::StructPromotionHelper::StructPromotionHelper(Compiler* compiler) : compiler(compiler), structPromotionInfo()
+Compiler::StructPromotionHelper::StructPromotionHelper(Compiler* compiler)
+    : compiler(compiler)
+    , structPromotionInfo()
 {
 }
 
@@ -1997,7 +2055,7 @@ bool Compiler::StructPromotionHelper::CanPromoteStructType(CORINFO_CLASS_HANDLE 
 #if defined(FEATURE_SIMD)
     // getMaxVectorByteLength() represents the size of the largest primitive type that we can struct promote.
     const unsigned maxSize =
-        MAX_NumOfFieldsInPromotableStruct * max(compiler->getMaxVectorByteLength(), sizeof(double));
+        MAX_NumOfFieldsInPromotableStruct * max(compiler->getMaxVectorByteLength(), (uint32_t)sizeof(double));
 #else  // !FEATURE_SIMD
     // sizeof(double) represents the size of the largest primitive type that we can struct promote.
     const unsigned maxSize = MAX_NumOfFieldsInPromotableStruct * sizeof(double);
@@ -2531,7 +2589,6 @@ bool Compiler::StructPromotionHelper::ShouldPromoteStructVar(unsigned lclNum)
     // In that case, we would like to avoid promortion.
     // However we haven't yet computed the lvRefCnt values so we can't do that.
     //
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
     return shouldPromote;
 }
@@ -4386,7 +4443,6 @@ void Compiler::lvaMarkLclRefs(GenTree* tree, BasicBlock* block, Statement* stmt,
                 {
                     // Variables can be marked as DoNotEngister in earlier stages like LocalAddressVisitor.
                     // No need to track them for single-def.
-                    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if FEATURE_PARTIAL_SIMD_CALLEE_SAVE
                     // TODO-CQ: If the varType needs partial callee save, conservatively do not enregister
@@ -4458,7 +4514,10 @@ void Compiler::lvaMarkLocalVars(BasicBlock* block, bool isRecompute)
         };
 
         MarkLocalVarsVisitor(Compiler* compiler, BasicBlock* block, Statement* stmt, bool isRecompute)
-            : GenTreeVisitor<MarkLocalVarsVisitor>(compiler), m_block(block), m_stmt(stmt), m_isRecompute(isRecompute)
+            : GenTreeVisitor<MarkLocalVarsVisitor>(compiler)
+            , m_block(block)
+            , m_stmt(stmt)
+            , m_isRecompute(isRecompute)
         {
         }
 
@@ -6001,7 +6060,6 @@ int Compiler::lvaAssignVirtualFrameOffsetToArg(unsigned    lclNum,
     {
         /* Argument is passed in a register, don't count it
          * when updating the current offset on the stack */
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if !defined(TARGET_ARMARCH) && !defined(TARGET_LOONGARCH64) && !defined(TARGET_RISCV64)
 #if DEBUG
@@ -6188,7 +6246,6 @@ int Compiler::lvaAssignVirtualFrameOffsetToArg(unsigned    lclNum,
             // r3    int             a2 --> pushed (not pre-spilled) for alignment of a0 by lvaInitUserArgs.
             // r2    struct { int }  a1
             // r0-r1 struct { long } a0
-            CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef PROFILING_SUPPORTED
             // On Arm under profiler, r0-r3 are always prespilled on stack.
@@ -6252,7 +6309,6 @@ int Compiler::lvaAssignVirtualFrameOffsetToArg(unsigned    lclNum,
     // For struct promoted parameters we need to set the offsets for both LclVars.
     //
     // For a dependent promoted struct we also assign the struct fields stack offset
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
     if (varDsc->lvPromoted)
     {
@@ -7319,7 +7375,6 @@ void Compiler::lvaAlignFrame()
 
     // If this isn't the final frame layout, assume we have to push an extra QWORD
     // Just so the offsets are true upper limits.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef UNIX_AMD64_ABI
     // The compNeedToAlignFrame flag  is indicating if there is a need to align the frame.
@@ -7441,8 +7496,6 @@ void Compiler::lvaAssignFrameOffsetsToPromotedStructs()
         // assign their offsets in lvaAssignVirtualFrameOffsetToArg().
         // This is not true for the System V systems since there is no
         // outgoing args space. Assign the dependently promoted fields properly.
-        //
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if defined(UNIX_AMD64_ABI) || defined(TARGET_ARM) || defined(TARGET_X86)
         // ARM: lo/hi parts of a promoted long arg need to be updated.
@@ -7518,7 +7571,6 @@ int Compiler::lvaAllocateTemps(int stkOffs, bool mustDoubleAlign)
             /* Figure out and record the stack offset of the temp */
 
             /* Need to align the offset? */
-            CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef TARGET_64BIT
             if (varTypeIsGC(tempType) && ((stkOffs % TARGET_POINTER_SIZE) != 0))

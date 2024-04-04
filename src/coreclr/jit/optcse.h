@@ -145,7 +145,11 @@ class CSE_HeuristicParameterized : public CSE_HeuristicCommon
 protected:
     struct Choice
     {
-        Choice(CSEdsc* dsc, double preference) : m_dsc(dsc), m_preference(preference), m_softmax(0), m_performed(false)
+        Choice(CSEdsc* dsc, double preference)
+            : m_dsc(dsc)
+            , m_preference(preference)
+            , m_softmax(0)
+            , m_performed(false)
         {
         }
 

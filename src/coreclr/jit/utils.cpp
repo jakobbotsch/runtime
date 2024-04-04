@@ -323,7 +323,6 @@ const char* dspRegRange(regMaskTP regMask, size_t& minSiz, const char* sep, regN
                 minSiz -= strlen(sep) + strlen(nam);
 
                 // What kind of separator should we use for this range (if it is indeed going to be a range)?
-                CLANG_FORMAT_COMMENT_ANCHOR;
 
                 if (genIsValidIntReg(regNum))
                 {
@@ -355,7 +354,6 @@ const char* dspRegRange(regMaskTP regMask, size_t& minSiz, const char* sep, regN
                     }
 #elif defined(TARGET_X86)
                     // No register ranges
-                    CLANG_FORMAT_COMMENT_ANCHOR;
 #elif defined(TARGET_LOONGARCH64)
                     if (REG_A0 <= regNum && regNum <= REG_T8)
                     {
@@ -1107,7 +1105,8 @@ void Counter::dump(FILE* output)
  *  Histogram class.
  */
 
-Histogram::Histogram(const unsigned* const sizeTable) : m_sizeTable(sizeTable)
+Histogram::Histogram(const unsigned* const sizeTable)
+    : m_sizeTable(sizeTable)
 {
     unsigned sizeCount = 0;
     do
@@ -1841,7 +1840,8 @@ void HelperCallProperties::init()
 //
 // You must use ';' as a separator; whitespace no longer works
 
-AssemblyNamesList2::AssemblyNamesList2(const WCHAR* list, HostAllocator alloc) : m_alloc(alloc)
+AssemblyNamesList2::AssemblyNamesList2(const WCHAR* list, HostAllocator alloc)
+    : m_alloc(alloc)
 {
     WCHAR          prevChar   = '?';     // dummy
     LPWSTR         nameStart  = nullptr; // start of the name currently being processed. nullptr if no current name
@@ -1928,7 +1928,9 @@ bool AssemblyNamesList2::IsInList(const char* assemblyName)
 // MethodSet
 //=============================================================================
 
-MethodSet::MethodSet(const WCHAR* filename, HostAllocator alloc) : m_pInfos(nullptr), m_alloc(alloc)
+MethodSet::MethodSet(const WCHAR* filename, HostAllocator alloc)
+    : m_pInfos(nullptr)
+    , m_alloc(alloc)
 {
     FILE* methodSetFile = _wfopen(filename, W("r"));
     if (methodSetFile == nullptr)
@@ -4045,7 +4047,7 @@ T GetSignedMagic(T denom, int* shift /*out*/)
     UT  t;
     T   result_magic;
 
-    absDenom = abs(denom);
+    absDenom = std::abs(denom);
     t        = two_nminus1 + (UT(denom) >> bits_minus_1);
     absNc    = t - 1 - (t % absDenom);        // absolute value of nc
     p        = bits_minus_1;                  // initialize p

@@ -1647,7 +1647,11 @@ bool ValueNumStore::IsSharedStatic(ValueNum vn)
 }
 
 ValueNumStore::Chunk::Chunk(CompAllocator alloc, ValueNum* pNextBaseVN, var_types typ, ChunkExtraAttribs attribs)
-    : m_defs(nullptr), m_numUsed(0), m_baseVN(*pNextBaseVN), m_typ(typ), m_attribs(attribs)
+    : m_defs(nullptr)
+    , m_numUsed(0)
+    , m_baseVN(*pNextBaseVN)
+    , m_typ(typ)
+    , m_attribs(attribs)
 {
     // Allocate "m_defs" here, according to the typ/attribs pair.
     switch (attribs)
@@ -3488,7 +3492,9 @@ TailCall:
         GetMapSelectWorkCache()->Set(fstruct, entry);
     }
 
-    recMemoryDependencies.ForEach([this, &memoryDependencies](ValueNum vn) { memoryDependencies.Add(m_pComp, vn); });
+    recMemoryDependencies.ForEach([this, &memoryDependencies](ValueNum vn) {
+        memoryDependencies.Add(m_pComp, vn);
+    });
 
     return entry.Result;
 }

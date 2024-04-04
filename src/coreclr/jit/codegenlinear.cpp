@@ -395,7 +395,6 @@ void CodeGen::genCodeForBBlist()
 
         // Traverse the block in linear order, generating code for each node as we
         // as we encounter it.
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
         // Set the use-order numbers for each node.
@@ -1027,45 +1026,6 @@ void CodeGenInterface::genUpdateVarReg(LclVarDsc* varDsc, GenTree* tree)
     // This should not be called for multireg lclVars.
     assert((tree->OperIsScalarLocal() && !tree->IsMultiRegLclVar()) || (tree->gtOper == GT_COPY));
     varDsc->SetRegNum(tree->GetRegNum());
-}
-
-//------------------------------------------------------------------------
-// sameRegAsDst: Return the child that has the same reg as the dst (if any)
-//
-// Arguments:
-//    tree  - the node of interest
-//    other - an out parameter to return the other child
-//
-// Notes:
-//    If 'tree' has a child with the same assigned register as its target reg,
-//    that child will be returned, and 'other' will contain the non-matching child.
-//    Otherwise, both other and the return value will be nullptr.
-//
-GenTree* sameRegAsDst(GenTree* tree, GenTree*& other /*out*/)
-{
-    if (tree->GetRegNum() == REG_NA)
-    {
-        other = nullptr;
-        return nullptr;
-    }
-
-    GenTree* op1 = tree->AsOp()->gtOp1;
-    GenTree* op2 = tree->AsOp()->gtOp2;
-    if (op1->GetRegNum() == tree->GetRegNum())
-    {
-        other = op2;
-        return op1;
-    }
-    if (op2->GetRegNum() == tree->GetRegNum())
-    {
-        other = op1;
-        return op2;
-    }
-    else
-    {
-        other = nullptr;
-        return nullptr;
-    }
 }
 
 //------------------------------------------------------------------------
@@ -1819,7 +1779,6 @@ void CodeGen::genConsumePutStructArgStk(GenTreePutArgStk* putArgNode,
 
     // If the op1 is already in the dstReg - nothing to do.
     // Otherwise load the op1 (the address) into the dstReg to copy the struct on the stack by value.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef TARGET_X86
     assert(dstReg != REG_SPBASE);

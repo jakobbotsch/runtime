@@ -338,7 +338,10 @@ private:
 
 protected:
     HashTableBase(TAllocator alloc, Bucket* buckets, unsigned numBuckets)
-        : m_alloc(alloc), m_buckets(buckets), m_numBuckets(numBuckets), m_numFullBuckets(0)
+        : m_alloc(alloc)
+        , m_buckets(buckets)
+        , m_numBuckets(numBuckets)
+        , m_numFullBuckets(0)
     {
         if (numBuckets > 0)
         {
@@ -359,7 +362,8 @@ public:
 
         Bucket* m_bucket;
 
-        KeyValuePair(Bucket* bucket) : m_bucket(bucket)
+        KeyValuePair(Bucket* bucket)
+            : m_bucket(bucket)
         {
             assert(m_bucket != nullptr);
         }
@@ -390,7 +394,9 @@ public:
         unsigned m_index;
 
         Iterator(Bucket* buckets, unsigned numBuckets, unsigned index)
-            : m_buckets(buckets), m_numBuckets(numBuckets), m_index(index)
+            : m_buckets(buckets)
+            , m_numBuckets(numBuckets)
+            , m_index(index)
         {
             assert((buckets != nullptr) || (numBuckets == 0));
             assert(index <= numBuckets);

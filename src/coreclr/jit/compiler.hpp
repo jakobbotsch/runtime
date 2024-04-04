@@ -36,7 +36,7 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 inline bool getInlinePInvokeEnabled()
 {
 #ifdef DEBUG
-    return JitConfig.JitPInvokeEnabled() && !JitConfig.StressCOMCall();
+    return JitConfig.JitPInvokeEnabled();
 #else
     return true;
 #endif
@@ -63,26 +63,6 @@ inline UINT32 forceCastToUInt32(double d)
 {
     Volatile<UINT32> u = (UINT32)d;
     return u;
-}
-
-enum RoundLevel
-{
-    ROUND_NEVER     = 0, // Never round
-    ROUND_CMP_CONST = 1, // Round values compared against constants
-    ROUND_CMP       = 2, // Round comparands and return values
-    ROUND_ALWAYS    = 3, // Round always
-
-    COUNT_ROUND_LEVEL,
-    DEFAULT_ROUND_LEVEL = ROUND_NEVER
-};
-
-inline RoundLevel getRoundFloatLevel()
-{
-#ifdef DEBUG
-    return (RoundLevel)JitConfig.JitRoundFloat();
-#else
-    return DEFAULT_ROUND_LEVEL;
-#endif
 }
 
 /*****************************************************************************/
@@ -2608,18 +2588,17 @@ inline
             if (!FPbased)
             {
                 // Worst case stack based offset.
-                CLANG_FORMAT_COMMENT_ANCHOR;
 #if FEATURE_FIXED_OUT_ARGS
                 int outGoingArgSpaceSize = lvaOutgoingArgSpaceSize;
 #else
                 int outGoingArgSpaceSize = 0;
 #endif
-                varOffset = outGoingArgSpaceSize + max(-varNum * TARGET_POINTER_SIZE, (int)lvaGetMaxSpillTempSize());
+                varOffset =
+                    outGoingArgSpaceSize + max(-varNum * (int)TARGET_POINTER_SIZE, (int)lvaGetMaxSpillTempSize());
             }
             else
             {
                 // Worst case FP based offset.
-                CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef TARGET_ARM
                 varOffset = codeGen->genCallerSPtoInitialSPdelta() - codeGen->genCallerSPtoFPdelta();
@@ -2707,7 +2686,6 @@ inline bool Compiler::lvaIsOriginalThisArg(unsigned varNum)
     {
         LclVarDsc* varDsc = lvaGetDesc(varNum);
         // Should never write to or take the address of the original 'this' arg
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifndef JIT32_GCENCODER
         // With the general encoder/decoder, when the original 'this' arg is needed as a generics context param, we

@@ -1697,7 +1697,6 @@ bool Compiler::optTryUnrollLoop(FlowGraphNaturalLoop* loop, bool* changedIR)
 
     // The old loop body is unreachable now, but we will remove those
     // blocks after we finish unrolling.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
     if (verbose)
@@ -1800,7 +1799,9 @@ void Compiler::optReplaceScalarUsesWithConst(BasicBlock* block, unsigned lclNum,
         bool MadeChanges = false;
 
         ReplaceVisitor(Compiler* comp, unsigned lclNum, ssize_t cnsVal)
-            : GenTreeVisitor(comp), m_lclNum(lclNum), m_cnsVal(cnsVal)
+            : GenTreeVisitor(comp)
+            , m_lclNum(lclNum)
+            , m_cnsVal(cnsVal)
         {
         }
 
@@ -3423,7 +3424,6 @@ bool Compiler::optNarrowTree(GenTree* tree, var_types srct, var_types dstt, Valu
         switch (oper)
         {
             /* Constants can usually be narrowed by changing their value */
-            CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifndef TARGET_64BIT
             __int64 lval;
@@ -3784,7 +3784,8 @@ void Compiler::optRecordSsaUses(GenTree* tree, BasicBlock* block)
         };
 
         SsaRecordingVisitor(Compiler* compiler, BasicBlock* block)
-            : GenTreeVisitor<SsaRecordingVisitor>(compiler), m_block(block)
+            : GenTreeVisitor<SsaRecordingVisitor>(compiler)
+            , m_block(block)
         {
         }
 
@@ -4621,7 +4622,11 @@ void Compiler::optHoistLoopBlocks(FlowGraphNaturalLoop*    loop,
             const char* m_failReason;
 #endif
 
-            Value(GenTree* node) : m_node(node), m_hoistable(false), m_cctorDependent(false), m_invariant(false)
+            Value(GenTree* node)
+                : m_node(node)
+                , m_hoistable(false)
+                , m_cctorDependent(false)
+                , m_invariant(false)
             {
 #ifdef DEBUG
                 m_failReason = "unset";
@@ -5476,7 +5481,9 @@ PhaseStatus Compiler::fgCanonicalizeFirstBB()
     return PhaseStatus::MODIFIED_EVERYTHING;
 }
 
-LoopSideEffects::LoopSideEffects() : VarInOut(VarSetOps::UninitVal()), VarUseDef(VarSetOps::UninitVal())
+LoopSideEffects::LoopSideEffects()
+    : VarInOut(VarSetOps::UninitVal())
+    , VarUseDef(VarSetOps::UninitVal())
 {
     for (MemoryKind mk : allMemoryKinds())
     {

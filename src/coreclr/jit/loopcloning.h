@@ -263,7 +263,10 @@ struct LcMdArrayOptInfo : public LcOptInfo
     ArrIndex* index;         // "index" cached computation in the form of an ArrIndex representation.
 
     LcMdArrayOptInfo(GenTreeArrElem* arrElem, unsigned dim)
-        : LcOptInfo(LcMdArray), arrElem(arrElem), dim(dim), index(nullptr)
+        : LcOptInfo(LcMdArray)
+        , arrElem(arrElem)
+        , dim(dim)
+        , index(nullptr)
     {
     }
 
@@ -296,7 +299,10 @@ struct LcJaggedArrayOptInfo : public LcOptInfo
     Statement* stmt;     // "stmt" where the optimization opportunity occurs.
 
     LcJaggedArrayOptInfo(ArrIndex& arrIndex, unsigned dim, Statement* stmt)
-        : LcOptInfo(LcJaggedArray), dim(dim), arrIndex(arrIndex), stmt(stmt)
+        : LcOptInfo(LcJaggedArray)
+        , dim(dim)
+        , arrIndex(arrIndex)
+        , stmt(stmt)
     {
     }
 };
@@ -315,7 +321,11 @@ struct LcTypeTestOptInfo : public LcOptInfo
     CORINFO_CLASS_HANDLE clsHnd;
 
     LcTypeTestOptInfo(Statement* stmt, GenTreeIndir* methodTableIndir, unsigned lclNum, CORINFO_CLASS_HANDLE clsHnd)
-        : LcOptInfo(LcTypeTest), stmt(stmt), methodTableIndir(methodTableIndir), lclNum(lclNum), clsHnd(clsHnd)
+        : LcOptInfo(LcTypeTest)
+        , stmt(stmt)
+        , methodTableIndir(methodTableIndir)
+        , lclNum(lclNum)
+        , clsHnd(clsHnd)
     {
     }
 };
@@ -391,7 +401,10 @@ struct LC_Array
              //     Example 2: a[0][1][2] and dim = -1 implies a[0][1][2].length
     LC_Array() : type(Invalid), dim(-1) {}
     LC_Array(ArrType type, ArrIndex* arrIndex, int dim, OperType oper)
-        : type(type), arrIndex(arrIndex), oper(oper), dim(dim)
+        : type(type)
+        , arrIndex(arrIndex)
+        , oper(oper)
+        , dim(dim)
     {
     }
 
@@ -707,7 +720,10 @@ struct LC_Condition
 
     LC_Condition() {}
     LC_Condition(genTreeOps oper, const LC_Expr& op1, const LC_Expr& op2, bool asUnsigned = false)
-        : op1(op1), op2(op2), oper(oper), compareUnsigned(asUnsigned)
+        : op1(op1)
+        , op2(op2)
+        , oper(oper)
+        , compareUnsigned(asUnsigned)
     {
     }
 

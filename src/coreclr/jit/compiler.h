@@ -40,7 +40,6 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 #include "arraystack.h"
 #include "hashbv.h"
 #include "jitexpandarray.h"
-#include "tinyarray.h"
 #include "valuenum.h"
 #include "scev.h"
 #include "namedintrinsiclist.h"
@@ -235,7 +234,8 @@ public:
 
     LclSsaVarDsc(BasicBlock* block) : m_block(block) {}
 
-    LclSsaVarDsc(BasicBlock* block, GenTreeLclVarCommon* defNode) : m_block(block)
+    LclSsaVarDsc(BasicBlock* block, GenTreeLclVarCommon* defNode)
+        : m_block(block)
     {
         SetDefNode(defNode);
     }
@@ -345,7 +345,7 @@ class SsaDefArray
     void GrowArray(CompAllocator alloc)
     {
         unsigned oldSize = m_arraySize;
-        unsigned newSize = max(2, oldSize * 2);
+        unsigned newSize = max(2u, oldSize * 2);
 
         T* newArray = alloc.allocate<T>(newSize);
 
@@ -497,11 +497,11 @@ public:
     // note this only packs because var_types is a typedef of unsigned char
     var_types lvType : 5; // TYP_INT/LONG/FLOAT/DOUBLE/REF
 
-    unsigned char lvIsParam : 1;           // is this a parameter?
-    unsigned char lvIsRegArg : 1;          // is this an argument that was passed by register?
+    unsigned char lvIsParam           : 1; // is this a parameter?
+    unsigned char lvIsRegArg          : 1; // is this an argument that was passed by register?
     unsigned char lvFramePointerBased : 1; // 0 = off of REG_SPBASE (e.g., ESP), 1 = off of REG_FPBASE (e.g., EBP)
 
-    unsigned char lvOnFrame : 1;  // (part of) the variable lives on the frame
+    unsigned char lvOnFrame  : 1; // (part of) the variable lives on the frame
     unsigned char lvRegister : 1; // assigned to live in a register? For RyuJIT backend, this is only set if the
                                   // variable is in the same register for the entire function.
     unsigned char lvTracked : 1;  // is this a tracked variable?
@@ -523,16 +523,16 @@ private:
                             // We cannot reason reliably about the value of the variable.
 public:
     unsigned char lvDoNotEnregister : 1; // Do not enregister this variable.
-    unsigned char lvFieldAccessed : 1;   // The var is a struct local, and a field of the variable is accessed.  Affects
+    unsigned char lvFieldAccessed   : 1; // The var is a struct local, and a field of the variable is accessed.  Affects
                                          // struct promotion.
     unsigned char lvLiveInOutOfHndlr : 1; // The variable is live in or out of an exception handler, and therefore must
                                           // be on the stack (at least at those boundaries.)
 
-    unsigned char lvInSsa : 1;       // The variable is in SSA form (set by SsaBuilder)
-    unsigned char lvIsCSE : 1;       // Indicates if this LclVar is a CSE variable.
+    unsigned char lvInSsa       : 1; // The variable is in SSA form (set by SsaBuilder)
+    unsigned char lvIsCSE       : 1; // Indicates if this LclVar is a CSE variable.
     unsigned char lvHasLdAddrOp : 1; // has ldloca or ldarga opcode on this local.
 
-    unsigned char lvHasILStoreOp : 1;         // there is at least one STLOC or STARG on this local
+    unsigned char lvHasILStoreOp         : 1; // there is at least one STLOC or STARG on this local
     unsigned char lvHasMultipleILStoreOp : 1; // there is more than one STLOC on this local
 
     unsigned char lvIsTemp : 1; // Short-lifetime compiler temp
@@ -547,13 +547,13 @@ public:
 #if defined(TARGET_LOONGARCH64)
     unsigned char lvIs4Field1 : 1; // Set if the 1st field is int or float within struct for LA-ABI64.
     unsigned char lvIs4Field2 : 1; // Set if the 2nd field is int or float within struct for LA-ABI64.
-    unsigned char lvIsSplit : 1;   // Set if the argument is splited.
+    unsigned char lvIsSplit   : 1; // Set if the argument is splited.
 #endif                             // defined(TARGET_LOONGARCH64)
 
 #if defined(TARGET_RISCV64)
     unsigned char lvIs4Field1 : 1; // Set if the 1st field is int or float within struct for RISCV64.
     unsigned char lvIs4Field2 : 1; // Set if the 2nd field is int or float within struct for RISCV64.
-    unsigned char lvIsSplit : 1;   // Set if the argument is splited.
+    unsigned char lvIsSplit   : 1; // Set if the argument is splited.
 #endif                             // defined(TARGET_RISCV64)
 
     unsigned char lvSingleDef : 1; // variable has a single def. Used to identify ref type locals that can get type
@@ -582,7 +582,7 @@ public:
     unsigned char lvQuirkToLong : 1; // Quirk to allocate this LclVar as a 64-bit long
 #endif
 #ifdef DEBUG
-    unsigned char lvKeepType : 1;       // Don't change the type of this variable
+    unsigned char lvKeepType       : 1; // Don't change the type of this variable
     unsigned char lvNoLclFldStress : 1; // Can't apply local field stress on this one
 #endif
     unsigned char lvIsPtr : 1; // Might this be used in an address computation? (used by buffer overflow security
@@ -637,8 +637,8 @@ public:
 
 #ifdef DEBUG
     unsigned char lvClassInfoUpdated : 1; // true if this var has updated class handle or exactness
-    unsigned char lvIsHoist : 1;          // CSE temp for a hoisted tree
-    unsigned char lvIsMultiDefCSE : 1;    // CSE temp for a multi-def CSE
+    unsigned char lvIsHoist          : 1; // CSE temp for a hoisted tree
+    unsigned char lvIsMultiDefCSE    : 1; // CSE temp for a multi-def CSE
 #endif
 
     unsigned char lvImplicitlyReferenced : 1; // true if there are non-IR references to this local (prolog, epilog, gc,
@@ -1110,11 +1110,6 @@ public:
     {
         return (var_types)lvType;
     }
-    bool lvStackAligned() const
-    {
-        assert(lvIsStructField);
-        return ((lvFldOffset % TARGET_POINTER_SIZE) == 0);
-    }
 
     // NormalizeOnLoad Rules:
     //     1. All small locals are actually TYP_INT locals.
@@ -1334,7 +1329,8 @@ public:
     IntegralRange() = default;
 
     IntegralRange(SymbolicIntegerValue lowerBound, SymbolicIntegerValue upperBound)
-        : m_lowerBound(lowerBound), m_upperBound(upperBound)
+        : m_lowerBound(lowerBound)
+        , m_upperBound(upperBound)
     {
         assert(lowerBound <= upperBound);
     }
@@ -1422,7 +1418,10 @@ private:
     var_types tdType;
 
 public:
-    TempDsc(int _tdNum, unsigned _tdSize, var_types _tdType) : tdNum(_tdNum), tdSize((BYTE)_tdSize), tdType(_tdType)
+    TempDsc(int _tdNum, unsigned _tdSize, var_types _tdType)
+        : tdNum(_tdNum)
+        , tdSize((BYTE)_tdSize)
+        , tdType(_tdType)
     {
 #ifdef DEBUG
         // temps must have a negative number (so they have a different number from all local variables)
@@ -3566,12 +3565,6 @@ public:
     bool gtSplitTree(
         BasicBlock* block, Statement* stmt, GenTree* splitPoint, Statement** firstNewStmt, GenTree*** splitPointUse);
 
-    // Static fields of struct types (and sometimes the types that those are reduced to) are represented by having the
-    // static field contain an object pointer to the boxed struct.  This simplifies the GC implementation...but
-    // complicates the JIT somewhat.  This predicate returns "true" iff a node with type "fieldNodeType", representing
-    // the given "fldHnd", is such an object pointer.
-    bool gtIsStaticFieldPtrToBoxedStruct(var_types fieldNodeType, CORINFO_FIELD_HANDLE fldHnd);
-
     bool gtStoreDefinesField(
         LclVarDsc* fieldVarDsc, ssize_t offset, unsigned size, ssize_t* pFieldStoreOffset, unsigned* pFieldStoreSize);
 
@@ -3872,6 +3865,8 @@ public:
 
 #ifdef SWIFT_SUPPORT
     unsigned lvaSwiftSelfArg;
+    unsigned lvaSwiftErrorArg;
+    unsigned lvaSwiftErrorLocal;
 #endif
 
 #if defined(DEBUG) && defined(TARGET_XARCH)
@@ -4001,7 +3996,7 @@ public:
 
     void lvaClassifyParameterABI();
 
-    bool lvaInitSpecialSwiftParam(InitVarDscInfo* varDscInfo, CorInfoType type, CORINFO_CLASS_HANDLE typeHnd);
+    bool lvaInitSpecialSwiftParam(CORINFO_ARG_LIST_HANDLE argHnd, InitVarDscInfo* varDscInfo, CorInfoType type, CORINFO_CLASS_HANDLE typeHnd);
 
     var_types lvaGetActualType(unsigned lclNum);
     var_types lvaGetRealType(unsigned lclNum);
@@ -4416,12 +4411,12 @@ protected:
     void impCheckForPInvokeCall(
         GenTreeCall* call, CORINFO_METHOD_HANDLE methHnd, CORINFO_SIG_INFO* sig, unsigned mflags, BasicBlock* block);
     GenTreeCall* impImportIndirectCall(CORINFO_SIG_INFO* sig, const DebugInfo& di = DebugInfo());
-    void impPopArgsForUnmanagedCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, CallArg** swiftErrorArg);
-    void impPopArgsForSwiftCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, CallArg** swiftErrorArg);
+    void impPopArgsForUnmanagedCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, GenTree** swiftErrorNode);
+    void impPopArgsForSwiftCall(GenTreeCall* call, CORINFO_SIG_INFO* sig, GenTree** swiftErrorNode);
     void impRetypeUnmanagedCallArgs(GenTreeCall* call);
 
 #ifdef SWIFT_SUPPORT
-    void impAppendSwiftErrorStore(GenTreeCall* call, CallArg* const swiftErrorArg);
+    void impAppendSwiftErrorStore(GenTree* const swiftErrorNode);
 #endif // SWIFT_SUPPORT
 
     void impInsertHelperCall(CORINFO_HELPER_DESC* helperCall);
@@ -6720,11 +6715,6 @@ private:
     bool fgForwardSubHasStoreInterference(Statement* defStmt, Statement* nextStmt, GenTree* nextStmtUse);
     void fgForwardSubUpdateLiveness(GenTree* newSubListFirst, GenTree* newSubListLast);
 
-    // The given local variable, required to be a struct variable, is being assigned via
-    // a "lclField", to make it masquerade as an integral type in the ABI.  Make sure that
-    // the variable is not enregistered, and is therefore not promoted independently.
-    void fgLclFldAssign(unsigned lclNum);
-
     enum TypeProducerKind
     {
         TPK_Unknown = 0, // May not be a RuntimeType
@@ -8366,7 +8356,11 @@ public:
     template <typename Functor>
     bool eeRunFunctorWithSPMIErrorTrap(Functor f)
     {
-        return eeRunWithSPMIErrorTrap<Functor>([](Functor* pf) { (*pf)(); }, &f);
+        return eeRunWithSPMIErrorTrap<Functor>(
+            [](Functor* pf) {
+            (*pf)();
+        },
+            &f);
     }
 
     bool eeRunWithSPMIErrorTrapImp(void (*function)(void*), void* param);
@@ -8940,7 +8934,6 @@ public:
         // We need to report the ISA dependency to the VM so that scenarios
         // such as R2R work correctly for larger vector sizes, so we always
         // do `compExactlyDependsOn` for such cases.
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if defined(TARGET_XARCH)
         if (compExactlyDependsOn(InstructionSet_VectorT512))
@@ -9657,9 +9650,9 @@ public:
 
         // optimize maximally and/or favor speed over size?
 
-#define DEFAULT_MIN_OPTS_CODE_SIZE 60000
-#define DEFAULT_MIN_OPTS_INSTR_COUNT 20000
-#define DEFAULT_MIN_OPTS_BB_COUNT 2000
+#define DEFAULT_MIN_OPTS_CODE_SIZE    60000
+#define DEFAULT_MIN_OPTS_INSTR_COUNT  20000
+#define DEFAULT_MIN_OPTS_BB_COUNT     2000
 #define DEFAULT_MIN_OPTS_LV_NUM_COUNT 2000
 #define DEFAULT_MIN_OPTS_LV_REF_COUNT 8000
 
@@ -10266,11 +10259,11 @@ public:
         // (2) the code is hot/cold split, and we issued less code than we expected
         // in the cold section (the hot section will always be padded out to compTotalHotCodeSize).
 
-        bool compIsStatic : 1;           // Is the method static (no 'this' pointer)?
-        bool compIsVarArgs : 1;          // Does the method have varargs parameters?
-        bool compInitMem : 1;            // Is the CORINFO_OPT_INIT_LOCALS bit set in the method info options?
-        bool compProfilerCallback : 1;   // JIT inserted a profiler Enter callback
-        bool compPublishStubParam : 1;   // EAX captured in prolog will be available through an intrinsic
+        bool compIsStatic           : 1; // Is the method static (no 'this' pointer)?
+        bool compIsVarArgs          : 1; // Does the method have varargs parameters?
+        bool compInitMem            : 1; // Is the CORINFO_OPT_INIT_LOCALS bit set in the method info options?
+        bool compProfilerCallback   : 1; // JIT inserted a profiler Enter callback
+        bool compPublishStubParam   : 1; // EAX captured in prolog will be available through an intrinsic
         bool compHasNextCallRetAddr : 1; // The NextCallReturnAddress intrinsic is used.
 
         var_types compRetType;       // Return type of the method as declared in IL (including SIMD normalization)
@@ -10360,7 +10353,6 @@ public:
         // There are cases where implicit RetBuf argument should be explicitly returned in a register.
         // In such cases the return type is changed to TYP_BYREF and appropriate IR is generated.
         // These cases are:
-        CLANG_FORMAT_COMMENT_ANCHOR;
 #ifdef TARGET_AMD64
         // 1. on x64 Windows and Unix the address of RetBuf needs to be returned by
         //    methods with hidden RetBufArg in RAX. In such case GT_RETURN is of TYP_BYREF,
@@ -10379,7 +10371,6 @@ public:
 #endif
         // 3. Windows ARM64 native instance calling convention requires the address of RetBuff
         //    to be returned in x0.
-        CLANG_FORMAT_COMMENT_ANCHOR;
 #if defined(TARGET_ARM64)
         if (TargetOS::IsWindows)
         {
@@ -11317,7 +11308,9 @@ protected:
     Compiler*            m_compiler;
     ArrayStack<GenTree*> m_ancestors;
 
-    GenTreeVisitor(Compiler* compiler) : m_compiler(compiler), m_ancestors(compiler->getAllocator(CMK_ArrayStack))
+    GenTreeVisitor(Compiler* compiler)
+        : m_compiler(compiler)
+        , m_ancestors(compiler->getAllocator(CMK_ArrayStack))
     {
         assert(compiler != nullptr);
 
@@ -11839,7 +11832,9 @@ class EHClauses
     };
 
 public:
-    EHClauses(Compiler* comp) : m_begin(comp->compHndBBtab), m_end(comp->compHndBBtab + comp->compHndBBtabCount)
+    EHClauses(Compiler* comp)
+        : m_begin(comp->compHndBBtab)
+        , m_end(comp->compHndBBtab + comp->compHndBBtabCount)
     {
         assert((m_begin != nullptr) || (m_begin == m_end));
     }
@@ -11876,7 +11871,9 @@ class StringPrinter
 
 public:
     StringPrinter(CompAllocator alloc, char* buffer = nullptr, size_t bufferMax = 0)
-        : m_alloc(alloc), m_buffer(buffer), m_bufferMax(bufferMax)
+        : m_alloc(alloc)
+        , m_buffer(buffer)
+        , m_bufferMax(bufferMax)
     {
         if ((m_buffer == nullptr) || (m_bufferMax == 0))
         {

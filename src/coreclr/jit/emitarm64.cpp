@@ -1471,8 +1471,8 @@ emitter::insFormat emitter::emitInsFormat(instruction ins)
     return insFormats[ins];
 }
 
-#define LD 1
-#define ST 2
+#define LD  1
+#define ST  2
 #define CMP 4
 #define RSH 8
 #define WID 16
@@ -8964,7 +8964,7 @@ void emitter::emitIns_Call(EmitCallType          callType,
 
     // Our stack level should be always greater than the bytes of arguments we push. Just
     // a sanity test.
-    assert((unsigned)abs(argSize) <= codeGen->genStackLevel);
+    assert((unsigned)std::abs(argSize) <= codeGen->genStackLevel);
 
     // Trim out any callee-trashed registers from the live set.
     regMaskTP savedSet = emitGetGCRegsSavedOrModified(methHnd);

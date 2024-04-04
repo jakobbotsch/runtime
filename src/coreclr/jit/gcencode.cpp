@@ -134,7 +134,6 @@ void GCInfo::gcMarkFilterVarsPinned()
                         //     (2) a regular one for after the filter
                         // and then adjust the original lifetime to end before
                         // the filter.
-                        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
                         if (compiler->verbose)
@@ -177,7 +176,6 @@ void GCInfo::gcMarkFilterVarsPinned()
                         // somewhere inside it, so we only create 1 new lifetime,
                         // and then adjust the original lifetime to end before
                         // the filter.
-                        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
                         if (compiler->verbose)
@@ -216,7 +214,6 @@ void GCInfo::gcMarkFilterVarsPinned()
                         // lifetime for the part inside the filter and adjust
                         // the start of the original lifetime to be the end
                         // of the filter
-                        CLANG_FORMAT_COMMENT_ANCHOR;
 #ifdef DEBUG
                         if (compiler->verbose)
                         {
@@ -259,7 +256,6 @@ void GCInfo::gcMarkFilterVarsPinned()
                     {
                         // The variable lifetime is completely within the filter,
                         // so just add the pinned flag.
-                        CLANG_FORMAT_COMMENT_ANCHOR;
 #ifdef DEBUG
                         if (compiler->verbose)
                         {
@@ -1463,7 +1459,6 @@ size_t GCInfo::gcInfoBlockHdrSave(
 #endif
 
     /* Write the method size first (using between 1 and 5 bytes) */
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
     if (compiler->verbose)
@@ -1818,7 +1813,7 @@ static int (*zeroFunc)() = zeroFN;
  */
 
 typedef unsigned pasMaskType;
-#define BITS_IN_pasMask (BITS_PER_BYTE * sizeof(pasMaskType))
+#define BITS_IN_pasMask     (BITS_PER_BYTE * sizeof(pasMaskType))
 #define HIGHEST_pasMask_BIT (((pasMaskType)0x1) << (BITS_IN_pasMask - 1))
 
 //-----------------------------------------------------------------------------
@@ -1851,8 +1846,8 @@ public:
     // Use these in the case where there actually are more ptrs than pasArgMask
     unsigned pasEnumGCoffsCount();
 #define pasENUM_START ((unsigned)-1)
-#define pasENUM_LAST ((unsigned)-2)
-#define pasENUM_END ((unsigned)-3)
+#define pasENUM_LAST  ((unsigned)-2)
+#define pasENUM_END   ((unsigned)-3)
     unsigned pasEnumGCoffs(unsigned iter, unsigned* offs);
 
 protected:
@@ -3647,7 +3642,8 @@ class GcInfoEncoderWithLogging
 
 public:
     GcInfoEncoderWithLogging(GcInfoEncoder* gcInfoEncoder, bool verbose)
-        : m_gcInfoEncoder(gcInfoEncoder), m_doLogging(verbose INDEBUG(|| JitConfig.JitGCInfoLogging() != 0))
+        : m_gcInfoEncoder(gcInfoEncoder)
+        , m_doLogging(verbose INDEBUG(|| JitConfig.JitGCInfoLogging() != 0))
     {
     }
 
@@ -4025,7 +4021,8 @@ struct InterruptibleRangeReporter
     Encoder* gcInfoEncoderWithLog;
 
     InterruptibleRangeReporter(unsigned _prevStart, Encoder* _gcInfo)
-        : prevStart(_prevStart), gcInfoEncoderWithLog(_gcInfo)
+        : prevStart(_prevStart)
+        , gcInfoEncoderWithLog(_gcInfo)
     {
     }
 
@@ -4110,7 +4107,6 @@ void GCInfo::gcMakeRegPtrTable(
                 // pointers" section of the GC info even if lvTracked==true
 
                 // Has this argument been fully enregistered?
-                CLANG_FORMAT_COMMENT_ANCHOR;
 
                 if (!varDsc->lvOnFrame)
                 {
@@ -4139,7 +4135,6 @@ void GCInfo::gcMakeRegPtrTable(
             }
 
             // If we haven't continued to the next variable, we should report this as an untracked local.
-            CLANG_FORMAT_COMMENT_ANCHOR;
 
             GcSlotFlags flags = GC_SLOT_UNTRACKED;
 

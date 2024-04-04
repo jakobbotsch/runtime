@@ -673,7 +673,7 @@ void Compiler::optAssertionInit(bool isLocalProp)
         // Local assertion prop keeps mappings from each local var to the assertions about that var.
         //
         optAssertionDep =
-            new (this, CMK_AssertionProp) JitExpandArray<ASSERT_TP>(getAllocator(CMK_AssertionProp), max(1, lvaCount));
+            new (this, CMK_AssertionProp) JitExpandArray<ASSERT_TP>(getAllocator(CMK_AssertionProp), max(1u, lvaCount));
 
         if (optCrossBlockLocalAssertionProp)
         {
@@ -5273,12 +5273,12 @@ GenTree* Compiler::optAssertionProp_BndsChk(ASSERT_VALARG_TP assertions, GenTree
     assert(tree->OperIs(GT_BOUNDS_CHECK));
 
 #ifdef FEATURE_ENABLE_NO_RANGE_CHECKS
-    if (JitConfig.JitNoRangeChks())
+    if (JitConfig.JitNoRngChks())
     {
 #ifdef DEBUG
         if (verbose)
         {
-            printf("\nFlagging check redundant due to JitNoRangeChks in " FMT_BB ":\n", compCurBB->bbNum);
+            printf("\nFlagging check redundant due to JitNoRngChks in " FMT_BB ":\n", compCurBB->bbNum);
             gtDispTree(tree, nullptr, nullptr, true);
         }
 #endif // DEBUG
@@ -6283,7 +6283,9 @@ struct VNAssertionPropVisitorInfo
     Statement*  stmt;
     BasicBlock* block;
     VNAssertionPropVisitorInfo(Compiler* pThis, BasicBlock* block, Statement* stmt)
-        : pThis(pThis), stmt(stmt), block(block)
+        : pThis(pThis)
+        , stmt(stmt)
+        , block(block)
     {
     }
 };

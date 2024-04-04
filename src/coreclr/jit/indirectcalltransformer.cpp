@@ -155,7 +155,9 @@ private:
     {
     public:
         Transformer(Compiler* compiler, BasicBlock* block, Statement* stmt)
-            : compiler(compiler), currBlock(block), stmt(stmt)
+            : compiler(compiler)
+            , currBlock(block)
+            , stmt(stmt)
         {
             remainderBlock = nullptr;
             checkBlock     = nullptr;
@@ -469,7 +471,8 @@ private:
     {
     public:
         GuardedDevirtualizationTransformer(Compiler* compiler, BasicBlock* block, Statement* stmt)
-            : Transformer(compiler, block, stmt), returnTemp(BAD_VAR_NUM)
+            : Transformer(compiler, block, stmt)
+            , returnTemp(BAD_VAR_NUM)
         {
         }
 
@@ -1255,7 +1258,9 @@ private:
                 unsigned m_nodeCount;
 
                 ClonabilityVisitor(Compiler* compiler)
-                    : GenTreeVisitor(compiler), m_unclonableNode(nullptr), m_nodeCount(0)
+                    : GenTreeVisitor(compiler)
+                    , m_unclonableNode(nullptr)
+                    , m_nodeCount(0)
                 {
                 }
 

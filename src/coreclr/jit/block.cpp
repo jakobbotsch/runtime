@@ -140,7 +140,8 @@ void FlowEdge::addLikelihood(weight_t addedLikelihood)
 //     comp  - Compiler instance
 //     block - The block whose successors are to be iterated
 //
-AllSuccessorEnumerator::AllSuccessorEnumerator(Compiler* comp, BasicBlock* block) : m_block(block)
+AllSuccessorEnumerator::AllSuccessorEnumerator(Compiler* comp, BasicBlock* block)
+    : m_block(block)
 {
     m_numSuccs = 0;
     block->VisitAllSuccs(comp,
@@ -1902,7 +1903,8 @@ BBswtDesc::BBswtDesc(Compiler* comp, const BBswtDesc* other)
 //    comp - compiler instance
 //    other - existing descriptor to copy
 //
-BBehfDesc::BBehfDesc(Compiler* comp, const BBehfDesc* other) : bbeCount(other->bbeCount)
+BBehfDesc::BBehfDesc(Compiler* comp, const BBehfDesc* other)
+    : bbeCount(other->bbeCount)
 {
     // Allocate and fill in a new dst tab
     //

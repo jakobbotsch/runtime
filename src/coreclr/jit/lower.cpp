@@ -1633,7 +1633,6 @@ GenTree* Lowering::NewPutArg(GenTreeCall* call, GenTree* arg, CallArg* callArg, 
             // Mark this one as tail call arg if it is a fast tail call.
             // This provides the info to put this argument in in-coming arg area slot
             // instead of in out-going arg area slot.
-            CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
             // Make sure state is correct. The PUTARG_STK has TYP_VOID, as it doesn't produce
@@ -5668,7 +5667,6 @@ void Lowering::InsertPInvokeMethodProlog()
     // On 32-bit targets, CORINFO_HELP_INIT_PINVOKE_FRAME initializes the PInvoke frame and then pushes it onto
     // the current thread's Frame stack. On 64-bit targets, it only initializes the PInvoke frame.
     // As a result, don't push the frame onto the frame stack here for any 64-bit targets
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef TARGET_64BIT
 #ifdef USE_PER_FRAME_PINVOKE_INIT
@@ -5733,7 +5731,6 @@ void Lowering::InsertPInvokeMethodEpilog(BasicBlock* returnBB DEBUGARG(GenTree* 
 
     // Pop the frame if necessary. This always happens in the epilog on 32-bit targets. For 64-bit targets, we only do
     // this in the epilog for IL stubs; for non-IL stubs the frame is popped after every PInvoke call.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef USE_PER_FRAME_PINVOKE_INIT
     // For IL stubs, we push the frame once even when we're doing per-pinvoke init
@@ -5883,7 +5880,6 @@ void Lowering::InsertPInvokeCallProlog(GenTreeCall* call)
 
     // Push the PInvoke frame if necessary. On 32-bit targets this only happens in the method prolog if a method
     // contains PInvokes; on 64-bit targets this is necessary in non-stubs.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef USE_PER_FRAME_PINVOKE_INIT
     if (!comp->opts.jitFlags->IsSet(JitFlags::JIT_FLAG_IL_STUB))
@@ -5961,7 +5957,6 @@ void Lowering::InsertPInvokeCallEpilog(GenTreeCall* call)
 
     // Pop the frame if necessary. On 32-bit targets this only happens in the method epilog; on 64-bit targets
     // this happens after every PInvoke call in non-stubs. 32-bit targets instead mark the frame as inactive.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef USE_PER_FRAME_PINVOKE_INIT
     if (!comp->opts.jitFlags->IsSet(JitFlags::JIT_FLAG_IL_STUB))
@@ -6955,7 +6950,6 @@ bool Lowering::LowerUnsignedDivOrMod(GenTreeOp* divMod)
         // On ARM64 we will use a 32x32->64 bit multiply instead of a 64x64->64 one.
         bool widenToNativeIntForMul = (type != TYP_I_IMPL) && !simpleMul;
 #else
-        CLANG_FORMAT_COMMENT_ANCHOR;
         bool widenToNativeIntForMul = (type != TYP_I_IMPL);
 #endif
 
@@ -7154,7 +7148,7 @@ bool Lowering::TryLowerConstIntDivOrMod(GenTree* node, GenTree** nextNode)
     }
 
     size_t absDivisorValue =
-        (divisorValue == SSIZE_T_MIN) ? static_cast<size_t>(divisorValue) : static_cast<size_t>(abs(divisorValue));
+        (divisorValue == SSIZE_T_MIN) ? static_cast<size_t>(divisorValue) : static_cast<size_t>(std::abs(divisorValue));
 
     if (!isPow2(absDivisorValue))
     {
@@ -8858,7 +8852,6 @@ GenTree* Lowering::LowerIndir(GenTreeIndir* ind)
         // TODO-Cleanup: We're passing isContainable = true but ContainCheckIndir rejects
         // address containment in some cases so we end up creating trivial (reg + offfset)
         // or (reg + reg) LEAs that are not necessary.
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if defined(TARGET_ARM64)
         // Verify containment safety before creating an LEA that must be contained.
@@ -8952,7 +8945,7 @@ bool Lowering::OptimizeForLdp(GenTreeIndir* ind)
 
         JITDUMP("[%06u] and [%06u] are indirs off the same base with offsets +%03u and +%03u\n",
                 Compiler::dspTreeID(ind), Compiler::dspTreeID(prevIndir), (unsigned)offs, (unsigned)prev.Offset);
-        if (abs(offs - prev.Offset) == genTypeSize(ind))
+        if (std::abs(offs - prev.Offset) == genTypeSize(ind))
         {
             JITDUMP("  ..and they are amenable to ldp optimization\n");
             if (TryMakeIndirsAdjacent(prevIndir, ind))
@@ -9536,7 +9529,6 @@ void Lowering::TryRetypingFloatingPointStoreToIntegerStore(GenTree* store)
         //        section and it is not a clear win to switch them to inline integers.
         // ARM:   FP constants are assembled from integral ones, so it is always profitable
         //        to directly use the integers as it avoids the int -> float conversion.
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if defined(TARGET_XARCH) || defined(TARGET_ARM)
         bool shouldSwitchToInteger = true;

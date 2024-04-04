@@ -700,8 +700,8 @@ emitter::insFormat emitter::emitInsFormat(instruction ins)
 }
 
 // INST_FP is 1
-#define LD 2
-#define ST 4
+#define LD  2
+#define ST  4
 #define CMP 8
 
 // clang-format off
@@ -6504,7 +6504,7 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
                 code |= (immHi << 16);
                 code |= immLo;
 
-                disp = abs(disp);
+                disp = std::abs(disp);
                 assert((disp & 0x00fffffe) == disp);
 
                 callInstrSize = SafeCvtAssert<unsigned char>(emitOutput_Thumb2Instr(dst, code));

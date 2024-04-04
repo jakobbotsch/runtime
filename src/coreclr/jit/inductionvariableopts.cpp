@@ -345,7 +345,10 @@ void Compiler::optReplaceWidenedIV(unsigned lclNum, unsigned ssaNum, unsigned ne
         };
 
         ReplaceVisitor(Compiler* comp, unsigned lclNum, unsigned ssaNum, unsigned newLclNum)
-            : GenTreeVisitor(comp), m_lclNum(lclNum), m_ssaNum(ssaNum), m_newLclNum(newLclNum)
+            : GenTreeVisitor(comp)
+            , m_lclNum(lclNum)
+            , m_ssaNum(ssaNum)
+            , m_newLclNum(newLclNum)
         {
         }
 
@@ -494,7 +497,6 @@ PhaseStatus Compiler::optInductionVariables()
     // Currently we only do IV widening which generally is only profitable for
     // x64 because arm64 addressing modes can include the zero/sign-extension
     // of the index for free.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 #if defined(TARGET_XARCH) && defined(TARGET_64BIT)
     m_dfsTree = fgComputeDfs();
     m_loops   = FlowGraphNaturalLoops::Find(m_dfsTree);

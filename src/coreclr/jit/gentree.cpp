@@ -78,7 +78,8 @@ struct IndentStack
     const char**    indents;
 
     // Constructor for IndentStack.  Uses 'compiler' to determine the mode of printing.
-    IndentStack(Compiler* compiler) : stack(compiler->getAllocator(CMK_DebugOnly))
+    IndentStack(Compiler* compiler)
+        : stack(compiler->getAllocator(CMK_DebugOnly))
     {
         if (compiler->asciiTrees)
         {
@@ -890,7 +891,6 @@ int GenTree::GetRegisterDstCount(Compiler* compiler) const
         // A MultiRegOp is a GT_MUL_LONG, GT_PUTARG_REG, or GT_BITCAST.
         // For the latter two (ARM-only), they only have multiple registers if they produce a long value
         // (GT_MUL_LONG always produces a long value).
-        CLANG_FORMAT_COMMENT_ANCHOR;
 #ifdef TARGET_ARM
         return (TypeGet() == TYP_LONG) ? 2 : 1;
 #else
@@ -4879,7 +4879,6 @@ bool Compiler::gtMarkAddrMode(GenTree* addr, int* pCostEx, int* pCostSz, var_typ
         //   [base + idx * mul + cns]  // mul can be 0, 2, 4, or 8
         // Note that mul == 0 is semantically equivalent to mul == 1.
         // Note that cns can be zero.
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
         assert((base != nullptr) || (idx != nullptr && mul >= 2));
 
@@ -5742,7 +5741,7 @@ unsigned Compiler::gtSetEvalOrder(GenTree* tree)
                     {
                         // Store to an enregistered local.
                         costEx = op1->GetCostEx();
-                        costSz = max(3, op1->GetCostSz()); // 3 is an estimate for a reg-reg move.
+                        costSz = max(3, (int)op1->GetCostSz()); // 3 is an estimate for a reg-reg move.
                         goto DONE;
                     }
 
@@ -6495,7 +6494,9 @@ bool Compiler::gtTreeHasLocalRead(GenTree* tree, unsigned lclNum)
         unsigned   m_lclNum;
         LclVarDsc* m_lclDsc;
 
-        Visitor(Compiler* compiler, unsigned lclNum) : GenTreeVisitor(compiler), m_lclNum(lclNum)
+        Visitor(Compiler* compiler, unsigned lclNum)
+            : GenTreeVisitor(compiler)
+            , m_lclNum(lclNum)
         {
             m_lclDsc = compiler->lvaGetDesc(lclNum);
         }
@@ -9441,7 +9442,6 @@ GenTree* Compiler::gtCloneExpr(GenTree* tree)
     if (kind & GTK_SMPOP)
     {
         /* If necessary, make sure we allocate a "fat" tree node */
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
         switch (oper)
         {
@@ -9842,7 +9842,9 @@ GenTreeCall* Compiler::gtCloneExprCallHelper(GenTreeCall* tree)
     copy->gtCallMoreFlags = tree->gtCallMoreFlags;
     INDEBUG(copy->gtCallDebugFlags = tree->gtCallDebugFlags);
 
-    copy->gtArgs.InternalCopyFrom(this, &tree->gtArgs, [=](GenTree* node) { return gtCloneExpr(node); });
+    copy->gtArgs.InternalCopyFrom(this, &tree->gtArgs, [=](GenTree* node) {
+        return gtCloneExpr(node);
+    });
 
     // The call sig comes from the EE and doesn't change throughout the compilation process, meaning
     // we only really need one physical copy of it. Therefore a shallow pointer copy will suffice.
@@ -10189,12 +10191,20 @@ bool GenTree::gtRequestSetFlags()
 }
 
 GenTreeUseEdgeIterator::GenTreeUseEdgeIterator()
-    : m_advance(nullptr), m_node(nullptr), m_edge(nullptr), m_statePtr(nullptr), m_state(-1)
+    : m_advance(nullptr)
+    , m_node(nullptr)
+    , m_edge(nullptr)
+    , m_statePtr(nullptr)
+    , m_state(-1)
 {
 }
 
 GenTreeUseEdgeIterator::GenTreeUseEdgeIterator(GenTree* node)
-    : m_advance(nullptr), m_node(node), m_edge(nullptr), m_statePtr(nullptr), m_state(0)
+    : m_advance(nullptr)
+    , m_node(node)
+    , m_edge(nullptr)
+    , m_statePtr(nullptr)
+    , m_state(0)
 {
     assert(m_node != nullptr);
 
@@ -11697,9 +11707,9 @@ void Compiler::gtDispRegVal(GenTree* tree)
 }
 
 // We usually/commonly don't expect to print anything longer than this string,
-#define LONGEST_COMMON_LCL_VAR_DISPLAY "V99 PInvokeFrame"
+#define LONGEST_COMMON_LCL_VAR_DISPLAY        "V99 PInvokeFrame"
 #define LONGEST_COMMON_LCL_VAR_DISPLAY_LENGTH (sizeof(LONGEST_COMMON_LCL_VAR_DISPLAY))
-#define BUF_SIZE (LONGEST_COMMON_LCL_VAR_DISPLAY_LENGTH * 2)
+#define BUF_SIZE                              (LONGEST_COMMON_LCL_VAR_DISPLAY_LENGTH * 2)
 
 void Compiler::gtGetLclVarNameInfo(unsigned lclNum, const char** ilKindOut, const char** ilNameOut, unsigned* ilNumOut)
 {
@@ -18330,18 +18340,6 @@ bool GenTree::IsFieldAddr(Compiler* comp, GenTree** pBaseAddr, FieldSeq** pFldSe
     return false;
 }
 
-bool Compiler::gtIsStaticFieldPtrToBoxedStruct(var_types fieldNodeType, CORINFO_FIELD_HANDLE fldHnd)
-{
-    if (fieldNodeType != TYP_REF)
-    {
-        return false;
-    }
-    noway_assert(fldHnd != nullptr);
-    CorInfoType cit      = info.compCompHnd->getFieldType(fldHnd);
-    var_types   fieldTyp = JITtype2varType(cit);
-    return fieldTyp != TYP_REF;
-}
-
 //------------------------------------------------------------------------
 // gtStoreDefinesField: Does the given parent store modify the given field?
 //
@@ -19425,7 +19423,8 @@ FieldSeq* FieldSeqStore::Append(FieldSeq* a, FieldSeq* b)
     return nullptr;
 }
 
-FieldSeq::FieldSeq(CORINFO_FIELD_HANDLE fieldHnd, ssize_t offset, FieldKind fieldKind) : m_offset(offset)
+FieldSeq::FieldSeq(CORINFO_FIELD_HANDLE fieldHnd, ssize_t offset, FieldKind fieldKind)
+    : m_offset(offset)
 {
     assert(fieldHnd != NO_FIELD_HANDLE);
 
@@ -26885,7 +26884,7 @@ void ReturnTypeDesc::InitializeStructReturnType(Compiler*                comp,
             assert(varTypeIsValidHfaType(hfaType));
 
             // Note that the retail build issues a warning about a potential divsion by zero without this "max",
-            unsigned elemSize = max(1, genTypeSize(hfaType));
+            unsigned elemSize = max(1u, genTypeSize(hfaType));
 
             // The size of this struct should be evenly divisible by elemSize
             assert((structSize % elemSize) == 0);

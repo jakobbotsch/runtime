@@ -126,7 +126,10 @@ public:
         Value m_val;
 
         template <class... Args>
-        Node(Node* next, Key k, Args&&... args) : m_next(next), m_key(k), m_val(std::forward<Args>(args)...)
+        Node(Node* next, Key k, Args&&... args)
+            : m_next(next)
+            , m_key(k)
+            , m_val(std::forward<Args>(args)...)
         {
         }
 
@@ -162,7 +165,12 @@ public:
     //    JitHashTable always starts out empty, with no allocation overhead.
     //    Call Reallocate to prime with an initial size if desired.
     //
-    JitHashTable(Allocator alloc) : m_alloc(alloc), m_table(nullptr), m_tableSizeInfo(), m_tableCount(0), m_tableMax(0)
+    JitHashTable(Allocator alloc)
+        : m_alloc(alloc)
+        , m_table(nullptr)
+        , m_tableSizeInfo()
+        , m_tableCount(0)
+        , m_tableMax(0)
     {
 #ifndef __GNUC__ // these crash GCC
         static_assert_no_msg(Behavior::s_growth_factor_numerator > Behavior::s_growth_factor_denominator);

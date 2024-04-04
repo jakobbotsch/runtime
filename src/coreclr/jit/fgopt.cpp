@@ -1899,7 +1899,6 @@ bool Compiler::fgOptimizeSwitchBranches(BasicBlock* block)
     if (block->NumSucc(this) == 1)
     {
         // Use BBJ_ALWAYS for a switch with only a default clause, or with only one unique successor.
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
         if (verbose)
@@ -2009,7 +2008,6 @@ bool Compiler::fgOptimizeSwitchBranches(BasicBlock* block)
         // replace it with a COMMA node.  In such a case we will end up with GT_JTRUE node pointing to
         // a COMMA node which results in noway asserts in fgMorphSmpOp(), optAssertionGen() and rpPredictTreeRegUse().
         // For the same reason fgMorphSmpOp() marks GT_JTRUE nodes with RELOP children as GTF_DONT_CSE.
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
         if (verbose)
@@ -2469,7 +2467,7 @@ bool Compiler::fgOptimizeUncondBranchToSimpleCond(BasicBlock* block, BasicBlock*
         //
         weight_t targetWeight = target->bbWeight;
         weight_t blockWeight  = block->bbWeight;
-        target->setBBProfileWeight(max(0, targetWeight - blockWeight));
+        target->setBBProfileWeight(max(0.0, targetWeight - blockWeight));
         JITDUMP("Decreased " FMT_BB " profile weight from " FMT_WT " to " FMT_WT "\n", target->bbNum, targetWeight,
                 target->bbWeight);
     }
@@ -3049,7 +3047,7 @@ bool Compiler::fgOptimizeSwitchJumps()
         blockToTargetEdge->setEdgeWeights(blockToTargetWeight, blockToTargetWeight, dominantTarget);
         blockToTargetEdge->setLikelihood(fraction);
         blockToNewBlockEdge->setEdgeWeights(blockToNewBlockWeight, blockToNewBlockWeight, block);
-        blockToNewBlockEdge->setLikelihood(max(0, 1.0 - fraction));
+        blockToNewBlockEdge->setLikelihood(max(0.0, 1.0 - fraction));
 
         // There may be other switch cases that lead to this same block, but there's just
         // one edge in the flowgraph. So we need to subtract off the profile data that now flows

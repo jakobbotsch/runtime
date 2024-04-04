@@ -87,12 +87,18 @@ struct Limit
 
     Limit(LimitType type) : type(type) {}
 
-    Limit(LimitType type, int cns) : cns(cns), vn(ValueNumStore::NoVN), type(type)
+    Limit(LimitType type, int cns)
+        : cns(cns)
+        , vn(ValueNumStore::NoVN)
+        , type(type)
     {
         assert(type == keConstant);
     }
 
-    Limit(LimitType type, ValueNum vn, int cns) : cns(cns), vn(vn), type(type)
+    Limit(LimitType type, ValueNum vn, int cns)
+        : cns(cns)
+        , vn(vn)
+        , type(type)
     {
         assert(type == keBinOpArray);
     }
@@ -578,7 +584,10 @@ public:
         BasicBlock*          block;
         Statement*           stmt;
         GenTreeLclVarCommon* tree;
-        Location(BasicBlock* block, Statement* stmt, GenTreeLclVarCommon* tree) : block(block), stmt(stmt), tree(tree)
+        Location(BasicBlock* block, Statement* stmt, GenTreeLclVarCommon* tree)
+            : block(block)
+            , stmt(stmt)
+            , tree(tree)
         {
         }
 

@@ -80,7 +80,9 @@ struct Access
 #endif
 
     Access(unsigned offset, var_types accessType, ClassLayout* layout)
-        : Layout(layout), Offset(offset), AccessType(accessType)
+        : Layout(layout)
+        , Offset(offset)
+        , AccessType(accessType)
     {
     }
 
@@ -220,7 +222,8 @@ bool AggregateInfo::OverlappingReplacements(unsigned      offset,
 //   numLocals - Number of locals to support in the map
 //
 AggregateInfoMap::AggregateInfoMap(CompAllocator allocator, unsigned numLocals)
-    : m_aggregates(allocator), m_numLocals(numLocals)
+    : m_aggregates(allocator)
+    , m_numLocals(numLocals)
 {
     m_lclNumToAggregateIndex = new (allocator) unsigned[numLocals];
     for (unsigned i = 0; i < numLocals; i++)
@@ -288,7 +291,8 @@ class LocalUses
 
 public:
     LocalUses(Compiler* comp)
-        : m_accesses(comp->getAllocator(CMK_Promotion)), m_inducedAccesses(comp->getAllocator(CMK_Promotion))
+        : m_accesses(comp->getAllocator(CMK_Promotion))
+        , m_inducedAccesses(comp->getAllocator(CMK_Promotion))
     {
     }
 

@@ -233,7 +233,9 @@ class PromotionLiveness
 
 public:
     PromotionLiveness(Compiler* compiler, AggregateInfoMap& aggregates)
-        : m_compiler(compiler), m_aggregates(aggregates), m_aggDeaths(compiler->getAllocator(CMK_Promotion))
+        : m_compiler(compiler)
+        , m_aggregates(aggregates)
+        , m_aggDeaths(compiler->getAllocator(CMK_Promotion))
     {
     }
 
@@ -281,7 +283,10 @@ public:
     };
 
     ReplaceVisitor(Promotion* prom, AggregateInfoMap& aggregates, PromotionLiveness* liveness)
-        : GenTreeVisitor(prom->m_compiler), m_promotion(prom), m_aggregates(aggregates), m_liveness(liveness)
+        : GenTreeVisitor(prom->m_compiler)
+        , m_promotion(prom)
+        , m_aggregates(aggregates)
+        , m_liveness(liveness)
     {
     }
 

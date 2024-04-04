@@ -25,7 +25,9 @@ struct RegSlotIdKey
 
     RegSlotIdKey() {}
 
-    RegSlotIdKey(unsigned short regNum, unsigned flags) : m_regNum(regNum), m_flags((unsigned short)flags)
+    RegSlotIdKey(unsigned short regNum, unsigned flags)
+        : m_regNum(regNum)
+        , m_flags((unsigned short)flags)
     {
         assert(m_flags == flags);
     }
@@ -50,7 +52,9 @@ struct StackSlotIdKey
     StackSlotIdKey() {}
 
     StackSlotIdKey(int offset, bool fpRel, unsigned flags)
-        : m_offset(offset), m_fpRel(fpRel), m_flags((unsigned short)flags)
+        : m_offset(offset)
+        , m_fpRel(fpRel)
+        , m_flags((unsigned short)flags)
     {
         assert(flags == m_flags);
     }
@@ -161,7 +165,7 @@ public:
         unsigned char rpdCallInstrSize; // Length of the call instruction.
 #endif
 
-        unsigned short rpdArg : 1;     // is this an argument descriptor?
+        unsigned short rpdArg     : 1; // is this an argument descriptor?
         unsigned short rpdArgType : 2; // is this an argument push,pop, or kill?
         rpdArgType_t   rpdArgTypeGet()
         {
@@ -175,8 +179,8 @@ public:
         }
 
         unsigned short rpdIsThis : 1;                       // is it the 'this' pointer
-        unsigned short rpdCall : 1;                         // is this a true call site?
-        unsigned short : 1;                                 // Padding bit, so next two start on a byte boundary
+        unsigned short rpdCall   : 1;                       // is this a true call site?
+        unsigned short           : 1;                       // Padding bit, so next two start on a byte boundary
         unsigned short rpdCallGCrefRegs : CNT_CALLEE_SAVED; // Callee-saved registers containing GC pointers.
         unsigned short rpdCallByrefRegs : CNT_CALLEE_SAVED; // Callee-saved registers containing byrefs.
 
@@ -332,7 +336,6 @@ public:
     //
     //  These record the info about the procedure in the info-block
     //
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef JIT32_GCENCODER
 private:

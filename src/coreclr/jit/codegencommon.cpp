@@ -43,7 +43,6 @@ void CodeGenInterface::setFramePointerRequiredEH(bool value)
         // if they are fully-interruptible.  So if we have a catch
         // or finally that will keep frame-vars alive, we need to
         // force fully-interruptible.
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
         if (verbose)
@@ -65,7 +64,10 @@ CodeGenInterface* getCodeGenerator(Compiler* comp)
 
 // CodeGen constructor
 CodeGenInterface::CodeGenInterface(Compiler* theCompiler)
-    : gcInfo(theCompiler), regSet(theCompiler, gcInfo), compiler(theCompiler), treeLifeUpdater(nullptr)
+    : gcInfo(theCompiler)
+    , regSet(theCompiler, gcInfo)
+    , compiler(theCompiler)
+    , treeLifeUpdater(nullptr)
 {
 }
 
@@ -84,7 +86,8 @@ void CodeGenInterface::CopyRegisterInfo()
 
 /*****************************************************************************/
 
-CodeGen::CodeGen(Compiler* theCompiler) : CodeGenInterface(theCompiler)
+CodeGen::CodeGen(Compiler* theCompiler)
+    : CodeGenInterface(theCompiler)
 {
 #if defined(TARGET_XARCH)
     negBitmaskFlt  = nullptr;
@@ -120,7 +123,6 @@ CodeGen::CodeGen(Compiler* theCompiler) : CodeGenInterface(theCompiler)
 #endif
 
 #ifdef DEBUG
-    genTempLiveChg        = true;
     genTrnslLocalVarCount = 0;
 
     // Shouldn't be used before it is set in genFnProlog()
@@ -263,29 +265,6 @@ int CodeGenInterface::genCallerSPtoInitialSPdelta() const
 #endif // defined(TARGET_X86) || defined(TARGET_ARM)
 
 /*****************************************************************************
- * Should we round simple operations (assignments, arithmetic operations, etc.)
- */
-
-// inline
-// static
-bool CodeGen::genShouldRoundFP()
-{
-    RoundLevel roundLevel = getRoundFloatLevel();
-
-    switch (roundLevel)
-    {
-        case ROUND_NEVER:
-        case ROUND_CMP_CONST:
-        case ROUND_CMP:
-            return false;
-
-        default:
-            assert(roundLevel == ROUND_ALWAYS);
-            return true;
-    }
-}
-
-/*****************************************************************************
  *
  *  Initialize some global variables.
  */
@@ -412,26 +391,25 @@ void CodeGen::genMarkLabelsForCodegen()
             case BBJ_CALLFINALLY:
                 // The finally target itself will get marked by walking the EH table, below, and marking
                 // all handler begins.
-                CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if FEATURE_EH_CALLFINALLY_THUNKS
+            {
+                // For callfinally thunks, we need to mark the block following the callfinally/callfinallyret pair,
+                // as that's needed for identifying the range of the "duplicate finally" region in EH data.
+                BasicBlock* bbToLabel = block->Next();
+                if (block->isBBCallFinallyPair())
                 {
-                    // For callfinally thunks, we need to mark the block following the callfinally/callfinallyret pair,
-                    // as that's needed for identifying the range of the "duplicate finally" region in EH data.
-                    BasicBlock* bbToLabel = block->Next();
-                    if (block->isBBCallFinallyPair())
-                    {
-                        bbToLabel = bbToLabel->Next(); // skip the BBJ_CALLFINALLYRET
-                    }
-                    if (bbToLabel != nullptr)
-                    {
-                        JITDUMP("  " FMT_BB " : callfinally thunk region end\n", bbToLabel->bbNum);
-                        bbToLabel->SetFlags(BBF_HAS_LABEL);
-                    }
+                    bbToLabel = bbToLabel->Next(); // skip the BBJ_CALLFINALLYRET
                 }
+                if (bbToLabel != nullptr)
+                {
+                    JITDUMP("  " FMT_BB " : callfinally thunk region end\n", bbToLabel->bbNum);
+                    bbToLabel->SetFlags(BBF_HAS_LABEL);
+                }
+            }
 #endif // FEATURE_EH_CALLFINALLY_THUNKS
 
-                break;
+            break;
 
             case BBJ_CALLFINALLYRET:
                 JITDUMP("  " FMT_BB " : finally continuation\n", block->GetFinallyContinuation()->bbNum);
@@ -952,7 +930,6 @@ void CodeGen::genAdjustStackLevel(BasicBlock* block)
 {
 #if !FEATURE_FIXED_OUT_ARGS
     // Check for inserted throw blocks and adjust genStackLevel.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if defined(UNIX_X86_ABI)
     if (isFramePointerUsed() && compiler->fgIsThrowHlpBlk(block))
@@ -1101,7 +1078,6 @@ AGAIN:
        constant, or we have gone through a GT_NOP or GT_COMMA node. We never come back
        here if we find a scaled index.
     */
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
     assert(mul == 0);
 
@@ -1715,9 +1691,6 @@ void CodeGen::genGenerateMachineCode()
 
     /* Prepare the emitter */
     GetEmitter()->Init();
-#ifdef DEBUG
-    VarSetOps::AssignNoCopy(compiler, genTempOldLife, VarSetOps::MakeEmpty(compiler));
-#endif
 
 #ifdef DEBUG
     if (compiler->opts.disAsmSpilled && regSet.rsNeededSpillReg)
@@ -3597,7 +3570,6 @@ void CodeGen::genCheckUseBlockInit()
     // find structs that are guaranteed to be block initialized.
     // If this logic changes, Compiler::fgVarNeedsExplicitZeroInit needs
     // to be modified.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef TARGET_64BIT
 #if defined(TARGET_AMD64)
@@ -4404,7 +4376,6 @@ void CodeGen::genFinalizeFrame()
     genCheckUseBlockInit();
 
     // Set various registers as "modified" for special code generation scenarios: Edit & Continue, P/Invoke calls, etc.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if defined(TARGET_X86)
 
@@ -4486,7 +4457,7 @@ void CodeGen::genFinalizeFrame()
     noway_assert(!regSet.rsRegsModified(RBM_FPBASE));
 #endif
 
-    regMaskTP maskCalleeRegsPushed = regSet.rsGetModifiedRegsMask() & RBM_CALLEE_SAVED;
+    regMaskTP maskCalleeRegsPushed = regSet.rsGetModifiedCalleeSavedRegsMask();
 
 #ifdef TARGET_ARMARCH
     if (isFramePointerUsed())
@@ -4871,7 +4842,6 @@ void CodeGen::genFnProlog()
 
         // If there is a frame pointer used, due to frame pointer chaining it will point to the stored value of the
         // previous frame pointer. Thus, stkOffs can't be zero.
-        CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if !defined(TARGET_AMD64)
         // However, on amd64 there is no requirement to chain frame pointers.
@@ -5159,14 +5129,13 @@ void CodeGen::genFnProlog()
     // Subtract the local frame size from SP.
     //
     //-------------------------------------------------------------------------
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if !defined(TARGET_ARM64) && !defined(TARGET_LOONGARCH64) && !defined(TARGET_RISCV64)
     regMaskTP maskStackAlloc = RBM_NONE;
 
 #ifdef TARGET_ARM
     maskStackAlloc = genStackAllocRegisterMask(compiler->compLclFrameSize + extraFrameSize,
-                                               regSet.rsGetModifiedRegsMask() & RBM_FLT_CALLEE_SAVED);
+                                               regSet.rsGetModifiedFltCalleeSavedRegsMask());
 #endif // TARGET_ARM
 
     if (maskStackAlloc == RBM_NONE)
@@ -5337,8 +5306,7 @@ void CodeGen::genFnProlog()
         // we've set the live-in regs with values from the Tier0 frame.
         //
         // Otherwise we'll do some of these fetches twice.
-        //
-        CLANG_FORMAT_COMMENT_ANCHOR;
+
 #if defined(TARGET_ARM64) || defined(TARGET_LOONGARCH64) || defined(TARGET_RISCV64)
         genEnregisterOSRArgsAndLocals(initReg, &initRegZeroed);
 #else
@@ -5683,7 +5651,6 @@ void CodeGen::genGeneratePrologsAndEpilogs()
     genFnProlog();
 
     // Generate all the prologs and epilogs.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if defined(FEATURE_EH_FUNCLETS)
 
@@ -6871,6 +6838,17 @@ void CodeGen::genReturn(GenTree* treeNode)
 
     genStackPointerCheck(doStackPointerCheck, compiler->lvaReturnSpCheck);
 #endif // defined(DEBUG) && defined(TARGET_XARCH)
+
+#ifdef SWIFT_SUPPORT
+    // If this method has a SwiftError* out parameter, load the SwiftError pseudolocal value into the error register.
+    // TODO-CQ: Introduce GenTree node that models returning a normal and Swift error value.
+    if (compiler->lvaSwiftErrorArg != BAD_VAR_NUM)
+    {
+        assert(compiler->info.compCallConv == CorInfoCallConvExtension::Swift);
+        assert(compiler->lvaSwiftErrorLocal != BAD_VAR_NUM);
+        GetEmitter()->emitIns_R_S(ins_Load(TYP_I_IMPL), EA_PTRSIZE, REG_SWIFT_ERROR, compiler->lvaSwiftErrorLocal, 0);
+    }
+#endif // SWIFT_SUPPORT
 }
 
 //------------------------------------------------------------------------
@@ -7512,7 +7490,6 @@ void CodeGen::genPoisonFrame(regMaskTP regLiveIn)
         if ((size / TARGET_POINTER_SIZE) > 16)
         {
             // This will require more than 16 instructions, switch to rep stosd/memset call.
-            CLANG_FORMAT_COMMENT_ANCHOR;
 #if defined(TARGET_XARCH)
             GetEmitter()->emitIns_R_S(INS_lea, EA_PTRSIZE, REG_EDI, (int)varNum, 0);
             assert(size % 4 == 0);

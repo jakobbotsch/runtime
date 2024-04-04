@@ -206,7 +206,9 @@ void Scev::Dump(Compiler* comp)
 //   ResetForLoop.
 //
 ScalarEvolutionContext::ScalarEvolutionContext(Compiler* comp)
-    : m_comp(comp), m_cache(comp->getAllocator(CMK_LoopIVOpts)), m_ephemeralCache(comp->getAllocator(CMK_LoopIVOpts))
+    : m_comp(comp)
+    , m_cache(comp->getAllocator(CMK_LoopIVOpts))
+    , m_ephemeralCache(comp->getAllocator(CMK_LoopIVOpts))
 {
 }
 

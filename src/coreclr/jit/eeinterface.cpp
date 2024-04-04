@@ -209,7 +209,7 @@ void Compiler::eePrintTypeOrJitAlias(StringPrinter* printer, CORINFO_CLASS_HANDL
 }
 
 static const char* s_jitHelperNames[CORINFO_HELP_COUNT] = {
-#define JITHELPER(code, pfnHelper, sig) #code,
+#define JITHELPER(code, pfnHelper, sig)        #code,
 #define DYNAMICJITHELPER(code, pfnHelper, sig) #code,
 #include "jithelpers.h"
 };
@@ -515,7 +515,9 @@ const char* Compiler::eeGetMethodName(CORINFO_METHOD_HANDLE methHnd, char* buffe
 const char* Compiler::eeGetFieldName(CORINFO_FIELD_HANDLE fldHnd, bool includeType, char* buffer, size_t bufferSize)
 {
     StringPrinter p(getAllocator(CMK_DebugOnly), buffer, bufferSize);
-    bool          success = eeRunFunctorWithSPMIErrorTrap([&]() { eePrintField(&p, fldHnd, includeType); });
+    bool          success = eeRunFunctorWithSPMIErrorTrap([&]() {
+        eePrintField(&p, fldHnd, includeType);
+    });
 
     if (success)
     {
@@ -528,7 +530,9 @@ const char* Compiler::eeGetFieldName(CORINFO_FIELD_HANDLE fldHnd, bool includeTy
     {
         p.Append("<unknown class>:");
 
-        success = eeRunFunctorWithSPMIErrorTrap([&]() { eePrintField(&p, fldHnd, false); });
+        success = eeRunFunctorWithSPMIErrorTrap([&]() {
+            eePrintField(&p, fldHnd, false);
+        });
 
         if (success)
         {
@@ -563,7 +567,9 @@ const char* Compiler::eeGetFieldName(CORINFO_FIELD_HANDLE fldHnd, bool includeTy
 const char* Compiler::eeGetClassName(CORINFO_CLASS_HANDLE clsHnd, char* buffer, size_t bufferSize)
 {
     StringPrinter printer(getAllocator(CMK_DebugOnly), buffer, bufferSize);
-    if (!eeRunFunctorWithSPMIErrorTrap([&]() { eePrintType(&printer, clsHnd, true); }))
+    if (!eeRunFunctorWithSPMIErrorTrap([&]() {
+        eePrintType(&printer, clsHnd, true);
+    }))
     {
         printer.Truncate(0);
         printer.Append("<unknown class>");
@@ -584,7 +590,9 @@ const char* Compiler::eeGetClassName(CORINFO_CLASS_HANDLE clsHnd, char* buffer, 
 const char* Compiler::eeGetShortClassName(CORINFO_CLASS_HANDLE clsHnd)
 {
     StringPrinter printer(getAllocator(CMK_DebugOnly));
-    if (!eeRunFunctorWithSPMIErrorTrap([&]() { eePrintType(&printer, clsHnd, false); }))
+    if (!eeRunFunctorWithSPMIErrorTrap([&]() {
+        eePrintType(&printer, clsHnd, false);
+    }))
     {
         printer.Truncate(0);
         printer.Append("<unknown class>");
@@ -600,8 +608,9 @@ void Compiler::eePrintObjectDescription(const char* prefix, CORINFO_OBJECT_HANDL
     size_t       actualLen = 0;
 
     // Ignore potential SPMI failures
-    bool success = eeRunFunctorWithSPMIErrorTrap(
-        [&]() { actualLen = this->info.compCompHnd->printObjectDescription(handle, str, maxStrSize); });
+    bool success = eeRunFunctorWithSPMIErrorTrap([&]() {
+        actualLen = this->info.compCompHnd->printObjectDescription(handle, str, maxStrSize);
+    });
 
     if (!success)
     {

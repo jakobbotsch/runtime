@@ -461,7 +461,9 @@ bool RangeCheck::IsMonotonicallyIncreasing(GenTree* expr, bool rejectNegativeCon
     }
 
     // Remove hashtable entry for expr when we exit the present scope.
-    auto                                         code = [this, expr] { m_pSearchPath->Remove(expr); };
+    auto code = [this, expr] {
+        m_pSearchPath->Remove(expr);
+    };
     jitstd::utility::scoped_code<decltype(code)> finally(code);
 
     if (m_pSearchPath->GetCount() > MAX_SEARCH_DEPTH)

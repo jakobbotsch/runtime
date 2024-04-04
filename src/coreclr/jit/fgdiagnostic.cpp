@@ -546,7 +546,7 @@ FILE* Compiler::fgOpenFlowGraphFile(bool* wbDontClose, Phases phase, PhasePositi
 
     ONE_FILE_PER_METHOD:;
 
-#define FILENAME_PATTERN "%s-%s-%s-%s.%s"
+#define FILENAME_PATTERN             "%s-%s-%s-%s.%s"
 #define FILENAME_PATTERN_WITH_NUMBER "%s-%s-%s-%s~%d.%s"
 
         const size_t MaxFileNameLength = MAX_PATH_FNAME - 20 /* give us some extra buffer */;
@@ -1249,7 +1249,10 @@ bool Compiler::fgDumpFlowGraph(Phases phase, PhasePosition pos)
 
             public:
                 RegionGraph(Compiler* comp, unsigned* blkMap, unsigned blkMapSize)
-                    : m_comp(comp), m_rgnRoot(nullptr), m_blkMap(blkMap), m_blkMapSize(blkMapSize)
+                    : m_comp(comp)
+                    , m_rgnRoot(nullptr)
+                    , m_blkMap(blkMap)
+                    , m_blkMapSize(blkMapSize)
                 {
                     // Create a root region that encompasses the whole function.
                     m_rgnRoot =
@@ -4013,7 +4016,9 @@ class UniquenessCheckWalker
 {
 public:
     UniquenessCheckWalker(Compiler* comp)
-        : comp(comp), nodesVecTraits(comp->compGenTreeID, comp), uniqueNodes(BitVecOps::MakeEmpty(&nodesVecTraits))
+        : comp(comp)
+        , nodesVecTraits(comp->compGenTreeID, comp)
+        , uniqueNodes(BitVecOps::MakeEmpty(&nodesVecTraits))
     {
     }
 

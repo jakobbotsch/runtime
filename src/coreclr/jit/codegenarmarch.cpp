@@ -2060,7 +2060,10 @@ class ProducingStreamBaseInstrs
 {
 public:
     ProducingStreamBaseInstrs(regNumber intReg1, regNumber intReg2, regNumber addrReg, emitter* emitter)
-        : intReg1(intReg1), intReg2(intReg2), addrReg(addrReg), emitter(emitter)
+        : intReg1(intReg1)
+        , intReg2(intReg2)
+        , addrReg(addrReg)
+        , emitter(emitter)
     {
     }
 
@@ -2121,7 +2124,11 @@ class ProducingStream
 {
 public:
     ProducingStream(regNumber intReg1, regNumber simdReg1, regNumber simdReg2, regNumber addrReg, emitter* emitter)
-        : intReg1(intReg1), simdReg1(simdReg1), simdReg2(simdReg2), addrReg(addrReg), emitter(emitter)
+        : intReg1(intReg1)
+        , simdReg1(simdReg1)
+        , simdReg2(simdReg2)
+        , addrReg(addrReg)
+        , emitter(emitter)
     {
     }
 
@@ -2371,7 +2378,9 @@ class CopyBlockUnrollHelper
 {
 public:
     CopyBlockUnrollHelper(int srcOffset, int dstOffset, unsigned byteCount)
-        : srcStartOffset(srcOffset), dstStartOffset(dstOffset), byteCount(byteCount)
+        : srcStartOffset(srcOffset)
+        , dstStartOffset(dstOffset)
+        , byteCount(byteCount)
     {
     }
 
@@ -4882,7 +4891,7 @@ void CodeGen::genPushCalleeSavedRegisters()
                      intRegState.rsCalleeRegArgMaskLiveIn);
 #endif
 
-    regMaskTP rsPushRegs = regSet.rsGetModifiedRegsMask() & RBM_CALLEE_SAVED;
+    regMaskTP rsPushRegs = regSet.rsGetModifiedCalleeSavedRegsMask();
 
 #if ETW_EBP_FRAMED
     if (!isFramePointerUsed() && regSet.rsRegsModified(RBM_FPBASE))
@@ -5697,7 +5706,6 @@ void CodeGen::genFnEpilog(BasicBlock* block)
                                        0,             // disp
                                        true);         // isJump
             // clang-format on
-            CLANG_FORMAT_COMMENT_ANCHOR;
 #endif // TARGET_ARMARCH
         }
 #if FEATURE_FASTTAILCALL

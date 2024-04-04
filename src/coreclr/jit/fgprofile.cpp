@@ -1225,7 +1225,9 @@ static int32_t EfficientEdgeCountBlockToKey(BasicBlock* block)
 // Based on "Optimally Profiling and Tracing Programs,"
 // Ball and Larus PLDI '92.
 //
-class EfficientEdgeCountInstrumentor : public Instrumentor, public SpanningTreeVisitor
+class EfficientEdgeCountInstrumentor
+    : public Instrumentor
+    , public SpanningTreeVisitor
 {
 private:
     // A particular edge probe. These are linked
@@ -1887,7 +1889,9 @@ public:
     Compiler* m_compiler;
 
     HandleHistogramProbeVisitor(Compiler* compiler, TFunctor& functor)
-        : GenTreeVisitor<HandleHistogramProbeVisitor>(compiler), m_functor(functor), m_compiler(compiler)
+        : GenTreeVisitor<HandleHistogramProbeVisitor>(compiler)
+        , m_functor(functor)
+        , m_compiler(compiler)
     {
     }
     Compiler::fgWalkResult PreOrderVisit(GenTree** use, GenTree* user)
@@ -1919,7 +1923,9 @@ public:
     Compiler* m_compiler;
 
     ValueHistogramProbeVisitor(Compiler* compiler, TFunctor& functor)
-        : GenTreeVisitor<ValueHistogramProbeVisitor>(compiler), m_functor(functor), m_compiler(compiler)
+        : GenTreeVisitor<ValueHistogramProbeVisitor>(compiler)
+        , m_functor(functor)
+        , m_compiler(compiler)
     {
     }
 
@@ -1949,7 +1955,8 @@ private:
 
 public:
     BuildHandleHistogramProbeSchemaGen(Schema& schema, unsigned& schemaCount)
-        : m_schema(schema), m_schemaCount(schemaCount)
+        : m_schema(schema)
+        , m_schemaCount(schemaCount)
     {
     }
 
@@ -2011,7 +2018,8 @@ class BuildValueHistogramProbeSchemaGen
 
 public:
     BuildValueHistogramProbeSchemaGen(Schema& schema, unsigned& schemaCount)
-        : m_schema(schema), m_schemaCount(schemaCount)
+        : m_schema(schema)
+        , m_schemaCount(schemaCount)
     {
     }
 

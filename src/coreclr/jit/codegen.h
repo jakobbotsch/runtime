@@ -175,7 +175,6 @@ private:
     // the GC info.  Requires "codeSize" to be the size of the generated code, "prologSize" and "epilogSize"
     // to be the sizes of the prolog and epilog, respectively.  In DEBUG, makes a check involving the
     // "codePtr", assumed to be a pointer to the start of the generated code.
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef JIT32_GCENCODER
     void* genCreateAndStoreGCInfo(unsigned codeSize, unsigned prologSize, unsigned epilogSize DEBUGARG(void* codePtr));
@@ -320,7 +319,10 @@ protected:
 
         RegPair(regNumber reg1) : reg1(reg1), reg2(REG_NA), useSaveNextPair(false) {}
 
-        RegPair(regNumber reg1, regNumber reg2) : reg1(reg1), reg2(reg2), useSaveNextPair(false)
+        RegPair(regNumber reg1, regNumber reg2)
+            : reg1(reg1)
+            , reg2(reg2)
+            , useSaveNextPair(false)
         {
             assert(reg2 == REG_NEXT(reg1));
         }
@@ -522,7 +524,6 @@ protected:
     //
     // Epilog functions
     //
-    CLANG_FORMAT_COMMENT_ANCHOR;
 
 #if defined(TARGET_ARM)
     bool genCanUsePopToReturn(regMaskTP maskPopRegsInt, bool jmpEpilog);
@@ -1434,7 +1435,8 @@ public:
 
 #if defined(TARGET_XARCH)
 
-    enum class OperandKind{
+    enum class OperandKind
+    {
         ClsVar, // [CLS_VAR_ADDR]                 - "C" in the emitter.
         Local,  // [Local or spill temp + offset] - "S" in the emitter.
         Indir,  // [base+index*scale+disp]        - "A" in the emitter.
@@ -1479,17 +1481,25 @@ public:
         OperandDesc(int varNum, uint16_t offset) : m_kind(OperandKind::Local), m_varNum(varNum), m_offset(offset) {}
 
         OperandDesc(GenTreeIndir* indir)
-            : m_kind(OperandKind::Indir), m_addr(indir->Addr()), m_indir(indir), m_indirType(indir->TypeGet())
+            : m_kind(OperandKind::Indir)
+            , m_addr(indir->Addr())
+            , m_indir(indir)
+            , m_indirType(indir->TypeGet())
         {
         }
 
         OperandDesc(var_types indirType, GenTree* addr)
-            : m_kind(OperandKind::Indir), m_addr(addr), m_indir(nullptr), m_indirType(indirType)
+            : m_kind(OperandKind::Indir)
+            , m_addr(addr)
+            , m_indir(nullptr)
+            , m_indirType(indirType)
         {
         }
 
         OperandDesc(ssize_t immediate, bool immediateNeedsReloc)
-            : m_kind(OperandKind::Imm), m_immediate(immediate), m_immediateNeedsReloc(immediateNeedsReloc)
+            : m_kind(OperandKind::Imm)
+            , m_immediate(immediate)
+            , m_immediateNeedsReloc(immediateNeedsReloc)
         {
         }
 
@@ -1681,7 +1691,9 @@ class CodeGenPhase final : public Phase
 {
 public:
     CodeGenPhase(CodeGen* _codeGen, Phases _phase, void (CodeGen::*_action)())
-        : Phase(_codeGen->GetCompiler(), _phase), codeGen(_codeGen), action(_action)
+        : Phase(_codeGen->GetCompiler(), _phase)
+        , codeGen(_codeGen)
+        , action(_action)
     {
     }
 

@@ -464,7 +464,9 @@ PhaseStatus Compiler::optVnCopyProp()
 
     public:
         CopyPropDomTreeVisitor(Compiler* compiler)
-            : DomTreeVisitor(compiler), m_curSsaName(compiler->getAllocator(CMK_CopyProp)), m_madeChanges(false)
+            : DomTreeVisitor(compiler)
+            , m_curSsaName(compiler->getAllocator(CMK_CopyProp))
+            , m_madeChanges(false)
         {
         }
 
