@@ -1900,7 +1900,7 @@ void CodeGen::genGenerateMachineCode()
                             (compiler->compCodeOpt() != Compiler::SMALL_CODE) &&
                                 !compiler->opts.jitFlags->IsSet(JitFlags::JIT_FLAG_PREJIT)
 #endif
-                                );
+    );
 
     /* Now generate code for the function */
     genCodeForBBlist();
@@ -2860,9 +2860,7 @@ class RegGraph
     ArrayStack<RegNode*> m_nodes;
 
 public:
-    RegGraph(Compiler* compiler) : m_comp(compiler), m_nodes(compiler->getAllocator(CMK_Codegen))
-    {
-    }
+    RegGraph(Compiler* compiler) : m_comp(compiler), m_nodes(compiler->getAllocator(CMK_Codegen)) {}
 
     RegNode* GetOrAdd(regNumber reg, var_types type)
     {
@@ -2906,7 +2904,7 @@ public:
 
         // We currently never have multiple outgoing edges.
         assert(from->outgoing == nullptr);
-        from->outgoing     = edge;
+        from->outgoing = edge;
 
         edge->nextIncoming = to->incoming;
         to->incoming       = edge;
@@ -3242,7 +3240,8 @@ void CodeGen::genHomeRegisterParams(regNumber initReg, bool* initRegStillZeroed)
 
             busyRegs |= genRegMask(node->copiedReg);
             instruction ins = ins_Copy(node->reg, copyType);
-            GetEmitter()->emitIns_Mov(ins, emitActualTypeSize(copyType), node->copiedReg, node->reg, /* canSkip */ false);
+            GetEmitter()->emitIns_Mov(ins, emitActualTypeSize(copyType), node->copiedReg, node->reg,
+                                      /* canSkip */ false);
             if (node->copiedReg == initReg)
             {
                 *initRegStillZeroed = false;
@@ -3257,10 +3256,10 @@ void CodeGen::genHomeRegisterParams(regNumber initReg, bool* initRegStillZeroed)
                 continue;
             }
 
-            regNumber sourceReg = edge->from->copiedReg != REG_NA ? edge->from->copiedReg : edge->from->reg;
-            instruction ins = ins_Copy(sourceReg, genActualType(edge->type));
+            regNumber   sourceReg = edge->from->copiedReg != REG_NA ? edge->from->copiedReg : edge->from->reg;
+            instruction ins       = ins_Copy(sourceReg, genActualType(edge->type));
             GetEmitter()->emitIns_Mov(ins, emitActualTypeSize(edge->type), node->reg, sourceReg,
-                /* canSkip */ true);
+                                      /* canSkip */ true);
             break;
         }
 
@@ -3330,7 +3329,7 @@ void CodeGen::genEnregisterIncomingStackArgs()
     regNumber tmp_reg    = REG_NA;
 #endif
 
-    for (LclVarDsc *varDsc = compiler->lvaTable; varNum < compiler->lvaCount; varNum++, varDsc++)
+    for (LclVarDsc* varDsc = compiler->lvaTable; varNum < compiler->lvaCount; varNum++, varDsc++)
     {
         /* Is this variable a parameter? */
 
@@ -3404,7 +3403,7 @@ void CodeGen::genEnregisterIncomingStackArgs()
                 }
             }
         }
-#else // !TARGET_LOONGARCH64
+#else  // !TARGET_LOONGARCH64
         GetEmitter()->emitIns_R_S(ins_Load(regType), emitTypeSize(regType), regNum, varNum, 0);
 #endif // !TARGET_LOONGARCH64
 
@@ -4457,7 +4456,7 @@ void CodeGen::genFinalizeFrame()
         }
         noway_assert((regSet.rsGetModifiedRegsMask() & ~okRegs) == 0);
 #else  // !TARGET_AMD64 && !TARGET_ARM64
-        // On x86 we save all callee saved regs so the saved reg area size is consistent
+       // On x86 we save all callee saved regs so the saved reg area size is consistent
         regSet.rsSetRegsModified(RBM_INT_CALLEE_SAVED & ~RBM_FPBASE);
 #endif // !TARGET_AMD64 && !TARGET_ARM64
     }
@@ -5186,7 +5185,7 @@ void CodeGen::genFnProlog()
     }
 #endif // TARGET_AMD64
 
-//-------------------------------------------------------------------------
+    //-------------------------------------------------------------------------
 
 #ifdef TARGET_ARM
     if (compiler->compLocallocUsed)
@@ -5212,11 +5211,11 @@ void CodeGen::genFnProlog()
 #endif // TARGET_AMD64
     compiler->unwindEndProlog();
 
-//-------------------------------------------------------------------------
-//
-// This is the end of the OS-reported prolog for purposes of unwinding
-//
-//-------------------------------------------------------------------------
+    //-------------------------------------------------------------------------
+    //
+    // This is the end of the OS-reported prolog for purposes of unwinding
+    //
+    //-------------------------------------------------------------------------
 
 #ifdef TARGET_ARM
     if (needToEstablishFP)
@@ -6386,7 +6385,8 @@ void CodeGen::genReportRichDebugInfoInlineTreeToFile(FILE* file, InlineContext* 
         fprintf(file, "\"ILOffset\":%u,", context->GetLocation().GetOffset());
         fprintf(file, "\"LocationFlags\":%u,", (uint32_t)context->GetLocation().EncodeSourceTypes());
         fprintf(file, "\"ExactILOffset\":%u,", context->GetActualCallOffset());
-        auto append = [&]() {
+        auto append = [&]()
+        {
             char        buffer[256];
             const char* methodName = compiler->eeGetMethodName(context->GetCallee(), buffer, sizeof(buffer));
             fprintf(file, "\"MethodName\":\"%s\",", methodName);
@@ -7549,7 +7549,7 @@ void CodeGen::genPoisonFrame(regMaskTP regLiveIn)
             bool fpBased;
             int  addr = compiler->lvaFrameAddress((int)varNum, &fpBased);
 #else
-            int addr     = 0;
+            int addr = 0;
 #endif
             int end = addr + (int)size;
             for (int offs = addr; offs < end;)
