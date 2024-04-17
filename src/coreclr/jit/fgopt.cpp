@@ -4679,8 +4679,24 @@ bool Compiler::fgReorderBlocks(bool useProfile)
 #endif
 
 //-------------------------------------------------------------
+// fgUpdateFlowGraphPhase: run flow graph optimization early, as a
+//   phase
+//
+// Returns:
+//    Suitable phase status
+//
+PhaseStatus Compiler::fgUpdateFlowGraphEarlyPhase()
+{
+    constexpr bool doTailDup   = true;
+    constexpr bool isPhase     = true;
+    const bool     madeChanges = fgUpdateFlowGraph(doTailDup, isPhase);
+
+    return madeChanges ? PhaseStatus::MODIFIED_EVERYTHING : PhaseStatus::MODIFIED_NOTHING;
+}
+
+//-------------------------------------------------------------
 // fgUpdateFlowGraphPhase: run flow graph optimization as a
-//   phase, with no tail duplication
+//   phase
 //
 // Returns:
 //    Suitable phase status

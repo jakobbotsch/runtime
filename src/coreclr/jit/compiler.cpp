@@ -4869,6 +4869,10 @@ void Compiler::compCompile(void** methodCodePtr, uint32_t* methodCodeSize, JitFl
 
     if (opts.OptimizationEnabled())
     {
+        // Run an early flow graph simplification pass
+        //
+        DoPhase(this, PHASE_EARLY_UPDATE_FLOW_GRAPH, &Compiler::fgUpdateFlowGraphEarlyPhase);
+
         // Build post-order that morph will use, and remove dead blocks
         //
         DoPhase(this, PHASE_DFS_BLOCKS, &Compiler::fgDfsBlocksAndRemove);
