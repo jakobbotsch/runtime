@@ -417,11 +417,6 @@ const char* dspRegRange(regMaskTP regMask, size_t& minSiz, const char* sep, regN
             sep        = " ";
         }
 
-        if (regBit > regMask)
-        {
-            break;
-        }
-
         regPrev = regNum;
     }
 
@@ -3442,19 +3437,7 @@ uint32_t BitOperations::Log2(uint64_t value)
 uint32_t BitOperations::PopCount(uint32_t value)
 {
 #if defined(_MSC_VER)
-    // Inspired by the Stanford Bit Twiddling Hacks by Sean Eron Anderson:
-    // http://graphics.stanford.edu/~seander/bithacks.html
-
-    const uint32_t c1 = 0x55555555u;
-    const uint32_t c2 = 0x33333333u;
-    const uint32_t c3 = 0x0F0F0F0Fu;
-    const uint32_t c4 = 0x01010101u;
-
-    value -= (value >> 1) & c1;
-    value = (value & c2) + ((value >> 2) & c2);
-    value = (((value + (value >> 4)) & c3) * c4) >> 24;
-
-    return value;
+    return __popcnt(value);
 #else
     int32_t result = __builtin_popcount(value);
     return static_cast<uint32_t>(result);
@@ -3473,19 +3456,7 @@ uint32_t BitOperations::PopCount(uint32_t value)
 uint32_t BitOperations::PopCount(uint64_t value)
 {
 #if defined(_MSC_VER)
-    // Inspired by the Stanford Bit Twiddling Hacks by Sean Eron Anderson:
-    // http://graphics.stanford.edu/~seander/bithacks.html
-
-    const uint64_t c1 = 0x5555555555555555ull;
-    const uint64_t c2 = 0x3333333333333333ull;
-    const uint64_t c3 = 0x0F0F0F0F0F0F0F0Full;
-    const uint64_t c4 = 0x0101010101010101ull;
-
-    value -= (value >> 1) & c1;
-    value = (value & c2) + ((value >> 2) & c2);
-    value = (((value + (value >> 4)) & c3) * c4) >> 56;
-
-    return static_cast<uint32_t>(value);
+    return (uint32_t)__popcnt64(value);
 #else
     int32_t result = __builtin_popcountll(value);
     return static_cast<uint32_t>(result);

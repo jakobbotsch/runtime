@@ -99,6 +99,29 @@ inline bool genExactlyOneBit(T value)
     return ((value != 0) && genMaxOneBit(value));
 }
 
+
+#ifdef TARGET_ARM64
+inline regMaskTP genFindLowestBit(regMaskTP value)
+{
+    if (value.high == 0)
+    {
+        return regMaskTP(genFindLowestBit(value.low));
+    }
+
+    return regMaskTP(0, genFindLowestBit(value.high));
+}
+
+inline bool genMaxOneBit(regMaskTP value)
+{
+    return regMaskTP::PopCountRegMask(value) <= 1;
+}
+
+inline bool genExactlyOneBit(regMaskTP value)
+{
+    return regMaskTP::PopCountRegMask(value) == 1;
+}
+#endif
+
 /*****************************************************************************
  *
  *  Given a value that has exactly one bit set, return the position of that
