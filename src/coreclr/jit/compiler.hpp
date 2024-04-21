@@ -147,6 +147,13 @@ inline unsigned genCountBits(uint64_t bits)
     return BitOperations::PopCount(bits);
 }
 
+#ifdef TARGET_ARM64
+inline unsigned genCountBits(regMaskTP mask)
+{
+    return regMaskTP::PopCountRegMask(mask);
+}
+#endif
+
 /*****************************************************************************
  *
  *  A rather simple routine that counts the number of bits in a given number.
@@ -899,9 +906,13 @@ inline regNumber genRegNumFromMask(regMaskTP mask)
 {
     assert(mask != 0); // Must have one bit set, so can't have a mask of zero
 
-    /* Convert the mask to a register number */
+/* Convert the mask to a register number */
 
-    regNumber regNum = (regNumber)genLog2(mask);
+#ifdef TARGET_ARM64
+    regNumber regNum = (regNumber)regMaskTP::BitScanForwardRegMask(mask);
+#else
+    regNumber regNum = (regNumber)BitOperations::BitScanForward(mask);
+#endif
 
     /* Make sure we got it right */
 
@@ -925,9 +936,13 @@ inline regNumber genFirstRegNumFromMaskAndToggle(regMaskTP& mask)
 {
     assert(mask != 0); // Must have one bit set, so can't have a mask of zero
 
-    /* Convert the mask to a register number */
+/* Convert the mask to a register number */
 
+#ifdef TARGET_ARM64
+    regNumber regNum = (regNumber)regMaskTP::BitScanForwardRegMask(mask);
+#else
     regNumber regNum = (regNumber)BitOperations::BitScanForward(mask);
+#endif
     mask ^= genRegMask(regNum);
 
     return regNum;
@@ -947,9 +962,13 @@ inline regNumber genFirstRegNumFromMask(regMaskTP mask)
 {
     assert(mask != 0); // Must have one bit set, so can't have a mask of zero
 
-    /* Convert the mask to a register number */
+/* Convert the mask to a register number */
 
+#ifdef TARGET_ARM64
+    regNumber regNum = (regNumber)regMaskTP::BitScanForwardRegMask(mask);
+#else
     regNumber regNum = (regNumber)BitOperations::BitScanForward(mask);
+#endif
 
     return regNum;
 }
@@ -4450,7 +4469,11 @@ inline void* operator new[](size_t sz, Compiler* compiler, CompMemKind cmk)
 
 inline void printRegMask(regMaskTP mask)
 {
+#ifdef TARGET_ARM64
+    printf(REG_MASK_ALL_FMT, mask.low);
+#else
     printf(REG_MASK_ALL_FMT, mask);
+#endif
 }
 
 inline char* regMaskToString(regMaskTP mask, Compiler* context)
@@ -4458,14 +4481,22 @@ inline char* regMaskToString(regMaskTP mask, Compiler* context)
     const size_t cchRegMask = 24;
     char*        regmask    = new (context, CMK_Unknown) char[cchRegMask];
 
+#ifdef TARGET_ARM64
+    sprintf_s(regmask, cchRegMask, REG_MASK_ALL_FMT, mask.low);
+#else
     sprintf_s(regmask, cchRegMask, REG_MASK_ALL_FMT, mask);
+#endif
 
     return regmask;
 }
 
 inline void printRegMaskInt(regMaskTP mask)
 {
+#ifdef TARGET_ARM64
+    printf(REG_MASK_INT_FMT, (mask & RBM_ALLINT).low);
+#else
     printf(REG_MASK_INT_FMT, (mask & RBM_ALLINT));
+#endif
 }
 
 inline char* regMaskIntToString(regMaskTP mask, Compiler* context)
@@ -4473,7 +4504,11 @@ inline char* regMaskIntToString(regMaskTP mask, Compiler* context)
     const size_t cchRegMask = 24;
     char*        regmask    = new (context, CMK_Unknown) char[cchRegMask];
 
+#ifdef TARGET_ARM64
+    sprintf_s(regmask, cchRegMask, REG_MASK_INT_FMT, (mask & RBM_ALLINT).low);
+#else
     sprintf_s(regmask, cchRegMask, REG_MASK_INT_FMT, (mask & RBM_ALLINT));
+#endif
 
     return regmask;
 }
