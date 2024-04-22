@@ -113,12 +113,30 @@ inline regMaskTP genFindLowestBit(regMaskTP value)
 
 inline bool genMaxOneBit(regMaskTP value)
 {
-    return regMaskTP::PopCountRegMask(value) <= 1;
+    if (value.high == 0)
+    {
+        return genMaxOneBit(value.low);
+    }
+    if (value.low == 0)
+    {
+        return genMaxOneBit(value.high);
+    }
+
+    return false;
 }
 
 inline bool genExactlyOneBit(regMaskTP value)
 {
-    return regMaskTP::PopCountRegMask(value) == 1;
+    if (value.high == 0)
+    {
+        return genExactlyOneBit(value.low);
+    }
+    if (value.low == 0)
+    {
+        return genExactlyOneBit(value.high);
+    }
+
+    return false;
 }
 #endif
 
