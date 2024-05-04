@@ -5534,6 +5534,71 @@ bool Compiler::fgCanFastTailCall(GenTreeCall* callee, const char** failReason)
         return false;
     }
 
+#ifdef TARGET_X86
+    // On x86, since the stack is callee cleaned, caller and callee need to
+    // have the exact same stack size.
+    if (calleeArgStackSize != callerArgStackSize)
+    {
+        reportFastTailCallDecision("Mismatch in incoming arg space");
+        return false;
+    }
+
+    // Also GC-ness must match for stack arguments as we cannot disable GC
+    // while placing those, and we cannot report them properly.
+    int paramIndex = 0;
+    CallArg* arg = callee->gtArgs.Args().begin().GetArg();
+    for (unsigned slot = 0; slot < calleeArgStackSize / TARGET_POINTER_SIZE; slot++)
+    {
+        const ABIPassingInformation* param;
+        while (true)
+        {
+            param = &lvaGetParameterABIInfo(paramIndex);
+            assert(param->NumSegments == 1);
+            if (param->Segments[0].IsPassedInRegister())
+            {
+                paramIndex++;
+                continue;
+            }
+        }
+
+        const ABIPassingInformation* paramInfo = paramIndex < info.compArgsCount ? &lvaGetParameterABIInfo(paramIndex) : nullptr;
+        if ((paramInfo != nullptr))
+        {
+            assert(paramInfo->NumSegments == 1);
+            if (paramInfo->Segments[0].IsPassedInRegister())
+            {
+                paramIndex++;
+                continue;
+            }
+        }
+
+        if (arg != nullptr)
+        {
+            if (arg->AbiInfo.GetStackByteSize() == 0)
+            {
+                arg = arg->GetNext();
+                continue;
+            }
+        }
+
+        if (paramInfo == nullptr)
+        {
+            assert(arg != nullptr);
+            if (varTypeIsGC(arg->GetSignatureType()) || ((arg->GetSignatureType() == TYP_STRUCT) && (typGetObjLayout(arg->GetSignatureClassHandle())->GetGCPtrCount() > 0)))
+            {
+                reportFastTailCallDecision("Mismatch in GC-ness: argument has a GC pointer that is not present in ");
+            }
+        }
+        else if (arg == nullptr)
+        {
+            assert(paramInfo != nullptr);
+        }
+        JITDUMP("Parameter %d: ByteOffset: %d\n", paramIndex);
+    }
+
+    assert((paramIndex == info.compArgsCount) && (arg == nullptr));
+#endif
+
     // For Windows some struct parameters are copied on the local frame
     // and then passed by reference. We cannot fast tail call in these situation
     // as we need to keep our frame around.
@@ -6117,17 +6182,10 @@ GenTree* Compiler::fgMorphPotentialTailCall(GenTreeCall* call)
         assert(compCurBB->KindIs(BBJ_RETURN));
     }
 
-#if !FEATURE_TAILCALL_OPT_SHARED_RETURN
-    // We enable shared-ret tail call optimization for recursive calls even if
-    // FEATURE_TAILCALL_OPT_SHARED_RETURN is not defined.
-    if (gtIsRecursiveCall(call))
-#endif
-    {
-        // Many tailcalls will have call and ret in the same block, and thus be
-        // BBJ_RETURN, but if the call falls through to a ret, and we are doing a
-        // tailcall, change it here.
-        compCurBB->SetKindAndTargetEdge(BBJ_RETURN);
-    }
+    // Many tailcalls will have call and ret in the same block, and thus be
+    // BBJ_RETURN, but if the call falls through to a ret, and we are doing a
+    // tailcall, change it here.
+    compCurBB->SetKindAndTargetEdge(BBJ_RETURN);
 
     GenTree* stmtExpr = fgMorphStmt->GetRootNode();
 

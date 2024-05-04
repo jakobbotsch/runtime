@@ -2929,9 +2929,15 @@ void Lowering::LowerFastTailCall(GenTreeCall* call)
         // the required copies of args before this node.
         bool     unused;
         GenTree* insertionPoint = BlockRange().GetTreeRange(putargs.Bottom(), &unused).FirstNode();
+
+#ifndef TARGET_X86
         // Insert GT_START_NONGC node before we evaluate the PUTARG_STK args.
         // Note that if there are no args to be setup on stack, no need to
         // insert GT_START_NONGC node.
+        // On x86 we do not need to disable GC since we only allow fast
+        // tailcalls when GC-ness of parameters matches.
+        // TODO: We could also avoid disabling GC for other platforms when
+        // GC-ness matches.
         startNonGCNode = new (comp, GT_START_NONGC) GenTree(GT_START_NONGC, TYP_VOID);
         BlockRange().InsertBefore(insertionPoint, startNonGCNode);
 
@@ -2951,6 +2957,7 @@ void Lowering::LowerFastTailCall(GenTreeCall* call)
             GenTree* noOp = new (comp, GT_NO_OP) GenTree(GT_NO_OP, TYP_VOID);
             BlockRange().InsertBefore(startNonGCNode, noOp);
         }
+#endif
 
         // Since this is a fast tailcall each PUTARG_STK will place the argument in the
         // _incoming_ arg space area. This will effectively overwrite our already existing

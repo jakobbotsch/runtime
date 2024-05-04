@@ -727,19 +727,6 @@ inline size_t unsigned_abs(__int64 x)
 #include "alloc.h"
 #include "target.h"
 
-#if FEATURE_TAILCALL_OPT
-// Enable tail call opt for the following IL pattern
-//
-//     call someFunc
-//     jmp/jcc RetBlock
-//     ...
-//  RetBlock:
-//     ret
-#define FEATURE_TAILCALL_OPT_SHARED_RETURN 1
-#else // !FEATURE_TAILCALL_OPT
-#define FEATURE_TAILCALL_OPT_SHARED_RETURN 0
-#endif // !FEATURE_TAILCALL_OPT
-
 #define CLFLG_CODESIZE   0x00001
 #define CLFLG_CODESPEED  0x00002
 #define CLFLG_CSE        0x00004

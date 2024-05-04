@@ -4127,16 +4127,9 @@ bool Compiler::impIsTailCallILPattern(
         return false;
     }
 
-#if !FEATURE_TAILCALL_OPT_SHARED_RETURN
-    // If shared ret tail opt is not enabled, we will enable
-    // it for recursive methods.
-    if (isRecursive)
-#endif
-    {
-        // we can actually handle if the ret is in a fallthrough block, as long as that is the only part of the
-        // sequence. Make sure we don't go past the end of the IL however.
-        codeEnd = min(codeEnd + 1, info.compCode + info.compILCodeSize);
-    }
+    // we can actually handle if the ret is in a fallthrough block, as long as that is the only part of the
+    // sequence. Make sure we don't go past the end of the IL however.
+    codeEnd = min(codeEnd + 1, info.compCode + info.compILCodeSize);
 
     // Bail out if there is no next opcode after call
     if (codeAddrOfNextOpcode >= codeEnd)
@@ -4174,14 +4167,6 @@ bool Compiler::impIsImplicitTailCallCandidate(
     {
         return false;
     }
-
-#if !FEATURE_TAILCALL_OPT_SHARED_RETURN
-    // the block containing call is marked as BBJ_RETURN
-    // We allow shared ret tail call optimization on recursive calls even under
-    // !FEATURE_TAILCALL_OPT_SHARED_RETURN.
-    if (!isRecursive && !compCurBB->KindIs(BBJ_RETURN))
-        return false;
-#endif // !FEATURE_TAILCALL_OPT_SHARED_RETURN
 
     // must be call+ret or call+pop+ret
     if (!impIsTailCallILPattern(false, opcode, codeAddrOfNextOpcode, codeEnd, isRecursive))
@@ -6692,9 +6677,9 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                    At least check that argCnt and returnType match */
 
                 eeGetMethodSig(resolvedToken.hMethod, &sig);
-                if (sig.numArgs != info.compMethodInfo->args.numArgs ||
-                    sig.retType != info.compMethodInfo->args.retType ||
-                    sig.callConv != info.compMethodInfo->args.callConv)
+                if ((sig.numArgs != info.compMethodInfo->args.numArgs) ||
+                    (sig.retType != info.compMethodInfo->args.retType) ||
+                    (sig.callConv != info.compMethodInfo->args.callConv))
                 {
                     BADCODE("Incompatible target for CEE_JMPs");
                 }
@@ -8735,7 +8720,6 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                 {
                     if (compIsForInlining())
                     {
-#if FEATURE_TAILCALL_OPT_SHARED_RETURN
                         // Are we inlining at an implicit tail call site? If so the we can flag
                         // implicit tail call sites in the inline body. These call sites
                         // often end up in non BBJ_RETURN blocks, so only flag them when
@@ -8745,7 +8729,6 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                             JITDUMP("\n (Inline Implicit Tail call: prefixFlags |= PREFIX_TAILCALL_IMPLICIT)");
                             prefixFlags |= PREFIX_TAILCALL_IMPLICIT;
                         }
-#endif // FEATURE_TAILCALL_OPT_SHARED_RETURN
                     }
                     else
                     {
