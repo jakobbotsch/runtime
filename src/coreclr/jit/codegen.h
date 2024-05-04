@@ -1211,15 +1211,13 @@ protected:
 
 #endif
 
-#ifndef TARGET_X86
     void genPutArgStkFieldList(GenTreePutArgStk* putArgStk, unsigned outArgVarNum);
-#endif // !TARGET_X86
 
 #ifdef FEATURE_PUT_STRUCT_ARG_STK
 #ifdef TARGET_X86
     bool genAdjustStackForPutArgStk(GenTreePutArgStk* putArgStk);
     void genPushReg(var_types type, regNumber srcReg);
-    void genPutArgStkFieldList(GenTreePutArgStk* putArgStk);
+    void genPutArgStkPushFieldList(GenTreePutArgStk* putArgStk);
 #endif // TARGET_X86
 
     void genPutStructArgStk(GenTreePutArgStk* treeNode);
@@ -1330,10 +1328,9 @@ protected:
 #ifdef FEATURE_PUT_STRUCT_ARG_STK
 #ifdef TARGET_X86
     bool m_pushStkArg;
-#else  // !TARGET_X86
-    unsigned m_stkArgVarNum;
-    unsigned m_stkArgOffset;
 #endif // !TARGET_X86
+    unsigned m_stkArgVarNum = BAD_VAR_NUM;
+    unsigned m_stkArgOffset;
 #endif // !FEATURE_PUT_STRUCT_ARG_STK
 
 #if defined(DEBUG) && defined(TARGET_XARCH)

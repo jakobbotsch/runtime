@@ -291,12 +291,6 @@ C_ASSERT(REG_FIRST == 0);
 C_ASSERT(REG_INT_FIRST < REG_INT_LAST);
 C_ASSERT(REG_FP_FIRST  < REG_FP_LAST);
 
-// Opportunistic tail call feature converts non-tail prefixed calls into
-// tail calls where possible. It requires fast tail calling mechanism for
-// performance. Otherwise, we are better off not converting non-tail prefixed
-// calls into tail calls.
-C_ASSERT((FEATURE_TAILCALL_OPT == 0) || (FEATURE_FASTTAILCALL == 1));
-
 /*****************************************************************************/
 
 #define BITS_PER_BYTE              8

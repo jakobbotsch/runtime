@@ -2977,6 +2977,13 @@ void CallArgs::AddFinalArgsAndDetermineABIInfo(Compiler* comp, GenTreeCall* call
             arg.AbiInfo.SetByteSize(byteSize, argAlignBytes, isStructArg, isFloatHfa);
 
             m_nextStackByteOffset += arg.AbiInfo.ByteSize;
+
+#ifdef TARGET_X86
+            // On x86, the offset of each argument is its offset subtracted
+            // from the ESP before we begin pushing arguments.
+            arg.AbiInfo.ByteOffset = m_nextStackByteOffset;
+#endif
+
 #ifdef UNIX_AMD64_ABI
             // TODO-Amd64-Unix-CQ: This is temporary (see also in fgMorphArgs).
             if (structDesc.passedInRegisters)
@@ -5523,6 +5530,7 @@ bool Compiler::fgCanFastTailCall(GenTreeCall* callee, const char** failReason)
         }
     }
 
+#ifndef TARGET_X86
     // For a fast tail call the caller will use its incoming arg stack space to place
     // arguments, so if the callee requires more arg stack space than is available here
     // the fast tail call cannot be performed. This is common to all platforms.
@@ -5533,6 +5541,17 @@ bool Compiler::fgCanFastTailCall(GenTreeCall* callee, const char** failReason)
         reportFastTailCallDecision("Not enough incoming arg space");
         return false;
     }
+#else
+    assert(callerArgStackSize == lvaParameterStackSize);
+
+    // On x86, since the stack is callee cleaned, caller and callee need to
+    // have the exact same stack size.
+    if (calleeArgStackSize != callerArgStackSize)
+    {
+        reportFastTailCallDecision("Mismatch in incoming arg space");
+        return false;
+    }
+#endif
 
     // For Windows some struct parameters are copied on the local frame
     // and then passed by reference. We cannot fast tail call in these situation
@@ -5543,7 +5562,12 @@ bool Compiler::fgCanFastTailCall(GenTreeCall* callee, const char** failReason)
         return false;
     }
 
-    reportFastTailCallDecision(nullptr);
+    if (!fgTailCallMatchesStackGCLayout(callee))
+    {
+        reportFastTailCallDecision("Parameters and arguments do not match in GC ness");
+        return false;
+    }
+
     return true;
 #else // FEATURE_FASTTAILCALL
     if (failReason)
@@ -5553,6 +5577,118 @@ bool Compiler::fgCanFastTailCall(GenTreeCall* callee, const char** failReason)
 }
 
 #if FEATURE_FASTTAILCALL
+
+//------------------------------------------------------------------------
+// fgTailCallMatchesStackGCLayout: Check if the stack arguments passed to a
+// tailcall matches all stack parameters in GC layout.
+//
+// Arguments:
+//   call - The call to check
+//
+// Return Value:
+//   True if the GC layout of the caller and callee stack parameters are equal.
+//
+bool Compiler::fgTailCallMatchesStackGCLayout(GenTreeCall* call)
+{
+    // Also GC-ness must match for stack arguments as we cannot disable GC
+    // while placing those.
+    BitVecTraits slotTraits(lvaParameterStackSize / TARGET_POINTER_SIZE, this);
+    BitVec       argSlotGcRefs = BitVecOps::MakeEmpty(&slotTraits);
+    BitVec       argSlotByRefs = BitVecOps::MakeEmpty(&slotTraits);
+
+    for (CallArg& arg : call->gtArgs.Args())
+    {
+        if (arg.AbiInfo.GetStackByteSize() == 0)
+        {
+            continue;
+        }
+
+        unsigned offset = arg.AbiInfo.ByteOffset;
+
+        assert((offset % TARGET_POINTER_SIZE) == 0);
+        unsigned slot = (lvaParameterStackSize - offset) / TARGET_POINTER_SIZE;
+        assert(slot < (lvaParameterStackSize / TARGET_POINTER_SIZE));
+        if (arg.GetSignatureType() == TYP_REF)
+        {
+            BitVecOps::AddElemD(&slotTraits, argSlotGcRefs, slot);
+        }
+        else if (arg.GetSignatureType() == TYP_BYREF)
+        {
+            BitVecOps::AddElemD(&slotTraits, argSlotByRefs, slot);
+        }
+        else if (arg.GetSignatureType() == TYP_STRUCT)
+        {
+            ClassLayout* layout   = typGetObjLayout(arg.GetSignatureClassHandle());
+            unsigned     numSlots = (layout->GetSize() + TARGET_POINTER_SIZE - 1) / TARGET_POINTER_SIZE;
+            assert((slot + numSlots) <= (lvaParameterStackSize / TARGET_POINTER_SIZE));
+
+            for (unsigned i = 0; i < numSlots; i++)
+            {
+                var_types gcPtrType = layout->GetGCPtrType(i);
+                if (gcPtrType == TYP_REF)
+                {
+                    BitVecOps::AddElemD(&slotTraits, argSlotGcRefs, slot + i);
+                }
+                else if (gcPtrType == TYP_BYREF)
+                {
+                    BitVecOps::AddElemD(&slotTraits, argSlotByRefs, slot + i);
+                }
+            }
+        }
+    }
+
+    for (unsigned i = 0; i < info.compArgsCount; i++)
+    {
+        const ABIPassingInformation& abiInfo = lvaGetParameterABIInfo(i);
+        assert(abiInfo.NumSegments == 1);
+        if (abiInfo.Segments[0].IsPassedInRegister())
+        {
+            continue;
+        }
+
+        unsigned   slot     = (lvaParameterStackSize - abiInfo.Segments[0].GetStackOffset()) / TARGET_POINTER_SIZE;
+        LclVarDsc* dsc      = lvaGetDesc(i);
+        unsigned   numSlots = (abiInfo.Segments[0].Size + TARGET_POINTER_SIZE - 1) / TARGET_POINTER_SIZE;
+        for (unsigned j = 0; j < numSlots; j++)
+        {
+            var_types gcPtrType = TYP_UNDEF;
+            if (dsc->TypeGet() == TYP_REF)
+            {
+                gcPtrType = TYP_REF;
+                assert(j == 0);
+            }
+            else if (dsc->TypeGet() == TYP_BYREF)
+            {
+                gcPtrType = TYP_BYREF;
+                assert(j == 0);
+            }
+            else if (dsc->TypeGet() == TYP_STRUCT)
+            {
+                gcPtrType = dsc->GetLayout()->GetGCPtrType(j);
+            }
+
+            assert((gcPtrType == TYP_UNDEF) || (gcPtrType == TYP_REF) || (gcPtrType == TYP_BYREF));
+            if ((gcPtrType == TYP_UNDEF) && (BitVecOps::IsMember(&slotTraits, argSlotGcRefs, slot + j) ||
+                                             BitVecOps::IsMember(&slotTraits, argSlotByRefs, slot + j)))
+            {
+                return false;
+            }
+
+            if ((gcPtrType == TYP_REF) && !BitVecOps::IsMember(&slotTraits, argSlotGcRefs, slot + j))
+            {
+                return false;
+            }
+
+            if ((gcPtrType == TYP_BYREF) && !BitVecOps::IsMember(&slotTraits, argSlotByRefs, slot + j))
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 //------------------------------------------------------------------------
 // fgCallHasMustCopyByrefParameter: Check to see if this call has a byref parameter that
 //                                  requires a struct copy in the caller.
@@ -6117,17 +6253,10 @@ GenTree* Compiler::fgMorphPotentialTailCall(GenTreeCall* call)
         assert(compCurBB->KindIs(BBJ_RETURN));
     }
 
-#if !FEATURE_TAILCALL_OPT_SHARED_RETURN
-    // We enable shared-ret tail call optimization for recursive calls even if
-    // FEATURE_TAILCALL_OPT_SHARED_RETURN is not defined.
-    if (gtIsRecursiveCall(call))
-#endif
-    {
-        // Many tailcalls will have call and ret in the same block, and thus be
-        // BBJ_RETURN, but if the call falls through to a ret, and we are doing a
-        // tailcall, change it here.
-        compCurBB->SetKindAndTargetEdge(BBJ_RETURN);
-    }
+    // Many tailcalls will have call and ret in the same block, and thus be
+    // BBJ_RETURN, but if the call falls through to a ret, and we are doing a
+    // tailcall, change it here.
+    compCurBB->SetKindAndTargetEdge(BBJ_RETURN);
 
     GenTree* stmtExpr = fgMorphStmt->GetRootNode();
 

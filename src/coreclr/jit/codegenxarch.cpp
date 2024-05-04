@@ -8126,12 +8126,12 @@ unsigned CodeGen::getBaseVarForPutArgStk(GenTree* treeNode)
         LclVarDsc* varDsc = compiler->lvaGetDesc(baseVarNum);
         assert(varDsc != nullptr);
 
-#ifdef UNIX_AMD64_ABI
-        assert(!varDsc->lvIsRegArg && varDsc->GetArgReg() == REG_STK);
-#else  // !UNIX_AMD64_ABI
-       // On Windows this assert is always true. The first argument will always be in REG_ARG_0 or REG_FLTARG_0.
+#ifdef WINDOWS_AMD64_ABI
+        // On Windows this assert is always true. The first argument will always be in REG_ARG_0 or REG_FLTARG_0.
         assert(varDsc->lvIsRegArg && (varDsc->GetArgReg() == REG_ARG_0 || varDsc->GetArgReg() == REG_FLTARG_0));
-#endif // !UNIX_AMD64_ABI
+#else  // !WINDOWS_AMD64_ABI
+        assert(!varDsc->lvIsRegArg && varDsc->GetArgReg() == REG_STK);
+#endif // !WINDOWS_AMD64_ABI
 #endif // !DEBUG
     }
     else
@@ -8336,7 +8336,7 @@ bool CodeGen::genAdjustStackForPutArgStk(GenTreePutArgStk* putArgStk)
 // Return value:
 //    None
 //
-void CodeGen::genPutArgStkFieldList(GenTreePutArgStk* putArgStk)
+void CodeGen::genPutArgStkPushFieldList(GenTreePutArgStk* putArgStk)
 {
     GenTreeFieldList* const fieldList = putArgStk->gtOp1->AsFieldList();
     assert(fieldList != nullptr);
@@ -8550,33 +8550,59 @@ void CodeGen::genPutArgStk(GenTreePutArgStk* putArgStk)
 
     if (data->OperIs(GT_FIELD_LIST))
     {
-        genPutArgStkFieldList(putArgStk);
+        if (putArgStk->putInIncomingArgArea())
+        {
+            genPutArgStkFieldList(putArgStk, getBaseVarForPutArgStk(putArgStk));
+        }
+        else
+        {
+            genPutArgStkPushFieldList(putArgStk);
+        }
+
         return;
     }
 
     if (varTypeIsStruct(targetType))
     {
-        genAdjustStackForPutArgStk(putArgStk);
-        genPutStructArgStk(putArgStk);
+        if (putArgStk->putInIncomingArgArea())
+        {
+            m_pushStkArg   = false;
+            m_stkArgVarNum = getBaseVarForPutArgStk(putArgStk);
+            m_stkArgOffset = putArgStk->getArgOffset();
+            genPutStructArgStk(putArgStk);
+            m_stkArgVarNum = BAD_VAR_NUM;
+        }
+        else
+        {
+            genAdjustStackForPutArgStk(putArgStk);
+            genPutStructArgStk(putArgStk);
+        }
         return;
     }
 
     genConsumeRegs(data);
 
-    if (data->isUsedFromReg())
+    if (putArgStk->putInIncomingArgArea())
     {
-        genPushReg(targetType, data->GetRegNum());
+        assert(data->isUsedFromReg());
+        GetEmitter()->emitIns_S_R(ins_Store(targetType), emitTypeSize(targetType), data->GetRegNum(),
+                                  getBaseVarForPutArgStk(putArgStk), putArgStk->getArgOffset());
     }
     else
     {
-        assert(genTypeSize(data) == TARGET_POINTER_SIZE);
-        inst_TT(INS_push, emitTypeSize(data), data);
-        AddStackLevel(TARGET_POINTER_SIZE);
+        if (data->isUsedFromReg())
+        {
+            genPushReg(targetType, data->GetRegNum());
+        }
+        else
+        {
+            assert(genTypeSize(data) == TARGET_POINTER_SIZE);
+            inst_TT(INS_push, emitTypeSize(data), data);
+            AddStackLevel(TARGET_POINTER_SIZE);
+        }
     }
 #else // !TARGET_X86
     {
-        unsigned baseVarNum = getBaseVarForPutArgStk(putArgStk);
-
 #ifdef UNIX_AMD64_ABI
 
         if (data->OperIs(GT_FIELD_LIST))
@@ -8762,6 +8788,10 @@ void CodeGen::genStoreRegToStackArg(var_types type, regNumber srcReg, int offset
     {
         genPushReg(type, srcReg);
     }
+    else if (m_stkArgVarNum != BAD_VAR_NUM)
+    {
+        GetEmitter()->emitIns_S_R(ins, attr, srcReg, m_stkArgVarNum, m_stkArgOffset + offset);
+    }
     else
     {
         GetEmitter()->emitIns_AR_R(ins, attr, srcReg, REG_SPBASE, offset);
@@ -8792,7 +8822,7 @@ void CodeGen::genPutStructArgStk(GenTreePutArgStk* putArgStk)
     var_types targetType = source->TypeGet();
 
 #if defined(TARGET_X86) && defined(FEATURE_SIMD)
-    if (putArgStk->isSIMD12())
+    if (putArgStk->isSIMD12() && !putArgStk->putInIncomingArgArea())
     {
         genPutArgStkSimd12(putArgStk);
         return;
@@ -10406,7 +10436,7 @@ void CodeGen::genFnEpilog(BasicBlock* block)
 #if FEATURE_FASTTAILCALL
         else
         {
-            genCallInstruction(jmpNode->AsCall());
+            genCallInstruction(jmpNode->AsCall() X86_ARG(0));
         }
 #endif // FEATURE_FASTTAILCALL
     }
