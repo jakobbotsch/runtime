@@ -1737,7 +1737,15 @@ int LinearScan::BuildPutArgStk(GenTreePutArgStk* putArgStk)
 
         for (GenTreeFieldList::Use& use : putArgStk->gtOp1->AsFieldList()->Uses())
         {
-            srcCount += BuildOperandUses(use.GetNode());
+            regMaskTP candidates = RBM_NONE;
+#ifdef TARGET_X86
+            if (varTypeIsByte(use.GetType()) && putArgStk->putInIncomingArgArea())
+            {
+                candidates = allByteRegs();
+            }
+#endif
+
+            srcCount += BuildOperandUses(use.GetNode(), candidates);
         }
         buildInternalRegisterUses();
 
@@ -1795,9 +1803,7 @@ int LinearScan::BuildPutArgStk(GenTreePutArgStk* putArgStk)
             break;
 
         case GenTreePutArgStk::Kind::RepInstr:
-#ifndef TARGET_X86
         case GenTreePutArgStk::Kind::PartialRepInstr:
-#endif
             buildInternalIntRegisterDefForNode(putArgStk, RBM_RDI);
             buildInternalIntRegisterDefForNode(putArgStk, RBM_RCX);
             buildInternalIntRegisterDefForNode(putArgStk, RBM_RSI);

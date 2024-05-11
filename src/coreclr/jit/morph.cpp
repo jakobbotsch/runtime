@@ -5542,13 +5542,33 @@ bool Compiler::fgCanFastTailCall(GenTreeCall* callee, const char** failReason)
         return false;
     }
 #else
-    assert(callerArgStackSize == lvaParameterStackSize);
+    JITDUMP("%d returns\n", fgReturnCount);
 
     // On x86, since the stack is callee cleaned, caller and callee need to
     // have the exact same stack size.
     if (calleeArgStackSize != callerArgStackSize)
     {
         reportFastTailCallDecision("Mismatch in incoming arg space");
+        return false;
+    }
+
+    if (!fgTailCallMatchesStackGCLayout(callee))
+    {
+        reportFastTailCallDecision("Parameters and arguments do not match in GC ness");
+        return false;
+    }
+
+    if (fgReturnCount >= SET_EPILOGCNT_MAX)
+    {
+        reportFastTailCallDecision("Too many epilogs");
+        return false;
+    }
+
+    if (callee->IsVirtualStub() && (callee->gtCallType == CT_INDIRECT))
+    {
+        // Requires special codegen pattern that gets disassembled based on
+        // return address
+        reportFastTailCallDecision("Indirect VSD call");
         return false;
     }
 #endif
@@ -5559,12 +5579,6 @@ bool Compiler::fgCanFastTailCall(GenTreeCall* callee, const char** failReason)
     if (fgCallHasMustCopyByrefParameter(callee))
     {
         reportFastTailCallDecision("Callee has a byref parameter");
-        return false;
-    }
-
-    if (!fgTailCallMatchesStackGCLayout(callee))
-    {
-        reportFastTailCallDecision("Parameters and arguments do not match in GC ness");
         return false;
     }
 
@@ -5651,7 +5665,7 @@ bool Compiler::fgTailCallMatchesStackGCLayout(GenTreeCall* call)
         unsigned   numSlots = (abiInfo.Segments[0].Size + TARGET_POINTER_SIZE - 1) / TARGET_POINTER_SIZE;
         for (unsigned j = 0; j < numSlots; j++)
         {
-            var_types gcPtrType = TYP_UNDEF;
+            var_types gcPtrType = TYP_I_IMPL;
             if (dsc->TypeGet() == TYP_REF)
             {
                 gcPtrType = TYP_REF;
@@ -5667,8 +5681,8 @@ bool Compiler::fgTailCallMatchesStackGCLayout(GenTreeCall* call)
                 gcPtrType = dsc->GetLayout()->GetGCPtrType(j);
             }
 
-            assert((gcPtrType == TYP_UNDEF) || (gcPtrType == TYP_REF) || (gcPtrType == TYP_BYREF));
-            if ((gcPtrType == TYP_UNDEF) && (BitVecOps::IsMember(&slotTraits, argSlotGcRefs, slot + j) ||
+            assert((gcPtrType == TYP_I_IMPL) || (gcPtrType == TYP_REF) || (gcPtrType == TYP_BYREF));
+            if ((gcPtrType == TYP_I_IMPL) && (BitVecOps::IsMember(&slotTraits, argSlotGcRefs, slot + j) ||
                                              BitVecOps::IsMember(&slotTraits, argSlotByRefs, slot + j)))
             {
                 return false;
@@ -7132,6 +7146,12 @@ GenTree* Compiler::getTokenHandleTree(CORINFO_RESOLVED_TOKEN* pResolvedToken, bo
  */
 void Compiler::fgMorphTailCallViaJitHelper(GenTreeCall* call)
 {
+    // Due to fast tailcalls we may have called AddFinalArgsAndDetermineABIInfo
+    // before this point, so it is possible we have added extra IR for
+    // non-standard args that we must get rid of. Get rid of the extra
+    // arguments here.
+    call->gtArgs.ResetFinalArgsAndABIInfo();
+
     JITDUMP("fgMorphTailCallViaJitHelper (before):\n");
     DISPTREE(call);
 

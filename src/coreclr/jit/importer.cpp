@@ -8691,7 +8691,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                             bool                  isVirtual         = (callInfo.kind == CORINFO_VIRTUALCALL_STUB) ||
                                              (callInfo.kind == CORINFO_VIRTUALCALL_VTABLE);
                             CORINFO_METHOD_HANDLE exactCalleeHnd = isVirtual ? nullptr : declaredCalleeHnd;
-                            if (info.compCompHnd->canTailCall(info.compMethodHnd, declaredCalleeHnd, exactCalleeHnd,
+                            if (true || info.compCompHnd->canTailCall(info.compMethodHnd, declaredCalleeHnd, exactCalleeHnd,
                                                               hasTailPrefix)) // Is it legal to do tailcall?
                             {
                                 // Stress the tailcall.

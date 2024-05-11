@@ -1232,9 +1232,8 @@ protected:
     void     genStructPutArgUnroll(GenTreePutArgStk* putArgStkNode);
 #ifdef TARGET_X86
     void genStructPutArgPush(GenTreePutArgStk* putArgStkNode);
-#else
-    void genStructPutArgPartialRepMovs(GenTreePutArgStk* putArgStkNode);
 #endif
+    void genStructPutArgPartialRepMovs(GenTreePutArgStk* putArgStkNode);
 #endif // FEATURE_PUT_STRUCT_ARG_STK
 
     void     genCodeForStoreBlk(GenTreeBlk* storeBlkNode);

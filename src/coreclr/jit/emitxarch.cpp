@@ -9622,12 +9622,14 @@ void emitter::emitIns_Call(EmitCallType          callType,
         id->idAddr()->iiaAddrMode.amScale   = xmul ? emitEncodeScale(xmul) : emitter::OPSZ1;
 
         code_t code = insCodeMR(ins);
+#ifdef TARGET_AMD64
         if (ins == INS_tail_i_jmp)
         {
             // Tailcall with addressing mode/register needs to be rex.w
             // prefixed to be recognized as part of epilog by unwinder.
             code = AddRexWPrefix(id, code);
         }
+#endif
 
         sz = emitInsSizeAM(id, code);
 
@@ -12534,12 +12536,14 @@ BYTE* emitter::emitOutputAM(BYTE* dst, instrDesc* id, code_t code, CnsVal* addc)
     // For INS_call the instruction size is actually the return value size
     if ((ins == INS_call) || (ins == INS_tail_i_jmp))
     {
+#ifdef TARGET_AMD64
         if (ins == INS_tail_i_jmp)
         {
             // tail call with addressing mode (or through register) needs rex.w
             // prefix to be recognized by unwinder as part of epilog.
             code = AddRexWPrefix(id, code);
         }
+#endif
 
         // Special case: call via a register
         if (id->idIsCallRegPtr())

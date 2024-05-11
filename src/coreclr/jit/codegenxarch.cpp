@@ -4002,7 +4002,6 @@ void CodeGen::genStructPutArgPush(GenTreePutArgStk* putArgNode)
 }
 #endif // TARGET_X86
 
-#ifndef TARGET_X86
 //------------------------------------------------------------------------
 // genStructPutArgPartialRepMovs: Generates code for passing a struct arg by value on stack using
 //                                a mix of pointer-sized stores, "movsq" and "rep movsd".
@@ -4093,7 +4092,6 @@ void CodeGen::genStructPutArgPartialRepMovs(GenTreePutArgStk* putArgNode)
 
     assert(numGCSlotsCopied == layout->GetGCPtrCount());
 }
-#endif // !TARGET_X86
 
 //------------------------------------------------------------------------
 // If any Vector3 args are on stack and they are not pass-by-ref, the upper 32bits
@@ -8584,9 +8582,17 @@ void CodeGen::genPutArgStk(GenTreePutArgStk* putArgStk)
 
     if (putArgStk->putInIncomingArgArea())
     {
-        assert(data->isUsedFromReg());
-        GetEmitter()->emitIns_S_R(ins_Store(targetType), emitTypeSize(targetType), data->GetRegNum(),
-                                  getBaseVarForPutArgStk(putArgStk), putArgStk->getArgOffset());
+        unsigned baseVarNum = getBaseVarForPutArgStk(putArgStk);
+        if (data->isContainedIntOrIImmed())
+        {
+            GetEmitter()->emitIns_S_I(ins_Store(targetType), emitTypeSize(targetType), baseVarNum, putArgStk->getArgOffset(),
+                                      (int)data->AsIntConCommon()->IconValue());
+        }
+        else
+        {
+            GetEmitter()->emitIns_S_R(ins_Store(targetType), emitTypeSize(targetType), data->GetRegNum(),
+                baseVarNum, putArgStk->getArgOffset());
+        }
     }
     else
     {
@@ -8844,11 +8850,10 @@ void CodeGen::genPutStructArgStk(GenTreePutArgStk* putArgStk)
         case GenTreePutArgStk::Kind::RepInstr:
             genStructPutArgRepMovs(putArgStk);
             break;
-#ifndef TARGET_X86
+
         case GenTreePutArgStk::Kind::PartialRepInstr:
             genStructPutArgPartialRepMovs(putArgStk);
             break;
-#endif // !TARGET_X86
 
         case GenTreePutArgStk::Kind::Unroll:
             genStructPutArgUnroll(putArgStk);

@@ -1776,7 +1776,14 @@ void CodeGen::genConsumePutStructArgStk(GenTreePutArgStk* putArgNode,
 
 #ifdef TARGET_X86
     assert(dstReg != REG_SPBASE);
-    inst_Mov(TYP_I_IMPL, dstReg, REG_SPBASE, /* canSkip */ false);
+    if (m_stkArgVarNum == BAD_VAR_NUM)
+    {
+        inst_Mov(TYP_I_IMPL, dstReg, REG_SPBASE, /* canSkip */ false);
+    }
+    else
+    {
+        GetEmitter()->emitIns_R_S(INS_lea, EA_PTRSIZE, dstReg, m_stkArgVarNum, putArgNode->getArgOffset());
+    }
 #else  // !TARGET_X86
     GenTree* dstAddr = putArgNode;
     if (dstAddr->GetRegNum() != dstReg)
