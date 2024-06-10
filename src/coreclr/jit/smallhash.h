@@ -616,6 +616,17 @@ public:
         return true;
     }
 
+    TValue* TryGetValuePointer(const TKey& key)
+    {
+        unsigned unused, index;
+        if (!TryGetBucket(TKeyInfo::GetHashCode(key), key, &unused, &index))
+        {
+            return nullptr;
+        }
+
+        return &m_buckets[index].m_value;
+    }
+
     //------------------------------------------------------------------------
     // HashTableBase::Contains: returns true if a key exists in the table and
     //                          false otherwise.

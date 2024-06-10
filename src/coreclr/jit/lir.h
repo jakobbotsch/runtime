@@ -31,13 +31,6 @@ public:
                          // a more expensive data structure when processing a set
                          // of LIR nodes. See for example `LIR::GetTreeRange`.
 
-            UnusedValue = 0x02, // Set on a node if it produces a value that is not
-                                // subsequently used. Should never be set on nodes
-                                // that return `false` for `GenTree::IsValue`. Note
-                                // that this bit should not be assumed to be valid
-                                // at all points during compilation: it is currently
-                                // only computed during target-dependent lowering.
-
             RegOptional = 0x04, // Set on a node if it produces a value, but does not
                                 // require a register (i.e. it can be used from memory).
         };
@@ -321,18 +314,18 @@ public:
 
 inline void GenTree::SetUnusedValue()
 {
-    gtLIRFlags |= LIR::Flags::UnusedValue;
+    gtLirUseCount = 0;
     ClearContained();
 }
 
 inline void GenTree::ClearUnusedValue()
 {
-    gtLIRFlags &= ~LIR::Flags::UnusedValue;
+    gtLirUseCount = 1;
 }
 
 inline bool GenTree::IsUnusedValue() const
 {
-    return (gtLIRFlags & LIR::Flags::UnusedValue) != 0;
+    return gtLirUseCount == 0;
 }
 
 inline void GenTree::SetRegOptional()

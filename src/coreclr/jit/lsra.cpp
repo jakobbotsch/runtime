@@ -7616,6 +7616,7 @@ void LinearScan::insertUpperVectorSave(GenTree*     tree,
 
     SetLsraAdded(simdUpperSave);
     simdUpperSave->SetRegNum(spillReg);
+    simdUpperSave->SetUnusedValue();
 
     if (spillToMem)
     {
@@ -7681,6 +7682,7 @@ void LinearScan::insertUpperVectorRestore(GenTree*     tree,
 
     regNumber restoreReg = upperVectorInterval->physReg;
     SetLsraAdded(simdUpperRestore);
+    simdUpperRestore->SetUnusedValue();
 
     if (restoreReg == REG_NA)
     {

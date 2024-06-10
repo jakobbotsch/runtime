@@ -1339,6 +1339,7 @@ inline GenTree::GenTree(genTreeOps oper, var_types type DEBUGARG(bool largeNode)
 #ifdef DEBUG
     gtDebugFlags = GTF_DEBUG_NONE;
 #endif // DEBUG
+    gtLirUseCount = 1;
     gtCSEnum = NO_CSE;
     ClearAssertion();
 

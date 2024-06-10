@@ -855,6 +855,10 @@ private:
     uint8_t m_operandCount;
 
 public:
+    // Number of uses of this LIR definition.
+    // TODO: Can share with field above and use 24 bits to avoid extra padding.
+    uint32_t gtLirUseCount;
+
     // The register number is stored in a small format (8 bits), but the getters return and the setters take
     // a full-size (unsigned) format, to localize the casts here.
 

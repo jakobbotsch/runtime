@@ -12,6 +12,12 @@ class Rationalizer final : public Phase
 private:
     BasicBlock* m_block;
     Statement*  m_statement;
+    // Local num -> BB num of block with single definition and uses
+    uint32_t* m_singleDefBBNums = nullptr;
+    // BB num -> count of locals with a single definition/uses in it
+    uint32_t* m_singleDefBlockCounts = nullptr;
+    // Var index -> value of single-def node
+    GenTree** m_singleDefValues = nullptr;
 
 public:
     Rationalizer(Compiler* comp);
@@ -26,6 +32,8 @@ public:
     void SanityCheckRational();
 
 #endif // DEBUG
+
+    void FindSingleDefLocals();
 
     virtual PhaseStatus DoPhase() override;
 

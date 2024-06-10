@@ -6,6 +6,130 @@
 #pragma hdrstop
 #endif
 
+static constexpr uint32_t LCL_UNSEEN = UINT32_MAX;
+static constexpr uint32_t LCL_GLOBALLY_USED = UINT32_MAX - 1;
+
+void Rationalizer::FindSingleDefLocals()
+{
+    m_singleDefBBNums = new (comp, CMK_Rationalize) uint32_t[comp->lvaCount];
+
+    for (unsigned lclNum = 0; lclNum < comp->lvaCount; lclNum++)
+    {
+        LclVarDsc* dsc = comp->lvaGetDesc(lclNum);
+        uint32_t& defBBNum = m_singleDefBBNums[lclNum];
+        // TODO: Handle promoted fields precisely.
+        if (dsc->IsAddressExposed() || dsc->lvIsStructField || dsc->lvPromoted)
+        {
+            defBBNum = LCL_GLOBALLY_USED;
+        }
+        else
+        {
+            defBBNum = LCL_UNSEEN;
+        }
+    }
+
+    for (BasicBlock* block : comp->Blocks())
+    {
+        for (Statement* stmt : block->NonPhiStatements())
+        {
+            for (GenTree* tree : stmt->TreeList())
+            {
+                if (!tree->OperIsLocal())
+                {
+                    continue;
+                }
+
+                GenTreeLclVarCommon* lcl = tree->AsLclVarCommon();
+                LclVarDsc* varDsc = comp->lvaGetDesc(lcl);
+                uint32_t& defBBNum = m_singleDefBBNums[lcl->GetLclNum()];
+                if (lcl->OperIs(GT_LCL_VAR))
+                {
+                    if (block->bbNum != defBBNum)
+                    {
+                        defBBNum = LCL_GLOBALLY_USED;
+                    }
+                }
+                else if (lcl->OperIs(GT_STORE_LCL_VAR))
+                {
+                    if ((defBBNum == LCL_UNSEEN) || // first time we see this local
+                        (defBBNum == block->bbNum)) // or has it only been defined in this current BB
+                    {
+                        defBBNum = block->bbNum; // then mark that it is always defined in this current BB
+                    }
+                    else
+                    {
+                        defBBNum = LCL_GLOBALLY_USED; // Otherwise var is not restricted to one BB
+                    }
+                }
+                else
+                {
+                    defBBNum = LCL_GLOBALLY_USED;
+                }
+            }
+        }
+    }
+
+    m_singleDefBlockCounts = new (comp, CMK_Rationalize) uint32_t[comp->fgBBNumMax + 1]{};
+
+    unsigned numSingleDefLocals = 0;
+    unsigned maxVarIndex = 0;
+    for (unsigned lclNum = 0; lclNum < comp->lvaCount; lclNum++)
+    {
+        uint32_t bbNum = m_singleDefBBNums[lclNum];
+        if (bbNum >= LCL_GLOBALLY_USED)
+        {
+            continue;
+        }
+
+        INDEBUG(numSingleDefLocals++);
+
+        LclVarDsc* dsc = comp->lvaGetDesc(lclNum);
+        uint32_t& singleDefVarIndex = m_singleDefBlockCounts[bbNum];
+        if (singleDefVarIndex > UINT16_MAX)
+        {
+            m_singleDefBBNums[lclNum] = LCL_GLOBALLY_USED;
+        }
+        else
+        {
+            dsc->lvVarIndex = static_cast<uint16_t>(singleDefVarIndex++);
+            maxVarIndex = max(maxVarIndex, static_cast<uint32_t>(dsc->lvVarIndex));
+        }
+    }
+
+    m_singleDefValues = new (comp, CMK_Rationalize) GenTree*[maxVarIndex + 1];
+
+#ifdef DEBUG
+    if (comp->verbose)
+    {
+        printf("Found %u locals that are defined and used only in the same BB\n", numSingleDefLocals);
+        printf("  Simultaneous max in a single BB is %u\n", maxVarIndex + 1);
+
+        if (numSingleDefLocals > 0)
+        {
+            printf("  Single-def locals and their blocks are:\n ");
+            unsigned printed = 0;
+            for (unsigned lclNum = 0; lclNum < comp->lvaCount; lclNum++)
+            {
+                if (m_singleDefBBNums[lclNum] >= LCL_GLOBALLY_USED)
+                {
+                    continue;
+                }
+
+                if (printed == 16)
+                {
+                    printf("\n ");
+                    printed = 0;
+                }
+
+                printf(" V%02u (" FMT_BB ")", lclNum, m_singleDefBBNums[lclNum]);
+            }
+        }
+
+        printf("\n");
+    }
+#endif
+}
+
 // RewriteNodeAsCall : Replace the given tree node by a GT_CALL.
 //
 // Arguments:
@@ -20,7 +144,6 @@
 // Return Value:
 //    None.
 //
-
 void Rationalizer::RewriteNodeAsCall(GenTree**             use,
                                      CORINFO_SIG_INFO*     sig,
                                      ArrayStack<GenTree*>& parents,
@@ -674,6 +797,38 @@ Compiler::fgWalkResult Rationalizer::RewriteNode(GenTree** useEdge, Compiler::Ge
         }
         break;
 
+        case GT_STORE_LCL_VAR:
+        {
+            GenTreeLclVarCommon* lcl = node->AsLclVarCommon();
+            if ((m_singleDefBBNums != nullptr) && (m_singleDefBBNums[lcl->GetLclNum()] < LCL_GLOBALLY_USED))
+            {
+                LclVarDsc* dsc = comp->lvaGetDesc(lcl);
+                GenTree* data = lcl->Data();
+                m_singleDefValues[dsc->lvVarIndex] = data;
+
+                data->gtLirUseCount = 0;
+                node->gtBashToNOP();
+            }
+
+            break;
+        }
+
+        case GT_LCL_VAR:
+        {
+            GenTreeLclVarCommon* lcl = node->AsLclVarCommon();
+            if ((m_singleDefBBNums != nullptr) && (m_singleDefBBNums[lcl->GetLclNum()] < LCL_GLOBALLY_USED))
+            {
+                LclVarDsc* dsc = comp->lvaGetDesc(lcl);
+                GenTree* data = m_singleDefValues[dsc->lvVarIndex];
+                assert(data != nullptr);
+                use.ReplaceWith(data);
+                BlockRange().Remove(node);
+                data->gtLirUseCount++;
+                return Compiler::WALK_CONTINUE;
+            }
+            break;
+        }
+
         case GT_INTRINSIC:
             // Non-target intrinsics should have already been rewritten back into user calls.
             assert(comp->IsTargetIntrinsic(node->AsIntrinsic()->gtIntrinsicName));
@@ -716,7 +871,7 @@ Compiler::fgWalkResult Rationalizer::RewriteNode(GenTree** useEdge, Compiler::Ge
     {
         if (node->IsValue() && use.IsDummyUse())
         {
-            node->SetUnusedValue();
+            node->gtLirUseCount = 0;
         }
 
         if (node->TypeIs(TYP_LONG))
@@ -782,7 +937,13 @@ PhaseStatus Rationalizer::DoPhase()
     comp->compCurBB = nullptr;
     comp->fgOrder   = Compiler::FGOrderLinear;
 
+    if (comp->opts.OptimizationEnabled() && ISMETHOD("Foo") && false)
+    {
+        FindSingleDefLocals();
+    }
+
     RationalizeVisitor visitor(*this);
+
     for (BasicBlock* const block : comp->Blocks())
     {
         comp->compCurBB = block;

@@ -1422,11 +1422,9 @@ public:
     //    unusedDefs - map of defs that do no have users.
     //
     CheckLclVarSemanticsHelper(Compiler*                            compiler,
-                               const LIR::Range*                    range,
-                               SmallHashTable<GenTree*, bool, 32U>& unusedDefs)
+                               const LIR::Range*                    range)
         : compiler(compiler)
         , range(range)
-        , unusedDefs(unusedDefs)
         , unusedLclVarReads(compiler->getAllocator(CMK_DebugOnly))
         , lclVarReadsMapsCache(compiler->getAllocator(CMK_DebugOnly))
     {
@@ -1446,7 +1444,7 @@ public:
             }
 
             AliasSet::NodeInfo nodeInfo(compiler, node);
-            if (nodeInfo.IsLclVarRead() && node->IsValue() && !unusedDefs.Contains(node))
+            if (nodeInfo.IsLclVarRead() && node->IsValue() && (node->gtLirUseCount > 0))
             {
                 PushLclVarRead(nodeInfo);
             }
@@ -1586,7 +1584,6 @@ private:
 private:
     Compiler*                                                     compiler;
     const LIR::Range*                                             range;
-    SmallHashTable<GenTree*, bool, 32U>&                          unusedDefs;
     SmallHashTable<int, SmallHashTable<GenTree*, GenTree*>*, 16U> unusedLclVarReads;
     ArrayStack<SmallHashTable<GenTree*, GenTree*>*>               lclVarReadsMapsCache;
 };
@@ -1622,7 +1619,7 @@ bool LIR::Range::CheckLIR(Compiler* compiler, bool checkUnusedValues) const
 
     CheckDoublyLinkedList<GenTree, &GenTree::gtPrev, &GenTree::gtNext>(FirstNode());
 
-    SmallHashTable<GenTree*, bool, 32> unusedDefs(compiler->getAllocatorDebugOnly());
+    SmallHashTable<GenTree*, uint32_t, 32> defUseCounts(compiler->getAllocatorDebugOnly());
 
     GenTree* prev = nullptr;
     for (Iterator node = begin(), end = this->end(); node != end; prev = *node, ++node)
@@ -1645,8 +1642,9 @@ bool LIR::Range::CheckLIR(Compiler* compiler, bool checkUnusedValues) const
         for (GenTree** useEdge : node->UseEdges())
         {
             GenTree* def = *useEdge;
+            uint32_t* pCount = defUseCounts.TryGetValuePointer(def);
 
-            assert(!(checkUnusedValues && def->IsUnusedValue()) && "operands should never be marked as unused values");
+            assert(!checkUnusedValues || !def->IsUnusedValue() && "operands should never be marked as unused values");
 
             if (!def->IsValue())
             {
@@ -1660,55 +1658,42 @@ bool LIR::Range::CheckLIR(Compiler* compiler, bool checkUnusedValues) const
                 continue;
             }
 
-            bool v;
-            bool foundDef = unusedDefs.TryRemove(def, &v);
-            if (!foundDef)
+            if (pCount == nullptr)
             {
-                // First, scan backwards and look for a preceding use.
-                for (GenTree* prev = *node; prev != nullptr; prev = prev->gtPrev)
-                {
-                    // TODO: dump the users and the def
-                    GenTree** earlierUseEdge;
-                    bool      foundEarlierUse = prev->TryGetUse(def, &earlierUseEdge) && earlierUseEdge != useEdge;
-                    assert(!foundEarlierUse && "found multiply-used LIR node");
-                }
+                JITDUMP("[%06u]: use count too small (first extraneous use is by [%06u])\n", Compiler::dspTreeID(def), Compiler::dspTreeID(*node));
+                assert(!"Found LIR def with too small use count");
+            }
 
-                // The def did not precede the use. Check to see if it exists in the block at all.
-                for (GenTree* next = node->gtNext; next != nullptr; next = next->gtNext)
-                {
-                    // TODO: dump the user and the def
-                    assert(next != def && "found def after use");
-                }
-
-                // The def might not be a node that produces a value.
-                assert(def->IsValue() && "found use of a node that does not produce a value");
-
-                // By this point, the only possibility is that the def is not threaded into the LIR sequence.
-                assert(false && "found use of a node that is not in the LIR sequence");
+            if (--(*pCount) == 0)
+            {
+                defUseCounts.Remove(def);
             }
         }
 
         if (node->IsValue())
         {
-            bool added = unusedDefs.AddOrUpdate(*node, true);
-            assert(added);
+            assert(node->IsUnusedValue() == (node->gtLirUseCount == 0));
+            if (node->gtLirUseCount > 0)
+            {
+                bool added = defUseCounts.AddOrUpdate(*node, node->gtLirUseCount);
+                assert(added);
+            }
         }
+    }
+
+    if (defUseCounts.Count() > 0)
+    {
+        for (auto v : defUseCounts)
+        {
+            JITDUMP("[%06u]: overestimated use count by %d\n", Compiler::dspTreeID(v.Key()), v.Value());
+        }
+
+        assert(!"Found LIR defs with too large use count");
     }
 
     assert(prev == m_lastNode);
 
-    // At this point the unusedDefs map should contain only unused values.
-    if (checkUnusedValues)
-    {
-        for (auto kvp : unusedDefs)
-        {
-            GenTree* node = kvp.Key();
-            assert(node->IsUnusedValue() && "found an unmarked unused value");
-            assert(!node->isContained() && "a contained node should have a user");
-        }
-    }
-
-    CheckLclVarSemanticsHelper checkLclVarSemanticsHelper(compiler, this, unusedDefs);
+    CheckLclVarSemanticsHelper checkLclVarSemanticsHelper(compiler, this);
     assert(checkLclVarSemanticsHelper.Check());
 
     return true;
