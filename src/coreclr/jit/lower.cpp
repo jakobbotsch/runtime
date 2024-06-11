@@ -5776,6 +5776,7 @@ void Lowering::InsertPInvokeCallProlog(GenTreeCall* call)
     JITDUMP("======= Inserting PInvoke call prolog\n");
 
     GenTree* insertBefore = call;
+
     const CORINFO_EE_INFO::InlinedCallFrameInfo& callFrameInfo = comp->eeGetEEInfo()->inlinedCallFrameInfo;
 
     gtCallTypes callType = (gtCallTypes)call->gtCallType;
