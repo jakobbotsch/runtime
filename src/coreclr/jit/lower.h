@@ -602,6 +602,8 @@ private:
     void RequireOutgoingArgSpace(GenTree* node, unsigned numBytes);
     void FinalizeOutgoingArgSpace();
 
+    void MakeLIRSDSU();
+
     LinearScan*           m_lsra;
     unsigned              vtableCallTemp;       // local variable we use as a temp for vtable calls
     mutable SideEffectSet m_scratchSideEffects; // SideEffectSet used for IsSafeToContainMem and isRMWIndirCandidate

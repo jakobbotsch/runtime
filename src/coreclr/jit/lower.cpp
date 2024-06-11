@@ -7538,6 +7538,8 @@ PhaseStatus Lowering::DoPhase()
 
     FinalizeOutgoingArgSpace();
 
+    MakeLIRSDSU();
+
     // Recompute local var ref counts before potentially sorting for liveness.
     // Note this does minimal work in cases where we are not going to sort.
     const bool isRecompute    = true;
@@ -9955,4 +9957,104 @@ void Lowering::FinalizeOutgoingArgSpace()
     comp->lvaOutgoingArgSpaceSize.MarkAsReadOnly();
     comp->lvaGetDesc(comp->lvaOutgoingArgSpaceVar)->GrowBlockLayout(comp->typGetBlkLayout(m_outgoingArgSpaceSize));
 #endif
+}
+
+void Lowering::MakeLIRSDSU()
+{
+    struct Def
+    {
+        GenTree* Node;
+        unsigned LclNum;
+        unsigned int UseCount;
+        Def* Next;
+    };
+
+    Def* freeDefs = nullptr;
+    Def* defHead = nullptr;
+
+    for (BasicBlock* block : comp->Blocks())
+    {
+        GenTree* next = nullptr;
+        for (GenTree* node = LIR::AsRange(block).FirstNode(); node != nullptr; node = next)
+        {
+            next = node->gtNext;
+
+            for (GenTree** useEdge : node->UseEdges())
+            {
+                GenTree* op = *useEdge;
+                if (!op->IsValue() || (op->gtLirUseCount <= 1))
+                {
+                    continue;
+                }
+
+                bool found = false;
+                for (Def** defSlot = &defHead; *defSlot != nullptr; defSlot = &(*defSlot)->Next)
+                {
+                    Def* def = *defSlot;
+                    if (def->Node == op)
+                    {
+                        GenTree* lcl = comp->gtNewLclvNode(def->LclNum, genActualType(def->Node));
+                        *useEdge = lcl;
+                        LIR::AsRange(block).InsertBefore(node, lcl);
+
+                        DBEXEC(VERBOSE, comp->gtDispLIRNode(lcl));
+                        found = true;
+
+                        if (--def->UseCount == 0)
+                        {
+                            def->Node->gtLirUseCount = 1;
+                            *defSlot = def->Next;
+                            def->Next = freeDefs;
+                            freeDefs = def;
+                        }
+                        break;
+                    }
+                }
+
+                assert(found);
+            }
+
+            DBEXEC(VERBOSE, comp->gtDispLIRNode(node));
+
+            if (node->gtLirUseCount > 1)
+            {
+                assert(node->IsValue());
+
+                Def* newDef;
+                if (freeDefs != nullptr)
+                {
+                    newDef = freeDefs;
+                    freeDefs = freeDefs->Next;
+                }
+                else
+                {
+                    newDef = new (comp, CMK_Rationalize) Def;
+                }
+
+                newDef->Node = node;
+                newDef->UseCount = node->gtLirUseCount;
+                newDef->Next = defHead;
+                newDef->LclNum = comp->lvaGrabTemp(false DEBUGARG(comp->printfAlloc("%d use LIR temp [%06u]", node->gtLirUseCount, Compiler::dspTreeID(node))));
+                defHead = newDef;
+
+                GenTree* store = comp->gtNewTempStore(newDef->LclNum, node);
+                LIR::AsRange(block).InsertAfter(node, store);
+
+                DBEXEC(VERBOSE, comp->gtDispLIRNode(store));
+
+                next = store->gtNext;
+            }
+        }
+
+        if (defHead != nullptr)
+        {
+            JITDUMP("Defs still remain:\n");
+            for (Def* def = defHead; def != nullptr; def = def->Next)
+            {
+                JITDUMP("  [%06u] with %u uses\n", Compiler::dspTreeID(def->Node), def->UseCount);
+            }
+
+            assert(!"Defs still remain");
+        }
+    }
 }
