@@ -317,7 +317,7 @@ bool Lowering::IsRangeInvariantInRange(GenTree* rangeStart,
 //
 bool Lowering::IsSafeToContainMem(GenTree* parentNode, GenTree* childNode) const
 {
-    return IsInvariantInRange(childNode, parentNode);
+    return (childNode->gtLirUseCount <= 1) && IsInvariantInRange(childNode, parentNode);
 }
 
 //------------------------------------------------------------------------
