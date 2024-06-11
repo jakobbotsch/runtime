@@ -5776,13 +5776,6 @@ void Lowering::InsertPInvokeCallProlog(GenTreeCall* call)
     JITDUMP("======= Inserting PInvoke call prolog\n");
 
     GenTree* insertBefore = call;
-    if (call->gtCallType == CT_INDIRECT)
-    {
-        bool isClosed;
-        insertBefore = BlockRange().GetTreeRange(call->gtCallAddr, &isClosed).FirstNode();
-        assert(isClosed);
-    }
-
     const CORINFO_EE_INFO::InlinedCallFrameInfo& callFrameInfo = comp->eeGetEEInfo()->inlinedCallFrameInfo;
 
     gtCallTypes callType = (gtCallTypes)call->gtCallType;
