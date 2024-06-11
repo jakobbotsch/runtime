@@ -18,7 +18,7 @@ void Rationalizer::FindSingleDefLocals()
         LclVarDsc* dsc = comp->lvaGetDesc(lclNum);
         uint32_t& defBBNum = m_singleDefBBNums[lclNum];
         // TODO: Handle promoted fields precisely.
-        if (dsc->IsAddressExposed() || dsc->lvIsStructField || dsc->lvPromoted)
+        if (dsc->IsAddressExposed() || dsc->lvIsStructField || dsc->lvPromoted || (dsc->TypeGet() == TYP_STRUCT))
         {
             defBBNum = LCL_GLOBALLY_USED;
         }
