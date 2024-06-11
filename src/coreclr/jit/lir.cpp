@@ -1234,8 +1234,11 @@ LIR::ReadOnlyRange LIR::Range::GetMarkedRange(unsigned  markCount,
 
             // Mark the node's operands
             firstNode->VisitOperands([&markCount](GenTree* operand) -> GenTree::VisitResult {
-                operand->gtLIRFlags |= LIR::Flags::Mark;
-                markCount++;
+                if ((operand->gtLIRFlags & LIR::Flags::Mark) == 0)
+                {
+                    operand->gtLIRFlags |= LIR::Flags::Mark;
+                    markCount++;
+                }
                 return GenTree::VisitResult::Continue;
             });
 
