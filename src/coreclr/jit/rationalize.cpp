@@ -937,7 +937,7 @@ PhaseStatus Rationalizer::DoPhase()
     comp->compCurBB = nullptr;
     comp->fgOrder   = Compiler::FGOrderLinear;
 
-    if (comp->opts.OptimizationEnabled() && ISMETHOD("Foo"))
+    if (comp->opts.OptimizationEnabled())
     {
         FindSingleDefLocals();
     }
