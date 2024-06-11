@@ -7903,18 +7903,19 @@ void LinearScan::updateMaxSpill(RefPosition* refPosition)
 
             type = RegSet::tmpNormalizeType(type);
 
-            if (refPosition->spillAfter && !refPosition->reload)
+            if (refPosition->reload)
+            {
+                assert(currentSpill[type] > 0);
+                currentSpill[type]--;
+            }
+
+            if (refPosition->spillAfter)
             {
                 currentSpill[type]++;
                 if (currentSpill[type] > maxSpill[type])
                 {
                     maxSpill[type] = currentSpill[type];
                 }
-            }
-            else if (refPosition->reload)
-            {
-                assert(currentSpill[type] > 0);
-                currentSpill[type]--;
             }
             else if (refPosition->RegOptional() && refPosition->assignedReg() == REG_NA)
             {
@@ -10620,7 +10621,7 @@ void LinearScan::dumpDefList()
          listNode = listNode->Next())
     {
         GenTree* node = listNode->treeNode;
-        JITDUMP("%sN%03u.t%d. %s", first ? "" : "; ", node->gtSeqNum, node->gtTreeID, GenTree::OpName(node->OperGet()));
+        JITDUMP("%sN%03u.t%d. %s[%u]", first ? "" : "; ", node->gtSeqNum, node->gtTreeID, GenTree::OpName(node->OperGet()), listNode->uses);
         first = false;
     }
     JITDUMP(" }\n");

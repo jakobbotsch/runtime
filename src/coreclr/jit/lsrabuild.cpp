@@ -24,30 +24,6 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 //------------------------------------------------------------------------
 // RefInfoList
 //------------------------------------------------------------------------
-// removeListNode - retrieve the RefInfoListNode for the given GenTree node
-//
-// Notes:
-//     The BuildNode methods use this helper to retrieve the RefPositions for child nodes
-//     from the useList being constructed. Note that, if the user knows the order of the operands,
-//     it is expected that they should just retrieve them directly.
-//
-RefInfoListNode* RefInfoList::removeListNode(GenTree* node)
-{
-    RefInfoListNode* prevListNode = nullptr;
-    for (RefInfoListNode *listNode = Begin(), *end = End(); listNode != end; listNode = listNode->Next())
-    {
-        if (listNode->treeNode == node)
-        {
-            assert(listNode->ref->getMultiRegIdx() == 0);
-            return removeListNode(listNode, prevListNode);
-        }
-        prevListNode = listNode;
-    }
-    assert(!"removeListNode didn't find the node");
-    unreached();
-}
-
-//------------------------------------------------------------------------
 // removeListNode - retrieve the RefInfoListNode for one reg of the given multireg GenTree node
 //
 // Notes:
@@ -55,14 +31,20 @@ RefInfoListNode* RefInfoList::removeListNode(GenTree* node)
 //     from the useList being constructed. Note that, if the user knows the order of the operands,
 //     it is expected that they should just retrieve them directly.
 //
-RefInfoListNode* RefInfoList::removeListNode(GenTree* node, unsigned multiRegIdx)
+RefInfo* RefInfoList::removeListNode(GenTree* node, unsigned multiRegIdx, RefInfoListNodePool* pool)
 {
     RefInfoListNode* prevListNode = nullptr;
     for (RefInfoListNode *listNode = Begin(), *end = End(); listNode != end; listNode = listNode->Next())
     {
         if ((listNode->treeNode == node) && (listNode->ref->getMultiRegIdx() == multiRegIdx))
         {
-            return removeListNode(listNode, prevListNode);
+            if (--listNode->uses == 0)
+            {
+                removeListNode(listNode, prevListNode);
+                pool->ReturnNode(listNode);
+            }
+
+            return listNode;
         }
         prevListNode = listNode;
     }
@@ -110,7 +92,7 @@ RefInfoListNodePool::RefInfoListNodePool(Compiler* compiler, unsigned preallocat
 // Returns:
 //    A pooled or newly-allocated `RefInfoListNode`, depending on the
 //    contents of the pool.
-RefInfoListNode* RefInfoListNodePool::GetNode(RefPosition* r, GenTree* t)
+RefInfoListNode* RefInfoListNodePool::GetNode(RefPosition* r, GenTree* t, unsigned uses)
 {
     RefInfoListNode* head = m_freeList;
     if (head == nullptr)
@@ -124,6 +106,7 @@ RefInfoListNode* RefInfoListNodePool::GetNode(RefPosition* r, GenTree* t)
 
     head->ref      = r;
     head->treeNode = t;
+    head->uses = uses;
     head->m_next   = nullptr;
 
     return head;
@@ -251,6 +234,13 @@ void LinearScan::resolveConflictingDefAndUse(Interval* interval, RefPosition* de
     assert(!interval->isLocalVar);
 
     RefPosition*     useRefPosition   = defRefPosition->nextRefPosition;
+    if (useRefPosition->nextRefPosition != nullptr)
+    {
+        // Handle a multi-used LIR temp conservatively: always insert the copy.
+        INDEBUG(dumpLsraAllocationEvent(LSRA_EVENT_DEFUSE_CASE6, interval));
+        return;
+    }
+
     SingleTypeRegSet defRegAssignment = defRefPosition->registerAssignment;
     SingleTypeRegSet useRegAssignment = useRefPosition->registerAssignment;
     RegRecord*       defRegRecord     = nullptr;
@@ -479,6 +469,11 @@ void LinearScan::associateRefPosWithInterval(RefPosition* rp)
             }
             else if (rp->refType == RefTypeUse)
             {
+                RefPosition* const prevRP = theInterval->recentRefPosition;
+                // LIR temp intervals should always have a def.
+                assert((prevRP != nullptr) && (prevRP->bbNum == rp->bbNum));
+                prevRP->lastUse = false;
+
                 checkConflictingDefUse(rp);
                 rp->lastUse = true;
             }
@@ -3139,7 +3134,7 @@ RefPosition* LinearScan::BuildDef(GenTree* tree, SingleTypeRegSet dstCandidates,
     }
     else
     {
-        RefInfoListNode* refInfo = listNodePool.GetNode(defRefPosition, tree);
+        RefInfoListNode* refInfo = listNodePool.GetNode(defRefPosition, tree, tree->gtLirUseCount);
         defList.Append(refInfo);
     }
 
@@ -3482,11 +3477,10 @@ RefPosition* LinearScan::BuildUse(GenTree* operand, SingleTypeRegSet candidates,
     }
     else
     {
-        RefInfoListNode* refInfo   = defList.removeListNode(operand, multiRegIdx);
+        RefInfo* refInfo   = defList.removeListNode(operand, multiRegIdx, &listNodePool);
         RefPosition*     defRefPos = refInfo->ref;
         assert(defRefPos->multiRegIdx == multiRegIdx);
         interval = defRefPos->getInterval();
-        listNodePool.ReturnNode(refInfo);
         operand = nullptr;
     }
     RefPosition* useRefPos = newRefPosition(interval, currentLoc, RefTypeUse, operand, candidates, multiRegIdx);

@@ -82,17 +82,7 @@ struct RefInfo
 {
     RefPosition* ref;
     GenTree*     treeNode;
-
-    RefInfo(RefPosition* r, GenTree* t)
-        : ref(r)
-        , treeNode(t)
-    {
-    }
-
-    // default constructor for data structures
-    RefInfo()
-    {
-    }
+    uint32_t     uses;
 };
 
 //------------------------------------------------------------------------
@@ -109,11 +99,6 @@ class RefInfoListNode final : public RefInfo
     RefInfoListNode* m_next; // The next node in the list
 
 public:
-    RefInfoListNode(RefPosition* r, GenTree* t)
-        : RefInfo(r, t)
-    {
-    }
-
     //------------------------------------------------------------------------
     // RefInfoListNode::Next: Returns the next node in the list.
     RefInfoListNode* Next() const
@@ -297,10 +282,8 @@ public:
         return listNode;
     }
 
-    // removeListNode - remove the RefInfoListNode for the given GenTree node from the defList
-    RefInfoListNode* removeListNode(GenTree* node);
     // Same as above but takes a multiRegIdx to support multi-reg nodes.
-    RefInfoListNode* removeListNode(GenTree* node, unsigned multiRegIdx);
+    RefInfo* removeListNode(GenTree* node, unsigned multiRegIdx, RefInfoListNodePool* pool);
 
     //------------------------------------------------------------------------
     // GetRefPosition - retrieve the RefPosition for the given node
@@ -371,7 +354,7 @@ class RefInfoListNodePool final
 
 public:
     RefInfoListNodePool(Compiler* compiler, unsigned preallocate = defaultPreallocation);
-    RefInfoListNode* GetNode(RefPosition* r, GenTree* t);
+    RefInfoListNode* GetNode(RefPosition* r, GenTree* t, unsigned uses);
     void             ReturnNode(RefInfoListNode* listNode);
 };
 

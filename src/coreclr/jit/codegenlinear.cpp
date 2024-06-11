@@ -1328,7 +1328,7 @@ void CodeGen::genConsumeRegAndCopy(GenTree* node, regNumber needReg)
 void CodeGen::genNumberOperandUse(GenTree* const operand, int& useNum) const
 {
     assert(operand != nullptr);
-    assert(operand->gtUseNum == -1);
+    assert(operand->gtUseNum == -1 || (operand->gtLirUseCount > 0));
 
     if (!operand->isContained() && !operand->IsCopyOrReload())
     {
@@ -1350,7 +1350,7 @@ void CodeGen::genCheckConsumeNode(GenTree* const node)
 
     if (verbose)
     {
-        if (node->gtUseNum == -1)
+        if (node->gtUseNum == -1 || (node->gtLirUseCount > 1))
         {
             // nothing wrong if the node was not consumed
         }
@@ -1359,7 +1359,7 @@ void CodeGen::genCheckConsumeNode(GenTree* const node)
             printf("Node was consumed twice:\n");
             compiler->gtDispTree(node, nullptr, nullptr, true);
         }
-        else if ((lastConsumedNode != nullptr) && (node->gtUseNum < lastConsumedNode->gtUseNum))
+        else if ((lastConsumedNode != nullptr) && (node->gtUseNum < lastConsumedNode->gtUseNum)) //
         {
             printf("Nodes were consumed out-of-order:\n");
             compiler->gtDispTree(lastConsumedNode, nullptr, nullptr, true);
@@ -1367,11 +1367,12 @@ void CodeGen::genCheckConsumeNode(GenTree* const node)
         }
     }
 
-    assert((node->OperGet() == GT_CATCH_ARG) || ((node->gtDebugFlags & GTF_DEBUG_NODE_CG_CONSUMED) == 0));
-    assert((lastConsumedNode == nullptr) || (node->gtUseNum == -1) || (node->gtUseNum > lastConsumedNode->gtUseNum));
+    assert((node->OperGet() == GT_CATCH_ARG) || ((node->gtDebugFlags & GTF_DEBUG_NODE_CG_CONSUMED) == 0) || (node->gtLirUseCount > 1));
+    assert((lastConsumedNode == nullptr) || (node->gtUseNum == -1) || (node->gtUseNum > lastConsumedNode->gtUseNum) || (node->gtLirUseCount > 1));
 
     node->gtDebugFlags |= GTF_DEBUG_NODE_CG_CONSUMED;
-    lastConsumedNode = node;
+    if (node->gtLirUseCount <= 1)
+        lastConsumedNode = node;
 }
 #endif // DEBUG
 

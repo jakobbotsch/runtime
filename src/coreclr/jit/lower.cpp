@@ -2558,6 +2558,8 @@ GenTree* Lowering::LowerCall(GenTree* node)
     call->ClearOtherRegs();
     LowerArgsForCall(call);
 
+    MoveCFGCallArgs(call);
+
     // note that everything generated from this point might run AFTER the outgoing args are placed
     GenTree* controlExpr          = nullptr;
     bool     callWasExpandedEarly = false;
