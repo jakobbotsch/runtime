@@ -6600,10 +6600,12 @@ bool Lowering::TryCreateAddrMode(GenTree* addr, bool isContainable, GenTree* par
     if (base != nullptr)
     {
         base->ClearContained();
+        base->gtLirUseCount++;
     }
     if (index != nullptr)
     {
         index->ClearContained();
+        index->gtLirUseCount++;
     }
 
     // Remove all the nodes that are no longer used.
@@ -6611,8 +6613,9 @@ bool Lowering::TryCreateAddrMode(GenTree* addr, bool isContainable, GenTree* par
     {
         GenTree* unused = unusedStack.Pop();
 
-        if ((unused != base) && (unused != index))
+        if (--unused->gtLirUseCount == 0)
         {
+            assert((unused != base) && (unused != index));
             JITDUMP("Removing unused node:\n  ");
             DISPNODE(unused);
 
