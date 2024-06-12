@@ -667,6 +667,11 @@ RefPosition* LinearScan::newRefPosition(Interval*        theInterval,
 //
 bool LinearScan::isContainableMemoryOp(GenTree* node)
 {
+    if (node->gtLirUseCount > 1)
+    {
+        return false;
+    }
+
     if (node->isMemoryOp())
     {
         return true;

@@ -2018,6 +2018,7 @@ public:
         assert(IsValue());
         gtFlags |= GTF_CONTAINED;
         assert(isContained());
+        assert(gtLirUseCount == 1);
     }
 
     void ClearContained()
