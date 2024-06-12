@@ -1574,7 +1574,8 @@ private:
         if (!foundReads)
         {
             DISPRANGE(*range);
-            assert(!"Found unused local var read");
+            JITDUMP("No LIR defs found for V%02u use [%06u]\n", defInfo.LclNum(), Compiler::dspTreeID(defInfo.Node()));
+            assert(!"No LIR defs found for local use");
         }
 
         unsigned* numUses = reads->TryGetValuePointer(defInfo.Node());
