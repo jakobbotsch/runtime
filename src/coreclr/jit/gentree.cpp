@@ -11512,7 +11512,7 @@ void Compiler::gtDispNode(GenTree* tree, IndentStack* indentStack, _In_ _In_opt_
         {
             const size_t bufLength = msgLength - 1;
             msg                    = reinterpret_cast<char*>(_alloca(bufLength * sizeof(char)));
-            sprintf_s(const_cast<char*>(msg), bufLength, "%c%d = %s", tree->IsUnusedValue() ? 'u' : 't', tree->gtTreeID,
+            sprintf_s(const_cast<char*>(msg), bufLength, "t%d[%u] = %s", tree->gtTreeID, tree->gtLirUseCount, 
                       hasOperands ? "" : " ");
         }
     }
