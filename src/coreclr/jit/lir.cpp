@@ -1428,7 +1428,7 @@ public:
                                const LIR::Range*                    range)
         : compiler(compiler)
         , range(range)
-        , unusedLclVarReads(compiler->getAllocator(CMK_DebugOnly))
+        , lclVarLirDefs(compiler->getAllocator(CMK_DebugOnly))
         , lclVarReadsMapsCache(compiler->getAllocator(CMK_DebugOnly))
     {
     }
@@ -1455,8 +1455,8 @@ public:
             if (nodeInfo.IsLclVarWrite())
             {
                 // If this node is a lclVar write, it must not alias a lclVar with an outstanding read
-                SmallHashTable<GenTree*, GenTree*>* reads;
-                if (unusedLclVarReads.TryGetValue(nodeInfo.LclNum(), &reads))
+                SmallHashTable<GenTree*, unsigned>* reads;
+                if (lclVarLirDefs.TryGetValue(nodeInfo.LclNum(), &reads))
                 {
                     for (auto read : *reads)
                     {
@@ -1542,8 +1542,8 @@ private:
     //
     void PushLclVarRead(const AliasSet::NodeInfo& defInfo)
     {
-        SmallHashTable<GenTree*, GenTree*>* reads;
-        if (!unusedLclVarReads.TryGetValue(defInfo.LclNum(), &reads))
+        SmallHashTable<GenTree*, unsigned>* reads;
+        if (!lclVarLirDefs.TryGetValue(defInfo.LclNum(), &reads))
         {
             if (!lclVarReadsMapsCache.Empty())
             {
@@ -1552,13 +1552,13 @@ private:
             else
             {
                 reads = new (compiler, CMK_DebugOnly)
-                    SmallHashTable<GenTree*, GenTree*>(compiler->getAllocator(CMK_DebugOnly));
+                    SmallHashTable<GenTree*, unsigned>(compiler->getAllocator(CMK_DebugOnly));
             }
 
-            unusedLclVarReads.AddOrUpdate(defInfo.LclNum(), reads);
+            lclVarLirDefs.AddOrUpdate(defInfo.LclNum(), reads);
         }
 
-        reads->AddOrUpdate(defInfo.Node(), defInfo.Node());
+        reads->AddOrUpdate(defInfo.Node(), defInfo.Node()->gtLirUseCount);
     }
 
     //------------------------------------------------------------------------
@@ -1569,17 +1569,24 @@ private:
     //
     void PopLclVarRead(const AliasSet::NodeInfo& defInfo)
     {
-        SmallHashTable<GenTree*, GenTree*>* reads;
-        const bool                          foundReads = unusedLclVarReads.TryGetValue(defInfo.LclNum(), &reads);
-        assert(foundReads);
+        SmallHashTable<GenTree*, unsigned>* reads;
+        const bool                          foundReads = lclVarLirDefs.TryGetValue(defInfo.LclNum(), &reads);
+        if (!foundReads)
+        {
+            DISPRANGE(*range);
+            assert(!"Found unused local var read");
+        }
 
-        bool found = reads->TryRemove(defInfo.Node());
-
-        assert(found || !"Could not find consumed local in unusedLclVarReads");
+        unsigned* numUses = reads->TryGetValuePointer(defInfo.Node());
+        assert((numUses != nullptr) && "Could not find consumed local in lclVarLirDefs");
+        if (--*numUses == 0)
+        {
+            reads->Remove(defInfo.Node());
+        }
 
         if (reads->Count() == 0)
         {
-            unusedLclVarReads.Remove(defInfo.LclNum());
+            lclVarLirDefs.Remove(defInfo.LclNum());
             lclVarReadsMapsCache.Push(reads);
         }
     }
@@ -1587,8 +1594,8 @@ private:
 private:
     Compiler*                                                     compiler;
     const LIR::Range*                                             range;
-    SmallHashTable<int, SmallHashTable<GenTree*, GenTree*>*, 16U> unusedLclVarReads;
-    ArrayStack<SmallHashTable<GenTree*, GenTree*>*>               lclVarReadsMapsCache;
+    SmallHashTable<int, SmallHashTable<GenTree*, unsigned>*, 16U> lclVarLirDefs;
+    ArrayStack<SmallHashTable<GenTree*, unsigned>*>               lclVarReadsMapsCache;
 };
 
 //------------------------------------------------------------------------
