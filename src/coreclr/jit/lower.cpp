@@ -7559,7 +7559,7 @@ PhaseStatus Lowering::DoPhase()
 
     FinalizeOutgoingArgSpace();
 
-    MakeLIRSDSU();
+    //MakeLIRSDSU();
 
     // Recompute local var ref counts before potentially sorting for liveness.
     // Note this does minimal work in cases where we are not going to sort.
