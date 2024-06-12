@@ -1670,7 +1670,8 @@ bool LIR::Range::CheckLIR(Compiler* compiler, bool checkUnusedValues) const
 
             if (pCount == nullptr)
             {
-                JITDUMP("[%06u]: use count too small (first extraneous use is by [%06u])\n", Compiler::dspTreeID(def), Compiler::dspTreeID(*node));
+                DISPRANGE(*this);
+                JITDUMP("[%06u]: use count %u too small (first extraneous use is by [%06u])\n", Compiler::dspTreeID(def), def->gtLirUseCount, Compiler::dspTreeID(*node));
                 assert(!"Found LIR def with too small use count");
             }
 
