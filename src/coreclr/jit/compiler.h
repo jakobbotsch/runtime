@@ -5563,7 +5563,8 @@ public:
 
     template <bool lowered>
     void fgPerNodeLocalVarLiveness(GenTree* node);
-    void fgPerBlockLocalVarLiveness();
+    void fgComputeUseDefSets();
+    void fgComputeUseDefSetsForBlock(BasicBlock* block);
 
 #if defined(FEATURE_HW_INTRINSICS)
     void fgPerNodeLocalVarLiveness(GenTreeHWIntrinsic* hwintrinsic);
@@ -5586,15 +5587,15 @@ public:
                                      GenTreeLclVarCommon* lclVarNode);
     bool fgComputeLifeLocal(VARSET_TP& life, VARSET_VALARG_TP keepAliveVars, GenTree* lclVarNode);
 
-    GenTree* fgTryRemoveDeadStoreEarly(Statement* stmt, GenTreeLclVarCommon* dst);
+    GenTree* fgTryRemoveDeadStoreEarly(Statement* stmt, GenTreeLclVarCommon* dst, bool* modifiedBlock);
 
     void fgComputeLife(VARSET_TP&       life,
                        GenTree*         startNode,
                        GenTree*         endNode,
                        VARSET_VALARG_TP keepAliveVars,
-                       bool* pStmtInfoDirty DEBUGARG(bool* treeModf));
+                       bool* pStmtInfoDirty, bool* modifiedBlock DEBUGARG(bool* treeModf));
 
-    void fgComputeLifeLIR(VARSET_TP& life, BasicBlock* block, VARSET_VALARG_TP keepAliveVars);
+    void fgComputeLifeLIR(VARSET_TP& life, BasicBlock* block, VARSET_VALARG_TP keepAliveVars, bool* modifiedBlock);
     bool fgIsTrackedRetBufferAddress(LIR::Range& range, GenTree* node);
 
     bool fgTryRemoveNonLocal(GenTree* node, LIR::Range* blockRange);
@@ -5608,7 +5609,7 @@ public:
                            bool*            pStmtInfoDirty,
                            bool* pStoreRemoved DEBUGARG(bool* treeModf));
 
-    void fgInterBlockLocalVarLiveness();
+    void fgInterBlockLocalVarLiveness(ArrayStack<BasicBlock*>* changedBlocks);
 
     // Blocks: convenience methods for enabling range-based `for` iteration over the function's blocks, e.g.:
     // 1.   for (BasicBlock* const block : compiler->Blocks()) ...
@@ -6713,13 +6714,6 @@ private:
     unsigned fgGetFieldMorphingTemp(GenTreeFieldAddr* fieldNode);
 
     //----------------------- Liveness analysis -------------------------------
-
-    VARSET_TP fgCurUseSet; // vars used     by block (before a def)
-    VARSET_TP fgCurDefSet; // vars assigned by block (before a use)
-
-    MemoryKindSet fgCurMemoryUse;   // True iff the current basic block uses memory.
-    MemoryKindSet fgCurMemoryDef;   // True iff the current basic block modifies memory.
-    MemoryKindSet fgCurMemoryHavoc; // True if  the current basic block is known to set memory to a "havoc" value.
 
     bool byrefStatesMatchGcHeapStates; // True iff GcHeap and ByrefExposed memory have all the same def points.
 
