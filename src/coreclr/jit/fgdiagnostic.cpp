@@ -4715,6 +4715,9 @@ void Compiler::fgDebugCheckLoops()
                 }
                 return BasicBlockVisit::Continue;
             });
+
+            assert(loop->BackEdges().size() == 1);
+            assert(loop->BackEdge(0)->getSourceBlock()->KindIs(BBJ_ALWAYS));
         }
     }
 }

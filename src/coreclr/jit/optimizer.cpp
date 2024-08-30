@@ -2759,7 +2759,10 @@ void Compiler::optFindLoops()
 //   True if any flow graph modifications were made
 //
 // Remarks:
-//   Guarantees that all natural loops have preheaders.
+//   Guarantees these properties.
+//   - Every loop has a unique preheader that always enters the loop.
+//   - All exit blocks of the loop have only predecessors from inside the loop.
+//   - Every loop has a unique backedge that is always taken from its source block.
 //
 bool Compiler::optCanonicalizeLoops()
 {
@@ -2767,7 +2770,9 @@ bool Compiler::optCanonicalizeLoops()
 
     for (FlowGraphNaturalLoop* loop : m_loops->InReversePostOrder())
     {
-        changed |= optCreatePreheader(loop);
+        BasicBlock* preheader;
+        changed |= optCreatePreheader(loop, &preheader);
+        changed |= optCanonicalizeBackEdges(loop, preheader);
     }
 
     // At this point we've created preheaders. That means we are working with
@@ -3015,7 +3020,7 @@ BasicBlock* Compiler::optTryAdvanceLoopCompactionInsertionPoint(FlowGraphNatural
 // Returns:
 //   True if a new preheader block had to be created.
 //
-bool Compiler::optCreatePreheader(FlowGraphNaturalLoop* loop)
+bool Compiler::optCreatePreheader(FlowGraphNaturalLoop* loop, BasicBlock** preheader)
 {
     BasicBlock* header = loop->GetHeader();
 
@@ -3040,6 +3045,7 @@ bool Compiler::optCreatePreheader(FlowGraphNaturalLoop* loop)
         {
             JITDUMP("Natural loop " FMT_LP " already has preheader " FMT_BB "\n", loop->GetIndex(),
                     preheaderCandidate->bbNum);
+            *preheader = preheaderCandidate;
             return false;
         }
     }
@@ -3050,26 +3056,26 @@ bool Compiler::optCreatePreheader(FlowGraphNaturalLoop* loop)
         insertBefore = header;
     }
 
-    BasicBlock* preheader = fgNewBBbefore(BBJ_ALWAYS, insertBefore, false);
-    preheader->SetFlags(BBF_INTERNAL);
-    fgSetEHRegionForNewPreheaderOrExit(preheader);
-    preheader->bbCodeOffs = insertBefore->bbCodeOffs;
+    *preheader = fgNewBBbefore(BBJ_ALWAYS, insertBefore, false);
+    (*preheader)->SetFlags(BBF_INTERNAL);
+    fgSetEHRegionForNewPreheaderOrExit(*preheader);
+    (*preheader)->bbCodeOffs = insertBefore->bbCodeOffs;
 
-    JITDUMP("Created new preheader " FMT_BB " for " FMT_LP "\n", preheader->bbNum, loop->GetIndex());
+    JITDUMP("Created new preheader " FMT_BB " for " FMT_LP "\n", (*preheader)->bbNum, loop->GetIndex());
 
-    FlowEdge* const newEdge = fgAddRefPred(header, preheader);
-    preheader->SetTargetEdge(newEdge);
+    FlowEdge* const newEdge = fgAddRefPred(header, *preheader);
+    (*preheader)->SetTargetEdge(newEdge);
 
     for (FlowEdge* enterEdge : loop->EntryEdges())
     {
         BasicBlock* enterBlock = enterEdge->getSourceBlock();
         JITDUMP("Entry edge " FMT_BB " -> " FMT_BB " becomes " FMT_BB " -> " FMT_BB "\n", enterBlock->bbNum,
-                header->bbNum, enterBlock->bbNum, preheader->bbNum);
+                header->bbNum, enterBlock->bbNum, (*preheader)->bbNum);
 
-        fgReplaceJumpTarget(enterBlock, header, preheader);
+        fgReplaceJumpTarget(enterBlock, header, *preheader);
     }
 
-    optSetWeightForPreheaderOrExit(loop, preheader);
+    optSetWeightForPreheaderOrExit(loop, *preheader);
 
     return true;
 }
@@ -3197,6 +3203,56 @@ bool Compiler::optCanonicalizeExit(FlowGraphNaturalLoop* loop, BasicBlock* exit)
 
     JITDUMP("Created new exit " FMT_BB " to replace " FMT_BB " exit for " FMT_LP "\n", newExit->bbNum, exit->bbNum,
             loop->GetIndex());
+    return true;
+}
+
+bool Compiler::optCanonicalizeBackEdges(FlowGraphNaturalLoop* loop, BasicBlock* preheader)
+{
+    fgDumpFlowGraph(PHASE_ALIGN_LOOPS, PhasePosition::PostPhase);
+    assert(loop->BackEdges().size() > 0);
+    if (loop->BackEdges().size() == 1)
+    {
+        BasicBlock* latch = loop->BackEdge(0)->getSourceBlock();
+        if (latch->KindIs(BBJ_ALWAYS))
+        {
+            JITDUMP(FMT_LP " always has a unique always-taken backedge " FMT_BB " -> " FMT_BB "\n", loop->GetIndex(), latch->bbNum, loop->GetHeader()->bbNum);
+            return false;
+        }
+    }
+
+    JITDUMP("Canonicalizing backedges for " FMT_LP " to a unique always-taken backedge\n", loop->GetIndex());
+
+    BasicBlock* ehRegionBlock = loop->GetHeader();
+
+    if (bbIsTryBeg(loop->GetHeader()))
+    {
+        JITDUMP("Header " FMT_BB " is the beginning of a try, checking if any backedge enters that try...\n", loop->GetHeader()->bbNum);
+        for (FlowEdge* backEdge : loop->BackEdges())
+        {
+            if (!bbInTryRegions(loop->GetHeader()->getTryIndex(), backEdge->getSourceBlock()))
+            {
+                JITDUMP("Backedge " FMT_BB " -> " FMT_BB " enters the try\n", backEdge->getSourceBlock()->bbNum, loop->GetHeader()->bbNum);
+                // Use same EH region as preheader if any backedge is entering
+                // the try -- this will (necessarily) mean all backedges will
+                // exit the try before reentering it on every iteration.
+                ehRegionBlock = preheader;
+                JITDUMP("  Using EH region of preheader " FMT_BB "\n", ehRegionBlock->bbNum);
+                break;
+            }
+
+            JITDUMP("Backedge " FMT_BB " -> " FMT_BB " does not enter the try\n", backEdge->getSourceBlock()->bbNum, loop->GetHeader()->bbNum);
+        }
+    }
+
+    BasicBlock* newBackEdge = fgNewBBinRegion(BBJ_ALWAYS, ehRegionBlock);
+    FlowEdge* newEdge = fgAddRefPred(loop->GetHeader(), newBackEdge);
+    newBackEdge->SetKindAndTargetEdge(BBJ_ALWAYS, newEdge);
+
+    for (FlowEdge* backEdge : loop->BackEdges())
+    {
+        fgReplaceJumpTarget(backEdge->getSourceBlock(), loop->GetHeader(), newBackEdge);
+    }
+
     return true;
 }
 

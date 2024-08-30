@@ -7067,11 +7067,13 @@ public:
     void optCompactLoop(FlowGraphNaturalLoop* loop);
     BasicBlock* optFindLoopCompactionInsertionPoint(FlowGraphNaturalLoop* loop, BasicBlock* top);
     BasicBlock* optTryAdvanceLoopCompactionInsertionPoint(FlowGraphNaturalLoop* loop, BasicBlock* insertionPoint, BasicBlock* top, BasicBlock* bottom);
-    bool optCreatePreheader(FlowGraphNaturalLoop* loop);
+    bool optCreatePreheader(FlowGraphNaturalLoop* loop, BasicBlock** preheader);
     void optSetWeightForPreheaderOrExit(FlowGraphNaturalLoop* loop, BasicBlock* block);
 
     bool optCanonicalizeExits(FlowGraphNaturalLoop* loop);
     bool optCanonicalizeExit(FlowGraphNaturalLoop* loop, BasicBlock* exit);
+
+    bool optCanonicalizeBackEdges(FlowGraphNaturalLoop* loop, BasicBlock* preheader);
 
     PhaseStatus optCloneLoops();
     void optCloneLoop(FlowGraphNaturalLoop* loop, LoopCloneContext* context);
