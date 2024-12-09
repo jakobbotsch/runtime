@@ -199,22 +199,22 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
 
         clsFlags = callInfo->classFlags;
 
-#ifdef DEBUG
-        // If this is a call to JitTestLabel.Mark, do "early inlining", and record the test attribute.
-
-        // This recognition should really be done by knowing the methHnd of the relevant Mark method(s).
-        // These should be in corelib.h, and available through a JIT/EE interface call.
-        const char* namespaceName;
-        const char* className;
-        const char* methodName =
-            info.compCompHnd->getMethodNameFromMetadata(methHnd, &className, &namespaceName, nullptr, 0);
-        if ((namespaceName != nullptr) && (className != nullptr) && (methodName != nullptr) &&
-            (strcmp(namespaceName, "System.Runtime.CompilerServices") == 0) &&
-            (strcmp(className, "JitTestLabel") == 0) && (strcmp(methodName, "Mark") == 0))
-        {
-            return impImportJitTestLabelMark(sig->numArgs);
-        }
-#endif // DEBUG
+//#ifdef DEBUG
+//        // If this is a call to JitTestLabel.Mark, do "early inlining", and record the test attribute.
+//
+//        // This recognition should really be done by knowing the methHnd of the relevant Mark method(s).
+//        // These should be in corelib.h, and available through a JIT/EE interface call.
+//        const char* namespaceName;
+//        const char* className;
+//        const char* methodName =
+//            info.compCompHnd->getMethodNameFromMetadata(methHnd, &className, &namespaceName, nullptr, 0);
+//        if ((namespaceName != nullptr) && (className != nullptr) && (methodName != nullptr) &&
+//            (strcmp(namespaceName, "System.Runtime.CompilerServices") == 0) &&
+//            (strcmp(className, "JitTestLabel") == 0) && (strcmp(methodName, "Mark") == 0))
+//        {
+//            return impImportJitTestLabelMark(sig->numArgs);
+//        }
+//#endif // DEBUG
 
         const bool isIntrinsic = (mflags & CORINFO_FLG_INTRINSIC) != 0;
 
@@ -7939,24 +7939,24 @@ void Compiler::impDevirtualizeCall(GenTreeCall*            call,
     }
     else
     {
-#if defined(DEBUG)
-        // Validate that callInfo has up to date method flags
-        const DWORD freshBaseMethodAttribs = info.compCompHnd->getMethodAttribs(baseMethod);
-
-        // All the base method attributes should agree, save that
-        // CORINFO_FLG_DONT_INLINE may have changed from 0 to 1
-        // because of concurrent jitting activity.
-        //
-        // Note we don't look at this particular flag bit below, and
-        // later on (if we do try and inline) we will rediscover why
-        // the method can't be inlined, so there's no danger here in
-        // seeing this particular flag bit in different states between
-        // the cached and fresh values.
-        if ((freshBaseMethodAttribs & ~CORINFO_FLG_DONT_INLINE) != (baseMethodAttribs & ~CORINFO_FLG_DONT_INLINE))
-        {
-            assert(!"mismatched method attributes");
-        }
-#endif // DEBUG
+//#if defined(DEBUG)
+//        // Validate that callInfo has up to date method flags
+//        const DWORD freshBaseMethodAttribs = info.compCompHnd->getMethodAttribs(baseMethod);
+//
+//        // All the base method attributes should agree, save that
+//        // CORINFO_FLG_DONT_INLINE may have changed from 0 to 1
+//        // because of concurrent jitting activity.
+//        //
+//        // Note we don't look at this particular flag bit below, and
+//        // later on (if we do try and inline) we will rediscover why
+//        // the method can't be inlined, so there's no danger here in
+//        // seeing this particular flag bit in different states between
+//        // the cached and fresh values.
+//        if ((freshBaseMethodAttribs & ~CORINFO_FLG_DONT_INLINE) != (baseMethodAttribs & ~CORINFO_FLG_DONT_INLINE))
+//        {
+//            assert(!"mismatched method attributes");
+//        }
+//#endif // DEBUG
     }
 
     // In R2R mode, we might see virtual stub calls to

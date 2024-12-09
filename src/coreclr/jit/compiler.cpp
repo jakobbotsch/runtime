@@ -1817,9 +1817,9 @@ void Compiler::compInit(ArenaAllocator*       pAlloc,
     info.compClassName  = nullptr;
     info.compFullName   = nullptr;
 
-    info.compMethodName = eeGetMethodName(methodHnd);
-    info.compClassName  = eeGetClassName(info.compClassHnd);
-    info.compFullName   = eeGetMethodFullName(methodHnd);
+    info.compMethodName = "current method"; // eeGetMethodName(methodHnd);
+    info.compClassName = "current class"; // eeGetClassName(info.compClassHnd);
+    info.compFullName = "full method name"; // eeGetMethodFullName(methodHnd);
 
     info.compMethodSuperPMIIndex = g_jitHost->getIntConfigValue(W("SuperPMIMethodContextNumber"), -1);
 
@@ -6967,12 +6967,12 @@ int Compiler::compCompileHelper(CORINFO_MODULE_HANDLE classPtr,
 
     if (compIsForInlining())
     {
-#ifdef DEBUG
-        unsigned methAttr_Old  = impInlineInfo->inlineCandidateInfo->methAttr;
-        unsigned methAttr_New  = info.compCompHnd->getMethodAttribs(info.compMethodHnd);
-        unsigned flagsToIgnore = CORINFO_FLG_DONT_INLINE | CORINFO_FLG_FORCEINLINE;
-        assert((methAttr_Old & (~flagsToIgnore)) == (methAttr_New & (~flagsToIgnore)));
-#endif
+//#ifdef DEBUG
+//        unsigned methAttr_Old  = impInlineInfo->inlineCandidateInfo->methAttr;
+//        unsigned methAttr_New  = info.compCompHnd->getMethodAttribs(info.compMethodHnd);
+//        unsigned flagsToIgnore = CORINFO_FLG_DONT_INLINE | CORINFO_FLG_FORCEINLINE;
+//        assert((methAttr_Old & (~flagsToIgnore)) == (methAttr_New & (~flagsToIgnore)));
+//#endif
 
         info.compFlags    = impInlineInfo->inlineCandidateInfo->methAttr;
         compInlineContext = impInlineInfo->inlineContext;

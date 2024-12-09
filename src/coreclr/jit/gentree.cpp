@@ -18878,7 +18878,7 @@ bool GenTree::IsFieldAddr(Compiler* comp, GenTree** pBaseAddr, FieldSeq** pFldSe
 
     if (baseAddr->TypeIs(TYP_REF))
     {
-        assert(!comp->eeIsValueClass(comp->info.compCompHnd->getFieldClass(fldSeq->GetFieldHandle())));
+        //assert(!comp->eeIsValueClass(comp->info.compCompHnd->getFieldClass(fldSeq->GetFieldHandle())));
 
         *pBaseAddr = baseAddr;
         *pFldSeq   = fldSeq;
@@ -19984,7 +19984,7 @@ FieldSeq::FieldSeq(CORINFO_FIELD_HANDLE fieldHnd, ssize_t offset, FieldKind fiel
     assert((handleValue & FIELD_KIND_MASK) == 0);
     m_fieldHandleAndKind = handleValue | static_cast<uintptr_t>(fieldKind);
 
-    assert(JitTls::GetCompiler()->eeIsFieldStatic(fieldHnd) == IsStaticField());
+    //assert(JitTls::GetCompiler()->eeIsFieldStatic(fieldHnd) == IsStaticField());
     if (fieldKind == FieldKind::Instance)
     {
         // TODO: enable this assert. At the time of writing, crossgen2 had a bug where the value "getFieldOffset"

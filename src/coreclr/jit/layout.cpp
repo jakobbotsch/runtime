@@ -370,8 +370,8 @@ ClassLayout* ClassLayout::Create(Compiler* compiler, CORINFO_CLASS_HANDLE classH
 
     var_types type = compiler->impNormStructType(classHandle);
 
-    INDEBUG(const char* className = compiler->eeGetClassName(classHandle);)
-    INDEBUG(const char* shortClassName = compiler->eeGetShortClassName(classHandle);)
+    INDEBUG(const char* className = "class name" /*compiler->eeGetClassName(classHandle)*/;)
+    INDEBUG(const char* shortClassName = "short class name" /*compiler->eeGetShortClassName(classHandle)*/;)
 
     ClassLayout* layout = new (compiler, CMK_ClassLayout)
         ClassLayout(classHandle, isValueClass, size, type DEBUGARG(className) DEBUGARG(shortClassName));

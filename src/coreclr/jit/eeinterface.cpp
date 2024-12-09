@@ -390,6 +390,7 @@ void Compiler::eePrintField(StringPrinter* printer, CORINFO_FIELD_HANDLE fld, bo
 const char* Compiler::eeGetMethodFullName(
     CORINFO_METHOD_HANDLE hnd, bool includeReturnType, bool includeThisSpecifier, char* buffer, size_t bufferSize)
 {
+    return "method full name";
     CorInfoHelpFunc helper = eeGetHelperNum(hnd);
     if (helper != CORINFO_HELP_UNDEF)
     {
@@ -509,6 +510,7 @@ const char* Compiler::eeGetMethodName(CORINFO_METHOD_HANDLE methHnd, char* buffe
 //
 const char* Compiler::eeGetFieldName(CORINFO_FIELD_HANDLE fldHnd, bool includeType, char* buffer, size_t bufferSize)
 {
+    return "field name";
     StringPrinter p(getAllocator(CMK_DebugOnly), buffer, bufferSize);
     bool          success = eeRunFunctorWithSPMIErrorTrap([&]() {
         eePrintField(&p, fldHnd, includeType);
