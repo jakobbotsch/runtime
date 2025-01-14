@@ -44,7 +44,20 @@ void DataFlow::ForwardAnalysis(TCallback& callback)
 {
     jitstd::list<BasicBlock*> worklist(jitstd::allocator<void>(m_pCompiler->getAllocator()));
 
-    worklist.insert(worklist.begin(), m_pCompiler->fgFirstBB);
+    worklist.push_back(m_pCompiler->fgFirstBB);
+
+    // Make sure all handlers are visited at least once, even if EndMerge below
+    // returns false for all the handler's preds.
+    for (EHblkDsc* ehDsc : EHClauses(m_pCompiler))
+    {
+        worklist.push_back(ehDsc->ebdHndBeg);
+
+        if (ehDsc->HasFilter())
+        {
+            worklist.push_back(ehDsc->ebdFilter);
+        }
+    }
+
     while (!worklist.empty())
     {
         BasicBlock* block = *(worklist.begin());
@@ -67,7 +80,7 @@ void DataFlow::ForwardAnalysis(TCallback& callback)
         if (callback.EndMerge(block))
         {
             block->VisitAllSuccs(m_pCompiler, [&worklist](BasicBlock* succ) {
-                worklist.insert(worklist.end(), succ);
+                worklist.push_back(succ);
                 return BasicBlockVisit::Continue;
             });
         }
