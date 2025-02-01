@@ -843,6 +843,17 @@ GenTree* Compiler::impStoreStruct(GenTree*         store,
             // TODO-Bug?: verify if flags matter here
             GenTreeFlags indirFlags = GTF_EMPTY;
             GenTree*     destAddr   = impGetNodeAddr(store, CHECK_SPILL_ALL, &indirFlags);
+
+            if (!impIsAddressInLocal(destAddr) && (!destAddr->OperIsScalarLocal() || (destAddr->AsLclVarCommon()->GetLclNum() != info.compRetBuffArg)))
+            {
+                unsigned tmp = lvaGrabTemp(false DEBUGARG("stack copy for value returned via return buffer"));
+                lvaSetStruct(tmp, srcCall->gtRetClsHnd, false);
+                GenTree* comma = gtNewOperNode(GT_COMMA, store->TypeGet(), gtNewStoreLclVarNode(tmp, srcCall), gtNewLclvNode(tmp, lvaGetDesc(tmp)->TypeGet()));
+                store->Data() = comma;
+                comma->AsOp()->gtOp1 = impStoreStruct(comma->gtGetOp1(), curLevel, pAfterStmt, di, block);
+                return impStoreStruct(store, curLevel, pAfterStmt, di, block);
+            }
+
             NewCallArg   newArg     = NewCallArg::Primitive(destAddr).WellKnown(wellKnownArgType);
 
             if (destAddr->OperIs(GT_LCL_ADDR))
@@ -953,6 +964,20 @@ GenTree* Compiler::impStoreStruct(GenTree*         store,
             // TODO-Bug?: verify if flags matter here
             GenTreeFlags indirFlags = GTF_EMPTY;
             GenTree*     destAddr   = impGetNodeAddr(store, CHECK_SPILL_ALL, &indirFlags);
+
+            if (!impIsAddressInLocal(destAddr) && (!destAddr->OperIsScalarLocal() || (destAddr->AsLclVarCommon()->GetLclNum() != info.compRetBuffArg)))
+            {
+                unsigned tmp = lvaGrabTemp(false DEBUGARG("stack copy for value returned via return buffer"));
+                lvaSetStruct(tmp, call->gtRetClsHnd, false);
+                destAddr = gtNewLclVarAddrNode(tmp, TYP_BYREF);
+                // Insert address of temp into existing call
+                call->gtArgs.InsertAfterThisOrFirst(this,
+                                                    NewCallArg::Primitive(destAddr).WellKnown(WellKnownArg::RetBuffer));
+                // Now the store needs to copy from the new temp instead.
+                store->Data() = gtNewLclvNode(tmp, lvaGetDesc(tmp)->TypeGet());
+                return impStoreStruct(store, curLevel, pAfterStmt, di, block);
+            }
+
             call->gtArgs.InsertAfterThisOrFirst(this,
                                                 NewCallArg::Primitive(destAddr).WellKnown(WellKnownArg::RetBuffer));
 
@@ -1020,11 +1045,11 @@ GenTree* Compiler::impStoreStruct(GenTree*         store,
 // Notes:
 //    Temp stores may be appended to impStmtList if spilling is necessary.
 //
-GenTree* Compiler::impStoreStructPtr(GenTree* destAddr, GenTree* value, unsigned curLevel)
+GenTree* Compiler::impStoreStructPtr(GenTree* destAddr, GenTree* value, unsigned curLevel, GenTreeFlags indirFlags)
 {
     var_types    type   = value->TypeGet();
     ClassLayout* layout = (type == TYP_STRUCT) ? value->GetLayout(this) : nullptr;
-    GenTree*     store  = gtNewStoreValueNode(type, layout, destAddr, value);
+    GenTree*     store  = gtNewStoreValueNode(type, layout, destAddr, value, indirFlags);
     store               = impStoreStruct(store, curLevel);
 
     return store;
@@ -11187,18 +11212,19 @@ bool Compiler::impReturnInstruction(int prefixFlags, OPCODE& opcode)
 
     if (info.compRetBuffArg != BAD_VAR_NUM)
     {
+        var_types retBuffType = lvaGetDesc(info.compRetBuffArg)->TypeGet();
         // Assign value to return buff (first param)
         GenTree* retBuffAddr =
-            gtNewLclvNode(info.compRetBuffArg, TYP_BYREF DEBUGARG(impCurStmtDI.GetLocation().GetOffset()));
+            gtNewLclvNode(info.compRetBuffArg, retBuffType DEBUGARG(impCurStmtDI.GetLocation().GetOffset()));
 
-        op2 = impStoreStructPtr(retBuffAddr, op2, CHECK_SPILL_ALL);
+        op2 = impStoreStructPtr(retBuffAddr, op2, CHECK_SPILL_ALL, GTF_IND_TGT_NOT_HEAP);
         impAppendTree(op2, CHECK_SPILL_NONE, impCurStmtDI);
 
         // There are cases where the address of the implicit RetBuf should be returned explicitly.
         //
         if (compMethodReturnsRetBufAddr())
         {
-            op1 = gtNewOperNode(GT_RETURN, TYP_BYREF, gtNewLclvNode(info.compRetBuffArg, TYP_BYREF));
+            op1 = gtNewOperNode(GT_RETURN, retBuffType, gtNewLclvNode(info.compRetBuffArg, retBuffType));
         }
         else
         {
