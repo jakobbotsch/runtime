@@ -3189,17 +3189,24 @@ void Promotion::ExplicitlyZeroInitReplacementLocals(unsigned                    
     {
         const Replacement& rep = replacements[i];
 
+        LclVarDsc* varDsc = m_compiler->lvaGetDesc(rep.LclNum);
+
         if (!m_compiler->fgVarNeedsExplicitZeroInit(rep.LclNum, false, false))
         {
             // Other downstream code (e.g. recursive-tailcalls-to-loops opt) may
             // still need to insert further explicit zero initing.
-            m_compiler->lvaGetDesc(rep.LclNum)->lvSuppressedZeroInit = true;
+            varDsc->lvSuppressedZeroInit = true;
             continue;
         }
 
         GenTree* value = m_compiler->gtNewZeroConNode(rep.AccessType);
         GenTree* store = m_compiler->gtNewStoreLclVarNode(rep.LclNum, value);
         InsertInitStatement(prevStmt, store);
+
+        // Even though we inserted explicit zero initialization we may still
+        // need need recursive-tailcalls-to-loops to insert more zero-initing,
+        // particularly for user locals.
+        varDsc->lvSuppressedZeroInit |= m_compiler->info.compInitMem && (lclNum < m_compiler->info.compLocalsCount);
     }
 }
 

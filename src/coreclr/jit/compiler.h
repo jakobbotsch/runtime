@@ -5560,7 +5560,11 @@ public:
     bool fgMorphBlockStmt(BasicBlock* block, Statement* stmt DEBUGARG(const char* msg), bool invalidateDFSTreeOnFGChange = true);
     void fgMorphStmtBlockOps(BasicBlock* block, Statement* stmt);
 
+    template<typename TIsNode>
+    GenTree* gtRemoveTreesAfterNode(BasicBlock* block, Statement* stmt, TIsNode checkIsNode);
+
     bool gtRemoveTreesAfterNoReturnCall(BasicBlock* block, Statement* stmt);
+    GenTreeCall* gtRemoveTreesAfterRecursiveTailCall(BasicBlock* block, Statement* stmt);
 
     //------------------------------------------------------------------------------------------------------------
     // MorphMDArrayTempCache: a simple cache of compiler temporaries in the local variable table, used to minimize
@@ -6396,6 +6400,9 @@ public:
     bool fgUpdateFlowGraph(bool doTailDup = false, bool isPhase = false);
     PhaseStatus fgUpdateFlowGraphPhase();
 
+    PhaseStatus fgTransformTailCallsToLoops();
+    void fgTransformTailCallToLoop(BasicBlock* block, Statement* stmt);
+
     PhaseStatus fgDfsBlocksAndRemove();
     bool fgRemoveBlocksOutsideDfsTree();
 
@@ -6807,6 +6814,7 @@ private:
     GenTree* fgGetStubAddrArg(GenTreeCall* call);
     unsigned fgGetArgParameterLclNum(GenTreeCall* call, CallArg* arg);
     void fgMorphRecursiveFastTailCallIntoLoop(BasicBlock* block, GenTreeCall* recursiveTailCall);
+    bool fgZeroInitLocalInRecursiveTailCallLoopIterations(unsigned lclNum);
     Statement* fgAssignRecursiveCallArgToCallerParam(GenTree*         arg,
                                                      CallArg*         callArg,
                                                      unsigned         lclParamNum,

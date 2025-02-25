@@ -13099,7 +13099,8 @@ BasicBlock* Compiler::fgGetFirstILBlock()
 //   True if a no-return call was found and made into the root of "stmt", with
 //   new side effecting statements potentially created before it.
 //
-bool Compiler::gtRemoveTreesAfterNoReturnCall(BasicBlock* block, Statement* stmt)
+template<typename TIsNode>
+GenTree* Compiler::gtRemoveTreesAfterNode(BasicBlock* block, Statement* stmt, TIsNode checkIsNode)
 {
     class Visitor final : public GenTreeVisitor<Visitor>
     {
@@ -13112,6 +13113,7 @@ bool Compiler::gtRemoveTreesAfterNoReturnCall(BasicBlock* block, Statement* stmt
             GenTree*  User;
         };
         ArrayStack<UseInfo> m_useStack;
+        TIsNode& m_checkIsNode;
 
     public:
         enum
@@ -13121,11 +13123,14 @@ bool Compiler::gtRemoveTreesAfterNoReturnCall(BasicBlock* block, Statement* stmt
             UseExecutionOrder = true
         };
 
-        Visitor(Compiler* compiler, BasicBlock* bb, Statement* stmt)
+        GenTree* MatchedNode = nullptr;
+
+        Visitor(Compiler* compiler, BasicBlock* bb, Statement* stmt, TIsNode& checkIsNode)
             : GenTreeVisitor(compiler)
             , m_bb(bb)
             , m_stmt(stmt)
             , m_useStack(compiler->getAllocator(CMK_ArrayStack))
+            , m_checkIsNode(checkIsNode)
         {
         }
 
@@ -13138,7 +13143,7 @@ bool Compiler::gtRemoveTreesAfterNoReturnCall(BasicBlock* block, Statement* stmt
 
         fgWalkResult PostOrderVisit(GenTree** use, GenTree* user)
         {
-            if (!(*use)->IsCall() || !(*use)->AsCall()->IsNoReturn())
+            if (!checkIsNode(*use))
             {
                 while (m_useStack.Top(0).Use != use)
                 {
@@ -13148,7 +13153,8 @@ bool Compiler::gtRemoveTreesAfterNoReturnCall(BasicBlock* block, Statement* stmt
                 return WALK_CONTINUE;
             }
 
-            JITDUMP("Removing trees after no-return call [%06u]\n", Compiler::dspTreeID(*use));
+            MatchedNode = *use;
+            JITDUMP("Removing trees after [%06u]\n", Compiler::dspTreeID(*use));
 
             // Extract side effects of all siblings and ancestor's siblings.
             for (int i = 0; i < m_useStack.Height() - 1; i++)
@@ -13192,7 +13198,39 @@ bool Compiler::gtRemoveTreesAfterNoReturnCall(BasicBlock* block, Statement* stmt
     };
 
     Visitor visitor(this, block, stmt);
-    return visitor.WalkTree(stmt->GetRootNodePointer(), nullptr) == WALK_ABORT;
+    if (visitor.WalkTree(stmt->GetRootNodePointer(), nullptr) == WALK_ABORT)
+    {
+        return visitor.MatchedNode;
+    }
+
+    return nullptr;
+}
+
+//------------------------------------------------------------------------
+// gtRemoveTreesAfterNoReturnCall:
+//   Given a statement that may contain a no-return call, try to find it and
+//   make it the root node of the statement. To do so extract all side effects
+//   of nodes executed before the no-return call into separate statements, and
+//   delete all nodes that would be executed after it.
+//
+// Returns:
+//   block - The block containing the statement
+//   stmt  - The statement that may contain a no-return call
+//
+// Returns:
+//   True if a no-return call was found and made into the root of "stmt", with
+//   new side effecting statements potentially created before it.
+//
+bool Compiler::gtRemoveTreesAfterNoReturnCall(BasicBlock* block, Statement* stmt)
+{
+    auto isNoReturnCall = [](GenTree* node) { return node->IsCall() && node->AsCall()->IsNoReturn(); };
+    return gtRemoveTreesAfterNode(block, stmt, isNoReturnCall);
+}
+
+GenTreeCall* Compiler::gtRemoveTreesAfterRecursiveTailCall(BasicBlock* block, Statement* stmt)
+{
+    auto isTailCall = [](GenTree* node) { return node->IsCall() && node->AsCall()->IsTailCallConvertibleToLoop(); }
+    GenTree* result = gtRemoveTreesAfterNode(
 }
 
 //------------------------------------------------------------------------

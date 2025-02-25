@@ -6019,6 +6019,51 @@ bool Compiler::fgUpdateFlowGraph(bool doTailDuplication /* = false */, bool isPh
 }
 
 //-------------------------------------------------------------
+// fgTransformTailCallsToLoops:
+//   Look for recursive tailcalls and try to transform them to loops.
+//
+// Returns:
+//    Suitable phase status
+//
+PhaseStatus Compiler::fgTransformTailCallsToLoops()
+{
+    if (!doesMethodHaveRecursiveTailcall())
+    {
+        return PhaseStatus::MODIFIED_NOTHING;
+    }
+
+    if (!opts.compTailCallLoopOpt)
+    {
+        return PhaseStatus::MODIFIED_NOTHING;
+    }
+
+    // TODO-CQ: if the method being compiled requires generic context reported in gc-info (either through
+    // hidden generic context param or through keep alive thisptr), then while transforming a recursive
+    // call to such a method requires that the generic context stored on stack slot be updated.  Right now,
+    // we are not handling update of generic context while transforming
+    // a recursive call into a loop. Another option is to modify gtIsRecursiveCall() to check that the
+    // generic type parameters of both caller and callee generic method are the same.
+    if (lvaReportParamTypeArg())
+    {
+        return PhaseStatus::MODIFIED_NOTHING;
+    }
+
+    for (BasicBlock* block : Blocks())
+    {
+        if (!block->HasFlag(BBF_RECURSIVE_TAILCALL))
+        {
+            continue;
+        }
+
+
+        if (block->endsWithTailCallConvertibleToLoop(this, &call))
+        {
+            fgTransformTailCallToLoop(block, block->lastStmt());
+        }
+    }
+}
+
+//-------------------------------------------------------------
 // fgDfsBlocksAndRemove: Compute DFS and delete dead blocks.
 //
 // Returns:

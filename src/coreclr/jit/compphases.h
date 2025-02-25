@@ -33,6 +33,7 @@ CompPhaseNameMacro(PHASE_IBCINSTR,                   "Profile instrumentation", 
 CompPhaseNameMacro(PHASE_INCPROFILE,                 "Profile incorporation",          false, -1, false)
 CompPhaseNameMacro(PHASE_MORPH_INIT,                 "Morph - Init",                   false, -1, false)
 CompPhaseNameMacro(PHASE_MORPH_INLINE,               "Morph - Inlining",               false, -1, true)
+CompPhaseNameMacro(PHASE_TRANSFORM_TAILCALLS_TO_LOOPS,"Transform tailcalls to loops",   false, -1, true)
 CompPhaseNameMacro(PHASE_MORPH_ADD_INTERNAL,         "Morph - Add internal blocks",    false, -1, true)
 CompPhaseNameMacro(PHASE_SWIFT_ERROR_RET,            "Add Swift error returns",        false, -1, true)
 CompPhaseNameMacro(PHASE_ALLOCATE_OBJECTS,           "Allocate Objects",               false, -1, false)

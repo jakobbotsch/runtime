@@ -4677,6 +4677,9 @@ void Compiler::compCompile(void** methodCodePtr, uint32_t* methodCodeSize, JitFl
     // Record "start" values for post-inlining cycles and elapsed time.
     RecordStateAtEndOfInlining();
 
+    // Transform tailcalls to loops
+    DoPhase(this, PHASE_TRANSFORM_TAILCALLS_TO_LOOPS, &Compiler::fgTransformTailCallsToLoops);
+
     if (opts.OptimizationEnabled())
     {
         // Build post-order and remove dead blocks
