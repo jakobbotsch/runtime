@@ -13098,6 +13098,8 @@ const char* Compiler::gtGetWellKnownArgNameForArgMsg(WellKnownArg arg)
             return "tail call";
         case WellKnownArg::StackArrayLocal:
             return "&lcl arr";
+        case WellKnownArg::VarArgsNumFPRegisters:
+            return "va #fp regs";
         default:
             return nullptr;
     }
