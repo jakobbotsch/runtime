@@ -4564,6 +4564,7 @@ enum class WellKnownArg : unsigned
     SwiftSelf,
     X86TailCallSpecialArg,
     StackArrayLocal,
+    VarArgsNumFPRegisters,
 };
 
 #ifdef DEBUG
@@ -4744,10 +4745,10 @@ class CallArgs
 
     void      AddedWellKnownArg(WellKnownArg arg);
     void      RemovedWellKnownArg(WellKnownArg arg);
-    regNumber GetCustomRegister(Compiler* comp, CorInfoCallConvExtension cc, WellKnownArg arg);
     void      SortArgs(Compiler* comp, GenTreeCall* call, CallArg** sortedArgs);
 
 public:
+    regNumber GetCustomRegister(Compiler* comp, CorInfoCallConvExtension cc, WellKnownArg arg);
     CallArgs();
     CallArgs(const CallArgs&)      = delete;
     CallArgs& operator=(CallArgs&) = delete;

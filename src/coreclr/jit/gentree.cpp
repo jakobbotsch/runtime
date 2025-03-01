@@ -1639,6 +1639,11 @@ regNumber CallArgs::GetCustomRegister(Compiler* comp, CorInfoCallConvExtension c
             return REG_SWIFT_SELF;
 #endif // SWIFT_SUPPORT
 
+#ifdef UNIX_AMD64_ABI
+        case WellKnownArg::VarArgsNumFPRegisters:
+            return REG_VARARGS_NUM_FP_REGISTERS;
+#endif
+
         default:
             break;
     }

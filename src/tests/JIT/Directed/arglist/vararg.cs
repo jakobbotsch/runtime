@@ -4557,251 +4557,15 @@ namespace NativeVarargTest
             int success = 100;
             m_testCount = 0;
 
-            success = ReportFailure(TestPassingIntsManaged(new int[] { 100, 299, -100, 50 }), "TestPassingIntsManaged(new int[] { 100, 299, -100, 50 })", success, 30);
-
-            TestFour16ByteStructs();
-
             // !Varargs
             success = ReportFailure(TestPassingTenEightBytes(), "TestPassingTenEightBytes", success, 81);
             success = ReportFailure(TestPassingTenSixteenBytes(), "TestPassingTenSixteenBytes", success, 82);
 
-            success = ReportFailure(TestPassingIntsNoVarargsManaged(), "TestPassingIntsNoVarargsManaged", success, 59);
-            success = ReportFailure(TestPassingLongsNoVarargsManaged(), "TestPassingLongsNoVarargsManaged", success, 60);
+            // Managed varargs (only supported on Windows)
+            if (OperatingSystem.IsWindows())
+                success |= TestManagedVarArgs();
 
-            success = ReportFailure(TestPassingFloatsNoVarargsManaged(), "TestPassingFloatsNoVarargsManaged", success, 61);
-            success = ReportFailure(TestPassingDoublesNoVarargsManaged(), "TestPassingDoublesNoVarargsManaged", success, 62);
-
-            success = ReportFailure(TestPassingIntAndFloatsNoVarargsManaged(), "TestPassingIntAndFloatsNoVarargsManaged", success, 63);
-            success = ReportFailure(TestPassingFloatsAndIntNoVarargsManaged(), "TestPassingFloatsAndIntNoVarargsManaged", success, 64);
-
-            success = ReportFailure(TestPassingIntAndDoublesNoVarargsManaged(), "TestPassingIntAndDoublesNoVarargsManaged", success, 65);
-            success = ReportFailure(TestPassingDoublesAndIntNoVarargsManaged(), "TestPassingDoublesAndIntNoVarargsManaged", success, 66);
-
-            success = ReportFailure(TestPassingLongAndFloatsNoVarargsManaged(), "TestPassingLongAndFloatsNoVarargsManaged()", success, 67);
-            success = ReportFailure(TestPassingFloatsAndlongNoVarargsManaged(), "TestPassingFloatsAndlongNoVarargsManaged()", success, 68);
-
-            success = ReportFailure(TestPassinglongAndDoublesNoVarargsManaged(), "TestPassinglongAndDoublesNoVarargsManaged()", success, 69);
-            success = ReportFailure(TestPassingDoublesAndlongNoVarargsManaged(), "TestPassingDoublesAndlongNoVarargsManaged()", success, 70);
-
-            success = ReportFailure(TestPassingTwoIntStructsNoVarargsManaged(), "TestPassingTwoIntStructsNoVarargsManaged()", success, 71);
-            success = ReportFailure(TestPassingFourIntStructsNoVarargsManaged(), "TestPassingFourIntStructsNoVaragsManaged()", success, 72);
-
-            success = ReportFailure(TestPassingTwoLongStructsNoVarargsManaged(), "TestPassingTwoLongStructsNoVarargsManaged()", success, 73);
-            success = ReportFailure(TestPassingTwoLongStructsWithIntAndLongNoVarargsManaged(), "TestPassingTwoLongStructsWithIntAndLongNoVarargsManaged()", success, 83);
-            success = ReportFailure(TestPassingTwoLongStructsAndIntNoVarargsManaged(), "TestPassingTwoLongStructsAndIntNoVarargsManaged()", success, 74);
-
-            success = ReportFailure(TestPassingFourLongStructsNoVarargsManaged(), "TestPassingFourLongStructsNoVarargsManaged()", success, 75);
-            success = ReportFailure(TestPassingTwoFloatStructsNoVarargsManaged(), "TestPassingTwoFloatStructsNoVarargsManaged()", success, 76);
-
-            success = ReportFailure(TestPassingFourFloatStructsNoVarargsManaged(), "TestPassingFourFloatStructsNoVarargsManaged()", success, 77);
-            success = ReportFailure(TestPassingTwoDoubleStructsNoVarargsManaged() , "TestPassingTwoDoubleStructsNoVarargsManaged() ", success, 78);
-
-            success = ReportFailure(TestPassingTwoLongStructsAndFloatNoVarargsManaged(), "TestPassingTwoLongStructsAndFloatNoVarargsManaged()", success, 79);
-            success = ReportFailure(TestPassingFourDoubleStructsNoVarargsManaged(), "TestPassingFourDoubleStructsNoVarargsManaged()", success, 80);
-
-            success = ReportFailure(TestPassingIntsManaged(new int[] { 100, 299, -100, 50 }), "TestPassingIntsManaged(new int[] { 100, 299, -100, 50 })", success, 30);
-            success = ReportFailure(TestPassingLongsManaged(new long[] { 100L, 299L, -100L, 50L }), "TestPassingLongsManaged(new long[] { 100L, 299L, -100L, 50L })", success, 31);
-            success = ReportFailure(TestPassingFloatsManaged(new float[] { 100.0f, 299.0f, -100.0f, 50.0f }), "TestPassingFloatsManaged(new float[] { 100.0f, 299.0f, -100.0f, 50.0f })", success, 32);
-            success = ReportFailure(TestPassingDoublesManaged(new double[] { 100.0d, 299.0d, -100.0d, 50.0d }), "TestPassingDoublesManaged(new double[] { 100.0d, 299.0d, -100.0d, 50.0d })", success, 33);
-
-            success = ReportFailure(TestPassingManyIntsManaged(new int[]
-            {
-                1002,
-                40,
-                39,
-                12,
-                14,
-                -502,
-                -13,
-                11,
-                98,
-                45,
-                3,
-                80,
-                7,
-                -1,
-                48,
-                66,
-                23,
-                62,
-                1092,
-                -890,
-                -20,
-                -41,
-                88,
-                98,
-                1,
-                2,
-                3,
-                4012,
-                16,
-                673,
-                873,
-                45,
-                85,
-                -3041,
-                22,
-                62,
-                401,
-                901,
-                501,
-                1001,
-                1002
-            }), "TestPassingManyIntsManaged", success, 34);
-
-            success = ReportFailure(TestPassingManyLongsManaged(new long[]
-            {
-                1002L,
-                40L,
-                39L,
-                12L,
-                14L,
-                -502L,
-                -13L,
-                11L,
-                98L,
-                45L,
-                3L,
-                80L,
-                7L,
-                -1L,
-                48L,
-                66L,
-                23L,
-                62L,
-                1092L,
-                -890L,
-                -20L,
-                -41L,
-                88L,
-                98L,
-                1L,
-                2L,
-                3L,
-                4012L,
-                16L,
-                673L,
-                873L,
-                45L,
-                85L,
-                -3041L,
-                22L,
-                62L,
-                401L,
-                901L,
-                501L,
-                1001L,
-                1002L
-            }), "TestPassingManyLongsManaged", success, 35);
-
-            success = ReportFailure(TestPassingManyFloatsManaged(new float[]
-            {
-                1002,
-                40,
-                39,
-                12,
-                14,
-                -502,
-                -13,
-                11,
-                98,
-                45,
-                3,
-                80,
-                7,
-                -1,
-                48,
-                66,
-                23,
-                62,
-                1092,
-                -890,
-                -20,
-                -41,
-                88,
-                98,
-                1,
-                2,
-                3,
-                4012,
-                16,
-                673,
-                873,
-                45,
-                85,
-                -3041,
-                22,
-                62,
-                401,
-                901,
-                501,
-                1001,
-                1002
-            }), "TestPassingManyFloatsManaged", success, 36);
-
-            success = ReportFailure(TestPassingManyDoublesManaged(new double[]
-            {
-                1002,
-                40,
-                39,
-                12,
-                14,
-                -502,
-                -13,
-                11,
-                98,
-                45,
-                3,
-                80,
-                7,
-                -1,
-                48,
-                66,
-                23,
-                62,
-                1092,
-                -890,
-                -20,
-                -41,
-                88,
-                98,
-                1,
-                2,
-                3,
-                4012,
-                16,
-                673,
-                873,
-                45,
-                85,
-                -3041,
-                22,
-                62,
-                401,
-                901,
-                501,
-                1001,
-                1002
-            }), "TestPassingManyDoublesManaged", success, 37);
-
-            success = ReportFailure(TestPassingIntsAndLongsManaged(new int[] { 100, 200 }, new long[] { 102312131L, 91239191L }), "TestPassingIntsAndLongsManaged(new int[] { 100, 200 }, new long[] { 102312131L, 91239191L })", success, 38);
-            success = ReportFailure(TestPassingFloatsAndDoublesManaged(new float[] { 100.0F, 200.0F }, new double[] { 12.1231321, 441.2332132335342321 }), "TestPassingFloatsAndDoublesManaged(new float[] { 100.0F, 200.0F }, new double[] { 12.1231321, 441.2332132335342321 })", success, 39);
-
-            success = ReportFailure(TestPassingIntsAndFloatsManaged(), "TestPassingIntsAndFloatsManaged()", success, 40);
-            success = ReportFailure(TestPassingLongsAndDoublesManaged(), "TestPassingLongsAndDoublesManaged()", success, 41);
-
-            // Try passing empty varargs.
-            success = ReportFailure(TestPassingEmptyIntsManaged(new int[] { }), "TestPassingEmptyIntsManaged(new int[] { })", success, 42);
-            success = ReportFailure(TestPassingEmptyLongsManaged(new long[] { }), "TestPassingEmptyLongsManaged(new long[] { })", success, 43);
-            success = ReportFailure(TestPassingEmptyFloatsManaged(new float[] { }), "TestPassingEmptyFloatsManaged(new float[] { })", success, 44);
-            success = ReportFailure(TestPassingEmptyDoubleManaged(new double[] { }), "TestPassingEmptyDoubleManaged(new double[] { })", success, 45);
-
-            success = ReportFailure(TestPassingStructsManaged(), "TestPassingStructsManaged()", success, TestPassingStructsManaged());
-
-            ////////////////////////////////////////////////////////////////////
-            // PInvoke Tests
-            ////////////////////////////////////////////////////////////////////
-
+            // Native varargs
             success = ReportFailure(TestPassingInts(new int[] { 100, 299, -100, 50 }), "TestPassingInts(new int[] { 100, 299, -100, 50 })", success, 1);
             success = ReportFailure(TestPassingLongs(new long[] { 100L, 299L, -100L, 50L }), "TestPassingLongs(new long[] { 100L, 299L, -100L, 50L })", success, 2);
             success = ReportFailure(TestPassingFloats(new float[] { 100.0f, 299.0f, -100.0f, 50.0f }), "TestPassingFloats(new float[] { 100.0f, 299.0f, -100.0f, 50.0f })", success, 3);
@@ -5094,6 +4858,243 @@ namespace NativeVarargTest
             printf("%d Tests run. %d Passed, %d Failed.\n", __arglist(m_testCount, m_passCount, m_failCount));
 
             return success;
+        }
+
+        private static bool TestManagedVarArgs()
+        {
+            bool success = true;
+            success = ReportFailure(TestPassingIntsNoVarargsManaged(), "TestPassingIntsNoVarargsManaged", success, 59);
+            success = ReportFailure(TestPassingLongsNoVarargsManaged(), "TestPassingLongsNoVarargsManaged", success, 60);
+
+            success = ReportFailure(TestPassingFloatsNoVarargsManaged(), "TestPassingFloatsNoVarargsManaged", success, 61);
+            success = ReportFailure(TestPassingDoublesNoVarargsManaged(), "TestPassingDoublesNoVarargsManaged", success, 62);
+
+            success = ReportFailure(TestPassingIntAndFloatsNoVarargsManaged(), "TestPassingIntAndFloatsNoVarargsManaged", success, 63);
+            success = ReportFailure(TestPassingFloatsAndIntNoVarargsManaged(), "TestPassingFloatsAndIntNoVarargsManaged", success, 64);
+
+            success = ReportFailure(TestPassingIntAndDoublesNoVarargsManaged(), "TestPassingIntAndDoublesNoVarargsManaged", success, 65);
+            success = ReportFailure(TestPassingDoublesAndIntNoVarargsManaged(), "TestPassingDoublesAndIntNoVarargsManaged", success, 66);
+
+            success = ReportFailure(TestPassingLongAndFloatsNoVarargsManaged(), "TestPassingLongAndFloatsNoVarargsManaged()", success, 67);
+            success = ReportFailure(TestPassingFloatsAndlongNoVarargsManaged(), "TestPassingFloatsAndlongNoVarargsManaged()", success, 68);
+
+            success = ReportFailure(TestPassinglongAndDoublesNoVarargsManaged(), "TestPassinglongAndDoublesNoVarargsManaged()", success, 69);
+            success = ReportFailure(TestPassingDoublesAndlongNoVarargsManaged(), "TestPassingDoublesAndlongNoVarargsManaged()", success, 70);
+
+            success = ReportFailure(TestPassingTwoIntStructsNoVarargsManaged(), "TestPassingTwoIntStructsNoVarargsManaged()", success, 71);
+            success = ReportFailure(TestPassingFourIntStructsNoVarargsManaged(), "TestPassingFourIntStructsNoVaragsManaged()", success, 72);
+
+            success = ReportFailure(TestPassingTwoLongStructsNoVarargsManaged(), "TestPassingTwoLongStructsNoVarargsManaged()", success, 73);
+            success = ReportFailure(TestPassingTwoLongStructsWithIntAndLongNoVarargsManaged(), "TestPassingTwoLongStructsWithIntAndLongNoVarargsManaged()", success, 83);
+            success = ReportFailure(TestPassingTwoLongStructsAndIntNoVarargsManaged(), "TestPassingTwoLongStructsAndIntNoVarargsManaged()", success, 74);
+
+            success = ReportFailure(TestPassingFourLongStructsNoVarargsManaged(), "TestPassingFourLongStructsNoVarargsManaged()", success, 75);
+            success = ReportFailure(TestPassingTwoFloatStructsNoVarargsManaged(), "TestPassingTwoFloatStructsNoVarargsManaged()", success, 76);
+
+            success = ReportFailure(TestPassingFourFloatStructsNoVarargsManaged(), "TestPassingFourFloatStructsNoVarargsManaged()", success, 77);
+            success = ReportFailure(TestPassingTwoDoubleStructsNoVarargsManaged() , "TestPassingTwoDoubleStructsNoVarargsManaged() ", success, 78);
+
+            success = ReportFailure(TestPassingTwoLongStructsAndFloatNoVarargsManaged(), "TestPassingTwoLongStructsAndFloatNoVarargsManaged()", success, 79);
+            success = ReportFailure(TestPassingFourDoubleStructsNoVarargsManaged(), "TestPassingFourDoubleStructsNoVarargsManaged()", success, 80);
+
+            success = ReportFailure(TestPassingIntsManaged(new int[] { 100, 299, -100, 50 }), "TestPassingIntsManaged(new int[] { 100, 299, -100, 50 })", success, 30);
+            success = ReportFailure(TestPassingLongsManaged(new long[] { 100L, 299L, -100L, 50L }), "TestPassingLongsManaged(new long[] { 100L, 299L, -100L, 50L })", success, 31);
+            success = ReportFailure(TestPassingFloatsManaged(new float[] { 100.0f, 299.0f, -100.0f, 50.0f }), "TestPassingFloatsManaged(new float[] { 100.0f, 299.0f, -100.0f, 50.0f })", success, 32);
+            success = ReportFailure(TestPassingDoublesManaged(new double[] { 100.0d, 299.0d, -100.0d, 50.0d }), "TestPassingDoublesManaged(new double[] { 100.0d, 299.0d, -100.0d, 50.0d })", success, 33);
+
+            success = ReportFailure(TestPassingManyIntsManaged(new int[]
+            {
+                1002,
+                40,
+                39,
+                12,
+                14,
+                -502,
+                -13,
+                11,
+                98,
+                45,
+                3,
+                80,
+                7,
+                -1,
+                48,
+                66,
+                23,
+                62,
+                1092,
+                -890,
+                -20,
+                -41,
+                88,
+                98,
+                1,
+                2,
+                3,
+                4012,
+                16,
+                673,
+                873,
+                45,
+                85,
+                -3041,
+                22,
+                62,
+                401,
+                901,
+                501,
+                1001,
+                1002
+            }), "TestPassingManyIntsManaged", success, 34);
+
+            success = ReportFailure(TestPassingManyLongsManaged(new long[]
+            {
+                1002L,
+                40L,
+                39L,
+                12L,
+                14L,
+                -502L,
+                -13L,
+                11L,
+                98L,
+                45L,
+                3L,
+                80L,
+                7L,
+                -1L,
+                48L,
+                66L,
+                23L,
+                62L,
+                1092L,
+                -890L,
+                -20L,
+                -41L,
+                88L,
+                98L,
+                1L,
+                2L,
+                3L,
+                4012L,
+                16L,
+                673L,
+                873L,
+                45L,
+                85L,
+                -3041L,
+                22L,
+                62L,
+                401L,
+                901L,
+                501L,
+                1001L,
+                1002L
+            }), "TestPassingManyLongsManaged", success, 35);
+
+            success = ReportFailure(TestPassingManyFloatsManaged(new float[]
+            {
+                1002,
+                40,
+                39,
+                12,
+                14,
+                -502,
+                -13,
+                11,
+                98,
+                45,
+                3,
+                80,
+                7,
+                -1,
+                48,
+                66,
+                23,
+                62,
+                1092,
+                -890,
+                -20,
+                -41,
+                88,
+                98,
+                1,
+                2,
+                3,
+                4012,
+                16,
+                673,
+                873,
+                45,
+                85,
+                -3041,
+                22,
+                62,
+                401,
+                901,
+                501,
+                1001,
+                1002
+            }), "TestPassingManyFloatsManaged", success, 36);
+
+            success = ReportFailure(TestPassingManyDoublesManaged(new double[]
+            {
+                1002,
+                40,
+                39,
+                12,
+                14,
+                -502,
+                -13,
+                11,
+                98,
+                45,
+                3,
+                80,
+                7,
+                -1,
+                48,
+                66,
+                23,
+                62,
+                1092,
+                -890,
+                -20,
+                -41,
+                88,
+                98,
+                1,
+                2,
+                3,
+                4012,
+                16,
+                673,
+                873,
+                45,
+                85,
+                -3041,
+                22,
+                62,
+                401,
+                901,
+                501,
+                1001,
+                1002
+            }), "TestPassingManyDoublesManaged", success, 37);
+
+            success = ReportFailure(TestPassingIntsAndLongsManaged(new int[] { 100, 200 }, new long[] { 102312131L, 91239191L }), "TestPassingIntsAndLongsManaged(new int[] { 100, 200 }, new long[] { 102312131L, 91239191L })", success, 38);
+            success = ReportFailure(TestPassingFloatsAndDoublesManaged(new float[] { 100.0F, 200.0F }, new double[] { 12.1231321, 441.2332132335342321 }), "TestPassingFloatsAndDoublesManaged(new float[] { 100.0F, 200.0F }, new double[] { 12.1231321, 441.2332132335342321 })", success, 39);
+
+            success = ReportFailure(TestPassingIntsAndFloatsManaged(), "TestPassingIntsAndFloatsManaged()", success, 40);
+            success = ReportFailure(TestPassingLongsAndDoublesManaged(), "TestPassingLongsAndDoublesManaged()", success, 41);
+
+            // Try passing empty varargs.
+            success = ReportFailure(TestPassingEmptyIntsManaged(new int[] { }), "TestPassingEmptyIntsManaged(new int[] { })", success, 42);
+            success = ReportFailure(TestPassingEmptyLongsManaged(new long[] { }), "TestPassingEmptyLongsManaged(new long[] { })", success, 43);
+            success = ReportFailure(TestPassingEmptyFloatsManaged(new float[] { }), "TestPassingEmptyFloatsManaged(new float[] { })", success, 44);
+            success = ReportFailure(TestPassingEmptyDoubleManaged(new double[] { }), "TestPassingEmptyDoubleManaged(new double[] { })", success, 45);
+
+            success = ReportFailure(TestPassingStructsManaged(), "TestPassingStructsManaged()", success, TestPassingStructsManaged());
         }
     }
 }

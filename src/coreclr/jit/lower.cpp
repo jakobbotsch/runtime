@@ -2627,6 +2627,11 @@ GenTree* Lowering::LowerCall(GenTree* node)
     }
 #endif
 
+    if (call->IsVarargs() && call->IsUnmanaged())
+    {
+        LowerNativeVarArgsCall(call);
+    }
+
     call->ClearOtherRegs();
     LowerArgsForCall(call);
 
@@ -3543,6 +3548,44 @@ void Lowering::LowerCFGCall(GenTreeCall* call)
         default:
             unreached();
     }
+}
+
+//------------------------------------------------------------------------
+// LowerNativeVarArgsCall:
+//   Lower a native varargs call
+//
+// Arguments:
+//   call - The call
+//
+void Lowering::LowerNativeVarArgsCall(GenTreeCall* call)
+{
+#ifdef UNIX_AMD64_ABI
+    // For SysV ABI an upper bound on the number of float registers used must
+    // be passed in al.
+    unsigned numSseRegs = 0;
+    for (CallArg& arg : call->gtArgs.Args())
+    {
+        for (const ABIPassingSegment& seg : arg.AbiInfo.Segments())
+        {
+            if (seg.IsPassedInRegister() && genIsValidFloatReg(seg.GetRegister()))
+            {
+                numSseRegs++;
+            }
+        }
+    }
+
+    GenTree* numSseRegsNode = comp->gtNewIconNode(numSseRegs, TYP_INT);
+    BlockRange().InsertBefore(call, numSseRegsNode);
+    NewCallArg newArg =
+        NewCallArg::Primitive(numSseRegsNode).WellKnown(WellKnownArg::VarArgsNumFPRegisters);
+    CallArg* arg = call->gtArgs.PushBack(comp, newArg);
+    arg->SetEarlyNode(nullptr);
+    arg->SetLateNode(numSseRegsNode);
+    call->gtArgs.PushLateBack(arg);
+
+    ABIPassingSegment segment = ABIPassingSegment::InRegister(REG_VARARGS_NUM_FP_REGISTERS, 0, 4);
+    arg->AbiInfo = ABIPassingInformation::FromSegmentByValue(comp, segment);
+#endif
 }
 
 //------------------------------------------------------------------------

@@ -6167,7 +6167,8 @@ void Compiler::impPopCallArgs(CORINFO_SIG_INFO* sig, GenTreeCall* call)
     CORINFO_ARG_LIST_HANDLE sigArg = sig->args;
     for (unsigned i = 0; i < sig->numArgs; i++)
     {
-        params[i].CorType = strip(info.compCompHnd->getArgType(sig, sigArg, &params[i].ClassHandle));
+        CorInfoTypeWithMod argType = info.compCompHnd->getArgType(sig, sigArg, &params[i].ClassHandle);
+        params[i].CorType = strip(argType);
 
         if (params[i].CorType != CORINFO_TYPE_CLASS && params[i].CorType != CORINFO_TYPE_BYREF &&
             params[i].CorType != CORINFO_TYPE_PTR && params[i].CorType != CORINFO_TYPE_VAR)
