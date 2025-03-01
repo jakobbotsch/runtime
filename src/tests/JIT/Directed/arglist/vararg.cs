@@ -4563,7 +4563,7 @@ namespace NativeVarargTest
 
             // Managed varargs (only supported on Windows)
             if (OperatingSystem.IsWindows())
-                success |= TestManagedVarArgs();
+                success = TestManagedVarArgs(success);
 
             // Native varargs
             success = ReportFailure(TestPassingInts(new int[] { 100, 299, -100, 50 }), "TestPassingInts(new int[] { 100, 299, -100, 50 })", success, 1);
@@ -4860,9 +4860,8 @@ namespace NativeVarargTest
             return success;
         }
 
-        private static bool TestManagedVarArgs()
+        private static int TestManagedVarArgs(int success)
         {
-            bool success = true;
             success = ReportFailure(TestPassingIntsNoVarargsManaged(), "TestPassingIntsNoVarargsManaged", success, 59);
             success = ReportFailure(TestPassingLongsNoVarargsManaged(), "TestPassingLongsNoVarargsManaged", success, 60);
 
@@ -5095,6 +5094,8 @@ namespace NativeVarargTest
             success = ReportFailure(TestPassingEmptyDoubleManaged(new double[] { }), "TestPassingEmptyDoubleManaged(new double[] { })", success, 45);
 
             success = ReportFailure(TestPassingStructsManaged(), "TestPassingStructsManaged()", success, TestPassingStructsManaged());
+
+            return success;
         }
     }
 }
