@@ -474,13 +474,13 @@ static void ConvToJitSig(
         IfFailThrow(sig.GetCallingConvInfo(&data));
         sigRet->callConv = (CorInfoCallConv) data;
 
-#if defined(TARGET_UNIX) || defined(TARGET_ARM)
-        if (isCallConv(sigRet->callConv, IMAGE_CEE_CS_CALLCONV_VARARG))
-        {
-            // This signature corresponds to a method that uses managed varargs, which are not supported.
-             COMPlusThrow(kInvalidProgramException, IDS_EE_VARARG_NOT_SUPPORTED);
-        }
-#endif // defined(TARGET_UNIX) || defined(TARGET_ARM)
+//#if defined(TARGET_UNIX) || defined(TARGET_ARM)
+//        if (isCallConv(sigRet->callConv, IMAGE_CEE_CS_CALLCONV_VARARG))
+//        {
+//            // This signature corresponds to a method that uses managed varargs, which are not supported.
+//             COMPlusThrow(kInvalidProgramException, IDS_EE_VARARG_NOT_SUPPORTED);
+//        }
+//#endif // defined(TARGET_UNIX) || defined(TARGET_ARM)
 
         // Skip number of type arguments
         if (sigRet->callConv & IMAGE_CEE_CS_CALLCONV_GENERIC)
