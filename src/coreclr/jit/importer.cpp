@@ -9627,11 +9627,18 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                         {
                             impSpillSideEffects(true, CHECK_SPILL_ALL DEBUGARG("value for stsfld with typeinit"));
                         }
+                        else if (compIsAsync() && op1->TypeIs(TYP_BYREF))
+                        {
+                            // TODO-Async: We really only need to spill if
+                            // there is a possibility of an async call in op2.
+                            impSpillSideEffects(true, CHECK_SPILL_ALL DEBUGARG("byref address in async method"));
+                        }
                         break;
 
                     default:
                         assert(!"Unexpected fieldAccessor");
                 }
+
 
                 // Pull the value from the stack.
                 op2 = impPopStack().val;
