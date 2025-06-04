@@ -685,7 +685,16 @@ void Lowering::LowerPutArgStk(GenTreePutArgStk* putArgStk)
         // Also, if there are  floating point fields, it may be better to use the "Unroll" mode
         // of copying the struct as a whole, if the fields are not register candidates.
         putArgStk->gtPutArgStkKind = GenTreePutArgStk::Kind::Push;
-#endif // TARGET_X86
+#else // TARGET_X86
+        // Codegen knows to consume-and-push each field separately, so we do
+        // not need all fields to be in registers simultaneously (which would
+        // be impossible for large number of fields).
+        for (GenTreeFieldList::Use& use : fieldList->Uses())
+        {
+            use.GetNode()->SetRegOptional();
+        }
+
+#endif // !TARGET_X86
         return;
     }
 

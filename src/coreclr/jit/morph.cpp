@@ -2221,11 +2221,10 @@ GenTreeCall* Compiler::fgMorphArgs(GenTreeCall* call)
 //   False if the argument cannot be put into a shape supported by the backend.
 //
 // Remarks:
-//   The backend requires register-passed arguments to be of FIELD_LIST shape.
-//   For split arguments it is additionally required that registers and stack
-//   slots have clean mappings to fields.
-//   For stack-passed arguments the backend supports struct-typed arguments
-//   directly.
+//   The backend requires arguments passed in multiple registers to either be
+//   primitives or to be of FIELD_LIST shape.
+//   Arguments passed both split across registers and stack are allowed to be
+//   locals or BLK as well.
 //
 bool Compiler::fgTryMorphStructArg(CallArg* arg)
 {
@@ -2233,34 +2232,20 @@ bool Compiler::fgTryMorphStructArg(CallArg* arg)
     GenTree*  argNode = *use;
     assert(varTypeIsStruct(argNode));
 
-    bool isSplit = arg->AbiInfo.IsSplitAcrossRegistersAndStack();
-#ifdef TARGET_ARM
-    if ((isSplit && (arg->AbiInfo.CountRegsAndStackSlots() > 4)) || (!isSplit && arg->AbiInfo.HasAnyStackSegment()))
-#else
     if (!arg->AbiInfo.HasAnyRegisterSegment())
-#endif
     {
         if (argNode->OperIs(GT_LCL_VAR) &&
             (lvaGetPromotionType(argNode->AsLclVar()->GetLclNum()) == PROMOTION_TYPE_INDEPENDENT))
         {
-            // TODO-Arm-CQ: support decomposing "large" promoted structs into field lists.
-            if (!isSplit)
-            {
-                GenTreeFieldList* fieldList = fgMorphLclToFieldList(argNode->AsLclVar());
-                // TODO-Cleanup: The containment/reg optionality for x86 is
-                // conservative in the "no field list" case.
+            GenTreeFieldList* fieldList = fgMorphLclToFieldList(argNode->AsLclVar());
+            // TODO-Cleanup: The containment/reg optionality for x86 is
+            // conservative in the "no field list" case.
 #ifdef TARGET_X86
-                *use = fieldList;
+            *use = fieldList;
 #else
-                *use = fieldList->SoleFieldOrThis();
+            *use = fieldList->SoleFieldOrThis();
 #endif
-                *use = fgMorphTree(*use);
-            }
-            else
-            {
-                // Set DNER to block independent promotion.
-                lvaSetVarDoNotEnregister(argNode->AsLclVar()->GetLclNum() DEBUGARG(DoNotEnregisterReason::IsStructArg));
-            }
+            *use = fgMorphTree(*use);
         }
         else if (argNode->OperIs(GT_LCL_FLD))
         {
@@ -2304,7 +2289,7 @@ bool Compiler::fgTryMorphStructArg(CallArg* arg)
         // Try to see if we can and should use promoted fields to pass this
         // argument.
         //
-        if (varDsc->lvPromoted && !varDsc->lvDoNotEnregister && (!isSplit || FieldsMatchAbi(varDsc, arg->AbiInfo)))
+        if (varDsc->lvPromoted && !varDsc->lvDoNotEnregister)
         {
             newArg = fgMorphLclToFieldList(lclNode)->SoleFieldOrThis();
             newArg = fgMorphTree(newArg);
@@ -2501,51 +2486,6 @@ bool Compiler::fgTryMorphStructArg(CallArg* arg)
     *use = newArg;
     // Potentially update commas
     arg->GetNode()->ChangeType((*use)->TypeGet());
-    return true;
-}
-
-//-----------------------------------------------------------------------------
-// FieldsMatchAbi:
-//   Check if the fields of a local map cleanly (in terms of offsets) to the
-//   specified ABI info.
-//
-// Arguments:
-//   varDsc  - promoted local
-//   abiInfo - ABI information
-//
-// Returns:
-//   True if it does. In that case FIELD_LIST usage is allowed for split args
-//   by the backend.
-//
-bool Compiler::FieldsMatchAbi(LclVarDsc* varDsc, const ABIPassingInformation& abiInfo)
-{
-    if (varDsc->lvFieldCnt != abiInfo.CountRegsAndStackSlots())
-    {
-        return false;
-    }
-
-    for (const ABIPassingSegment& seg : abiInfo.Segments())
-    {
-        if (seg.IsPassedInRegister())
-        {
-            unsigned fieldLclNum = lvaGetFieldLocal(varDsc, seg.Offset);
-            if (fieldLclNum == BAD_VAR_NUM)
-            {
-                return false;
-            }
-        }
-        else
-        {
-            for (unsigned offset = 0; offset < seg.Size; offset += TARGET_POINTER_SIZE)
-            {
-                if (lvaGetFieldLocal(varDsc, seg.Offset + offset) == BAD_VAR_NUM)
-                {
-                    return false;
-                }
-            }
-        }
-    }
-
     return true;
 }
 
