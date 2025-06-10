@@ -6383,6 +6383,11 @@ GenTree* Compiler::fgMorphCall(GenTreeCall* call)
                 optIndirectCallCount++;
             }
         }
+
+        if (call->IsFastTailCall())
+        {
+            optFastTailCallCount++;
+        }
     }
 
     // Couldn't inline - remember that this BB contains method calls
