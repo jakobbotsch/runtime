@@ -636,52 +636,35 @@ const char* getWellKnownArgName(WellKnownArg arg)
 {
     switch (arg)
     {
-        case WellKnownArg::None:
-            return "None";
-        case WellKnownArg::ThisPointer:
-            return "ThisPointer";
-        case WellKnownArg::VarArgsCookie:
-            return "VarArgsCookie";
-        case WellKnownArg::InstParam:
-            return "InstParam";
-        case WellKnownArg::AsyncContinuation:
-            return "AsyncContinuation";
-        case WellKnownArg::RetBuffer:
-            return "RetBuffer";
-        case WellKnownArg::PInvokeFrame:
-            return "PInvokeFrame";
-        case WellKnownArg::WrapperDelegateCell:
-            return "WrapperDelegateCell";
-        case WellKnownArg::ShiftLow:
-            return "ShiftLow";
-        case WellKnownArg::ShiftHigh:
-            return "ShiftHigh";
-        case WellKnownArg::VirtualStubCell:
-            return "VirtualStubCell";
-        case WellKnownArg::PInvokeCookie:
-            return "PInvokeCookie";
-        case WellKnownArg::PInvokeTarget:
-            return "PInvokeTarget";
-        case WellKnownArg::R2RIndirectionCell:
-            return "R2RIndirectionCell";
-        case WellKnownArg::ValidateIndirectCallTarget:
-            return "ValidateIndirectCallTarget";
-        case WellKnownArg::DispatchIndirectCallTarget:
-            return "DispatchIndirectCallTarget";
-        case WellKnownArg::SwiftError:
-            return "SwiftError";
-        case WellKnownArg::SwiftSelf:
-            return "SwiftSelf";
-        case WellKnownArg::X86TailCallSpecialArg:
-            return "X86TailCallSpecialArg";
-        case WellKnownArg::StackArrayLocal:
-            return "StackArrayLocal";
-        case WellKnownArg::RuntimeMethodHandle:
-            return "RuntimeMethodHandle";
-        case WellKnownArg::AsyncExecutionContext:
-            return "AsyncExecutionContext";
-        case WellKnownArg::AsyncSynchronizationContext:
-            return "AsyncSynchronizationContext";
+#define ADD_CASE(name)                                                                                                 \
+    case WellKnownArg::name:                                                                                           \
+        return #name
+        ADD_CASE(None);
+        ADD_CASE(ThisPointer);
+        ADD_CASE(VarArgsCookie);
+        ADD_CASE(InstParam);
+        ADD_CASE(AsyncContinuation);
+        ADD_CASE(RetBuffer);
+        ADD_CASE(PInvokeFrame);
+        ADD_CASE(WrapperDelegateCell);
+        ADD_CASE(ShiftLow);
+        ADD_CASE(ShiftHigh);
+        ADD_CASE(VirtualStubCell);
+        ADD_CASE(PInvokeCookie);
+        ADD_CASE(PInvokeTarget);
+        ADD_CASE(R2RIndirectionCell);
+        ADD_CASE(ValidateIndirectCallTarget);
+        ADD_CASE(DispatchIndirectCallTarget);
+        ADD_CASE(SwiftError);
+        ADD_CASE(SwiftSelf);
+        ADD_CASE(X86TailCallSpecialArg);
+        ADD_CASE(StackArrayLocal);
+        ADD_CASE(RuntimeMethodHandle);
+        ADD_CASE(AsyncExecutionContext);
+        ADD_CASE(AsyncSynchronizationContext);
+        ADD_CASE(AsyncResumed);
+        ADD_CASE(AsyncResumedDef);
+#undef ADD_CASE
     }
 
     return "N/A";

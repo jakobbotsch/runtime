@@ -3758,6 +3758,7 @@ public:
     bool gtIsTypeof(GenTree* tree, CORINFO_CLASS_HANDLE* handle = nullptr);
 
     GenTreeLclVarCommon* gtCallGetDefinedRetBufLclAddr(GenTreeCall* call);
+    GenTreeLclVarCommon* gtCallGetDefinedAsyncResumedIndicatorLclAddr(GenTreeCall* call);
 
 //-------------------------------------------------------------------------
 // Functions to display the trees
@@ -3981,6 +3982,7 @@ public:
 
     unsigned lvaAsyncExecutionContextVar = BAD_VAR_NUM;       // ExecutionContext local for async methods
     unsigned lvaAsyncSynchronizationContextVar = BAD_VAR_NUM; // SynchronizationContext local for async methods
+    unsigned lvaAsyncResumedVar = BAD_VAR_NUM;                // Did we resume in this method? Only used for tier1 methods.
 
     unsigned short asyncContextRestoreEHID = USHRT_MAX;
 
@@ -5571,6 +5573,7 @@ public:
 #endif
 
     PhaseStatus SaveAsyncContexts();
+    GenTree* CreateHasResumedTree();
     void AddContextArgsToAsyncCalls(BasicBlock* block);
     BasicBlock* CreateReturnBB(unsigned* mergedReturnLcl);
     PhaseStatus TransformAsync();

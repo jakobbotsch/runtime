@@ -2322,6 +2322,8 @@ Statement* Compiler::fgInlinePrependStatements(InlineInfo* inlineInfo)
             case WellKnownArg::AsyncContinuation:
             case WellKnownArg::AsyncExecutionContext:
             case WellKnownArg::AsyncSynchronizationContext:
+            case WellKnownArg::AsyncResumed:
+            case WellKnownArg::AsyncResumedDef:
                 continue;
             case WellKnownArg::InstParam:
                 argInfo = inlineInfo->inlInstParamArgInfo;

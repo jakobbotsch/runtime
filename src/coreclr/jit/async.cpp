@@ -149,6 +149,18 @@ PhaseStatus Compiler::SaveAsyncContexts()
     JITDUMP("Created EH descriptor EH#%u for try/fault wrapping body to save/restore async contexts\n", XTnew);
     INDEBUG(fgVerifyHandlerTab());
 
+    if (opts.OptimizationEnabled())
+    {
+        // When optimizing we use a local to track whether we resumed in this
+        // method. That local is defined and used by async calls. This local is
+        // equivalent to whether the lvaAsyncContinuationArg arg is non-null,
+        // but with it we can avoid EH exposing lvaAsyncContinuationArg and we
+        // can reason about its value (e.g. we know that it is always false if
+        // we have no async calls).
+        lvaAsyncResumedVar                     = lvaGrabTemp(false DEBUGARG("Async Resumed Flag"));
+        lvaGetDesc(lvaAsyncResumedVar)->lvType = TYP_UBYTE;
+    }
+
     // Get async helper methods
     CORINFO_ASYNC_INFO* asyncInfo = eeGetAsyncInfo();
 
@@ -171,17 +183,20 @@ PhaseStatus Compiler::SaveAsyncContexts()
     JITDUMP("Inserted capture\n");
     DISPSTMT(captureStmt);
 
-    // Insert RestoreContexts call in fault (exceptional case)
-    // First argument: started = (continuation == null)
-    GenTree* continuation = gtNewLclvNode(lvaAsyncContinuationArg, TYP_REF);
-    GenTree* null         = gtNewNull();
-    GenTree* resumed      = gtNewOperNode(GT_NE, TYP_INT, continuation, null);
+    if (lvaAsyncResumedVar != BAD_VAR_NUM)
+    {
+        // Initialize it to false
+        GenTree*   storeZero     = gtNewStoreLclVarNode(lvaAsyncResumedVar, gtNewZeroConNode(TYP_INT));
+        Statement* storeZeroStmt = fgNewStmtFromTree(storeZero);
+        fgInsertStmtAtBeg(fgFirstBB, storeZeroStmt);
+    }
 
+    // Insert RestoreContexts call in fault (exceptional case)
     GenTreeCall* restoreCall = gtNewCallNode(CT_USER_FUNC, asyncInfo->restoreContextsMethHnd, TYP_VOID);
     restoreCall->gtArgs.PushFront(this,
                                   NewCallArg::Primitive(gtNewLclVarNode(lvaAsyncSynchronizationContextVar, TYP_REF)));
     restoreCall->gtArgs.PushFront(this, NewCallArg::Primitive(gtNewLclVarNode(lvaAsyncExecutionContextVar, TYP_REF)));
-    restoreCall->gtArgs.PushFront(this, NewCallArg::Primitive(resumed));
+    restoreCall->gtArgs.PushFront(this, NewCallArg::Primitive(CreateHasResumedTree()));
 
     Statement* restoreStmt = fgNewStmtFromTree(restoreCall);
     fgInsertStmtAtEnd(faultBB, restoreStmt);
@@ -245,6 +260,43 @@ PhaseStatus Compiler::SaveAsyncContexts()
 }
 
 //------------------------------------------------------------------------
+// Compiler::CreateHasResumedTree:
+//   Create a tree that computes whether we are in an async call that has
+//   resumed.
+//
+// Remarks:
+//   This value can always be computed as lvaAsyncContinuationArg != null.
+//   When optimizing, however, that approach has two downsides:
+
+//   - The "has resumed" value is used in a fault handler, hence it would force
+//     lvaAsyncContinuationArg to be EH live. We really do not want the continuation
+//     arg to be stack spilled.
+//
+//   - The continuation arg is an opaque value, but "has resumed" isn't; we
+//     know that we have not resumed if we are at a point that is not reachable by
+//     an async call.
+//
+//   To fix these downsides we use a "has resumed" indicator variable in optimized codegen.
+//   The indicator variable is initialized to false at method entry, and at each async call
+//   we define the value as hasResumed = hasResumed || (this call resumed).
+//
+GenTree* Compiler::CreateHasResumedTree()
+{
+    if (lvaAsyncResumedVar != BAD_VAR_NUM)
+    {
+        // resumed = lvaAsyncResumedVar
+        return gtNewLclVarNode(lvaAsyncResumedVar);
+    }
+    else
+    {
+        // resumed = (continuation != null)
+        GenTree* continuation = gtNewLclvNode(lvaAsyncContinuationArg, TYP_REF);
+        GenTree* null         = gtNewNull();
+        return gtNewOperNode(GT_NE, TYP_INT, continuation, null);
+    }
+}
+
+//------------------------------------------------------------------------
 // Compiler::AddContextArgsToAsyncCalls:
 //   Add uses of the saved ExecutionContext and SynchronizationContext to all
 //   async calls.
@@ -290,6 +342,29 @@ void Compiler::AddContextArgsToAsyncCalls(BasicBlock* block)
                                    NewCallArg::Primitive(syncCtx).WellKnown(WellKnownArg::AsyncSynchronizationContext));
             call->gtArgs.PushFront(m_compiler,
                                    NewCallArg::Primitive(execCtx).WellKnown(WellKnownArg::AsyncExecutionContext));
+            if (m_compiler->lvaAsyncResumedVar != BAD_VAR_NUM)
+            {
+                // Async call is equivalent to asyncResumed = asyncResumed ||
+                // (this call resumed). So insert both a use and definition.
+                GenTree* resumedIndicatorUse = m_compiler->gtNewLclVarNode(m_compiler->lvaAsyncResumedVar, TYP_INT);
+                // We have a tendency to constant propagate this local. That is
+                // not wrong, but when we expand the async call it will
+                // introduce an unconditional store to the resume indicator. If
+                // we leave the local as-is the store will be "resumed =
+                // resumed" which we are able to optimize out.
+                resumedIndicatorUse->SetDoNotCSE();
+
+                GenTree* resumedIndicatorDef = m_compiler->gtNewLclAddrNode(m_compiler->lvaAsyncResumedVar, 0);
+
+                JITDUMP("Adding resumed indicator use [%06u], def [%06u] to async call [%06u]\n",
+                        dspTreeID(resumedIndicatorUse), dspTreeID(resumedIndicatorDef), dspTreeID(call));
+
+                call->gtArgs.PushFront(m_compiler, NewCallArg::Primitive(resumedIndicatorUse)
+                                                       .WellKnown(WellKnownArg::AsyncResumed));
+                call->gtArgs.PushBack(m_compiler, NewCallArg::Primitive(resumedIndicatorDef)
+                                                      .WellKnown(WellKnownArg::AsyncResumedDef));
+                m_compiler->lvaGetDesc(m_compiler->lvaAsyncResumedVar)->lvHasLdAddrOp = true;
+            }
             return WALK_CONTINUE;
         }
     };
@@ -323,15 +398,11 @@ BasicBlock* Compiler::CreateReturnBB(unsigned* mergedReturnLcl)
     // Insert "restore" call
     CORINFO_ASYNC_INFO* asyncInfo = eeGetAsyncInfo();
 
-    GenTree* continuation = gtNewLclvNode(lvaAsyncContinuationArg, TYP_REF);
-    GenTree* null         = gtNewNull();
-    GenTree* resumed      = gtNewOperNode(GT_NE, TYP_INT, continuation, null);
-
     GenTreeCall* restoreCall = gtNewCallNode(CT_USER_FUNC, asyncInfo->restoreContextsMethHnd, TYP_VOID);
     restoreCall->gtArgs.PushFront(this,
                                   NewCallArg::Primitive(gtNewLclVarNode(lvaAsyncSynchronizationContextVar, TYP_REF)));
     restoreCall->gtArgs.PushFront(this, NewCallArg::Primitive(gtNewLclVarNode(lvaAsyncExecutionContextVar, TYP_REF)));
-    restoreCall->gtArgs.PushFront(this, NewCallArg::Primitive(resumed));
+    restoreCall->gtArgs.PushFront(this, NewCallArg::Primitive(CreateHasResumedTree()));
 
     // This restore is an inline candidate (unlike the fault one)
     CORINFO_CALL_INFO callInfo = {};
@@ -824,6 +895,8 @@ void AsyncTransformation::Transform(
 
     ContinuationLayout layout = LayOutContinuation(block, call, ContinuationNeedsKeepAlive(life), liveLocals);
 
+    SetAsyncResumedToPrevious(block, call);
+
     CallDefinitionInfo callDefInfo = CanonicalizeCallDefinition(block, call, life);
 
     unsigned stateNum = (unsigned)m_resumptionBBs.size();
@@ -838,6 +911,8 @@ void AsyncTransformation::Transform(
     m_resumptionBBs.push_back(resumeBB);
 
     CreateDebugInfoForSuspensionPoint(layout);
+
+    RemoveAsyncResumedArgs(block, call);
 }
 
 //------------------------------------------------------------------------
@@ -1720,17 +1795,26 @@ void AsyncTransformation::RestoreContexts(BasicBlock* block, GenTreeCall* call, 
 
     LIR::AsRange(suspendBB).InsertAtEnd(LIR::SeqTree(m_comp, restoreCall));
 
-    // Replace resumedPlaceholder with actual "continuationParameter != null" arg
+    // Replace resumedPlaceholder with actual "has resumed" arg
     LIR::Use use;
     bool     gotUse = LIR::AsRange(suspendBB).TryGetUse(resumedPlaceholder, &use);
     assert(gotUse);
 
-    GenTree* continuation = m_comp->gtNewLclvNode(m_comp->lvaAsyncContinuationArg, TYP_REF);
-    GenTree* null         = m_comp->gtNewNull();
-    GenTree* started      = m_comp->gtNewOperNode(GT_NE, TYP_INT, continuation, null);
+    CallArg* resumedUseArg = call->gtArgs.FindWellKnownArg(WellKnownArg::AsyncResumed);
+    GenTree* resumed;
+    if (resumedUseArg != nullptr)
+    {
+        resumed = m_comp->gtCloneExpr(resumedUseArg->GetNode());
+    }
+    else
+    {
+        GenTree* continuation = m_comp->gtNewLclvNode(m_comp->lvaAsyncContinuationArg, TYP_REF);
+        GenTree* null         = m_comp->gtNewNull();
+        resumed               = m_comp->gtNewOperNode(GT_NE, TYP_INT, continuation, null);
+    }
 
-    LIR::AsRange(suspendBB).InsertBefore(resumedPlaceholder, LIR::SeqTree(m_comp, started));
-    use.ReplaceWith(started);
+    LIR::AsRange(suspendBB).InsertBefore(resumedPlaceholder, LIR::SeqTree(m_comp, resumed));
+    use.ReplaceWith(resumed);
     LIR::AsRange(suspendBB).Remove(resumedPlaceholder);
 
     // Replace execContextPlaceholder with actual value
@@ -1883,6 +1967,8 @@ BasicBlock* AsyncTransformation::CreateResumption(BasicBlock*               bloc
     {
         RestoreFromDataOnResumption(layout, resumeBB);
     }
+
+    SetAsyncResumedToTrue(resumeBB, block, call);
 
     BasicBlock* storeResultBB = resumeBB;
 
@@ -2158,6 +2244,123 @@ void AsyncTransformation::CopyReturnValueOnResumption(GenTreeCall*              
         }
 
         LIR::AsRange(storeResultBB).InsertAtEnd(LIR::SeqTree(m_comp, storeResult));
+    }
+}
+
+//------------------------------------------------------------------------
+// AsyncTransformation::SetAsyncResumedToPrevious:
+//   Create IR that sets the async resumption variable (given in the
+//   AsyncResumedDef pseudo-arg) to be equal to its previous value (given in
+//   the AsyncResumed pseudo-arg).
+//
+// Parameters:
+//   callBlock - Block containing the call
+//   call      - Async call
+//
+void AsyncTransformation::SetAsyncResumedToPrevious(BasicBlock* callBlock, GenTreeCall* call)
+{
+    CallArg* resumedDefArg = call->gtArgs.FindWellKnownArg(WellKnownArg::AsyncResumedDef);
+    CallArg* resumedUseArg = call->gtArgs.FindWellKnownArg(WellKnownArg::AsyncResumed);
+    if ((resumedDefArg == nullptr) || (resumedUseArg == nullptr))
+    {
+        return;
+    }
+
+    GenTree* resumedDef = resumedDefArg->GetNode();
+    if (!resumedDef->IsLclVarAddr() &&
+        (!resumedDef->OperIs(GT_LCL_VAR) || m_comp->lvaVarAddrExposed(resumedDef->AsLclVarCommon()->GetLclNum())))
+    {
+        // Need multiple uses of this, so spill
+        LIR::Use use(LIR::AsRange(callBlock), &resumedDefArg->NodeRef(), call);
+        use.ReplaceWithLclVar(m_comp);
+        resumedDef = use.Def();
+    }
+
+    GenTree* resumedUse = resumedUseArg->GetNode();
+    if (!resumedUse->IsInvariant() &&
+        (!resumedUse->OperIs(GT_LCL_VAR) || m_comp->lvaVarAddrExposed(resumedUse->AsLclVarCommon()->GetLclNum())))
+    {
+        // Also need multiple uses of this
+        LIR::Use use(LIR::AsRange(callBlock), &resumedUseArg->NodeRef(), call);
+        use.ReplaceWithLclVar(m_comp);
+        resumedUse = use.Def();
+    }
+
+    GenTree* store = m_comp->gtNewStoreValueNode(TYP_UBYTE, m_comp->gtCloneExpr(resumedDef),
+                                                 m_comp->gtCloneExpr(resumedUse), GTF_IND_NONFAULTING);
+    if (store->OperIs(GT_STORE_LCL_VAR) && resumedUse->OperIs(GT_LCL_VAR) &&
+        (store->AsLclVarCommon()->GetLclNum() == resumedUse->AsLclVarCommon()->GetLclNum()))
+    {
+        // Commonly this is a self store, so skip adding it in that case
+        return;
+    }
+
+    LIR::AsRange(callBlock).InsertBefore(call, LIR::SeqTree(m_comp, store));
+}
+
+//------------------------------------------------------------------------
+// AsyncTransformation::SetAsyncResumedToTrue:
+//   Create IR that sets the async resumption variable (given in the
+//   AsyncResumedDef pseudo-arg) to be true.
+//
+// Parameters:
+//   block     - Block to insert the definition into
+//   callBlock - Block containing the call
+//   call      - Async call
+//
+void AsyncTransformation::SetAsyncResumedToTrue(BasicBlock* block, BasicBlock* callBlock, GenTreeCall* call)
+{
+    CallArg* resumedDefArg = call->gtArgs.FindWellKnownArg(WellKnownArg::AsyncResumedDef);
+    if (resumedDefArg == nullptr)
+    {
+        return;
+    }
+
+    GenTree* resumed = resumedDefArg->GetNode();
+    assert(resumed->IsLclVarAddr() || resumed->OperIs(GT_LCL_VAR));
+
+    GenTree* value = m_comp->gtNewIconNode(1);
+    GenTree* store = m_comp->gtNewStoreValueNode(TYP_UBYTE, m_comp->gtCloneExpr(resumed), value, GTF_IND_NONFAULTING);
+
+    LIR::AsRange(block).InsertAtEnd(LIR::SeqTree(m_comp, store));
+}
+
+//------------------------------------------------------------------------
+// AsyncTransformation::RemoveAsyncResumedArgs:
+//   Remove the AsyncResumed and AsyncResumedDef pseudo-args.
+//
+// Parameters:
+//   callBlock - Block containing the call
+//   call      - Async call
+//
+void AsyncTransformation::RemoveAsyncResumedArgs(BasicBlock* callBlock, GenTreeCall* call)
+{
+    CallArg* resumedDefArg = call->gtArgs.FindWellKnownArg(WellKnownArg::AsyncResumedDef);
+    if (resumedDefArg != nullptr)
+    {
+        GenTree* resumedDef = resumedDefArg->GetNode();
+
+        // Avoid leaving LCL_ADDR around
+        if (resumedDef->IsLclVarAddr())
+        {
+            LIR::AsRange(callBlock).Remove(resumedDef);
+        }
+        else
+        {
+            resumedDef->SetUnusedValue();
+        }
+
+        call->gtArgs.RemoveUnsafe(resumedDefArg);
+        call->asyncInfo->HasResumptionIndicatorDef = false;
+    }
+
+    CallArg* resumedUseArg = call->gtArgs.FindWellKnownArg(WellKnownArg::AsyncResumed);
+    if (resumedUseArg != nullptr)
+    {
+        GenTree* resumedUse = resumedUseArg->GetNode();
+        resumedUse->SetUnusedValue();
+
+        call->gtArgs.RemoveUnsafe(resumedUseArg);
     }
 }
 

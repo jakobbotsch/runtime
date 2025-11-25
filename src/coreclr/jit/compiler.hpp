@@ -4709,15 +4709,29 @@ GenTree::VisitResult GenTree::VisitLocalDefs(Compiler* comp, TVisitor visitor)
     }
     if (OperIs(GT_CALL))
     {
-        GenTreeCall*         call    = AsCall();
-        GenTreeLclVarCommon* lclAddr = comp->gtCallGetDefinedRetBufLclAddr(call);
-        if (lclAddr != nullptr)
+        GenTreeCall* call = AsCall();
+
+        if (call->IsAsync())
+        {
+            GenTreeLclVarCommon* resumedArg = comp->gtCallGetDefinedAsyncResumedIndicatorLclAddr(call);
+            if (resumedArg != nullptr)
+            {
+                bool isEntire = comp->lvaLclExactSize(resumedArg->GetLclNum()) == 1;
+                if (visitor(LocalDef(resumedArg, isEntire, resumedArg->GetLclOffs(), 1)) == VisitResult::Abort)
+                {
+                    return VisitResult::Abort;
+                }
+            }
+        }
+
+        GenTreeLclVarCommon* retBuf = comp->gtCallGetDefinedRetBufLclAddr(call);
+        if (retBuf != nullptr)
         {
             unsigned storeSize = comp->typGetObjLayout(AsCall()->gtRetClsHnd)->GetSize();
 
-            bool isEntire = storeSize == comp->lvaLclExactSize(lclAddr->GetLclNum());
+            bool isEntire = storeSize == comp->lvaLclExactSize(retBuf->GetLclNum());
 
-            return visitor(LocalDef(lclAddr, isEntire, lclAddr->GetLclOffs(), storeSize));
+            return visitor(LocalDef(retBuf, isEntire, retBuf->GetLclOffs(), storeSize));
         }
     }
 
@@ -4752,11 +4766,21 @@ GenTree::VisitResult GenTree::VisitLocalDefNodes(Compiler* comp, TVisitor visito
     }
     if (OperIs(GT_CALL))
     {
-        GenTreeCall*         call    = AsCall();
-        GenTreeLclVarCommon* lclAddr = comp->gtCallGetDefinedRetBufLclAddr(call);
-        if (lclAddr != nullptr)
+        GenTreeCall* call = AsCall();
+
+        if (call->IsAsync())
         {
-            return visitor(lclAddr);
+            GenTreeLclVarCommon* resumedArg = comp->gtCallGetDefinedAsyncResumedIndicatorLclAddr(call);
+            if ((resumedArg != nullptr) && (visitor(resumedArg) == VisitResult::Abort))
+            {
+                return VisitResult::Abort;
+            }
+        }
+
+        GenTreeLclVarCommon* retBuf = comp->gtCallGetDefinedRetBufLclAddr(call);
+        if (retBuf != nullptr)
+        {
+            return visitor(retBuf);
         }
     }
 

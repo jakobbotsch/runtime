@@ -1619,6 +1619,8 @@ bool CallArgs::GetCustomRegister(Compiler* comp, CorInfoCallConvExtension cc, We
         case WellKnownArg::StackArrayLocal:
         case WellKnownArg::AsyncExecutionContext:
         case WellKnownArg::AsyncSynchronizationContext:
+        case WellKnownArg::AsyncResumed:
+        case WellKnownArg::AsyncResumedDef:
             // These are pseudo-args; they are not actual arguments, but we
             // reuse the argument mechanism to represent them as arbitrary uses
             // that are later expanded out.
@@ -13274,6 +13276,10 @@ const char* Compiler::gtGetWellKnownArgNameForArgMsg(WellKnownArg arg)
             return "exec ctx";
         case WellKnownArg::AsyncSynchronizationContext:
             return "sync ctx";
+        case WellKnownArg::AsyncResumed:
+            return "resumed use";
+        case WellKnownArg::AsyncResumedDef:
+            return "resumed def";
         default:
             return nullptr;
     }
@@ -19595,6 +19601,32 @@ GenTreeLclVarCommon* Compiler::gtCallGetDefinedRetBufLclAddr(GenTreeCall* call)
 
     // This may be called very late to check validity of LIR.
     node = node->gtSkipReloadOrCopy();
+
+    assert(node->OperIs(GT_LCL_ADDR) && lvaGetDesc(node->AsLclVarCommon())->IsDefinedViaAddress());
+
+    return node->AsLclVarCommon();
+}
+
+//------------------------------------------------------------------------
+// gtCallGetDefinedAsyncResumedIndicatorLclAddr:
+//   Get the tree corresponding to the address of the indicator local that this call defines.
+//
+// Parameters:
+//   call - the Call node
+//
+// Returns:
+//   A tree representing the address of a local.
+//
+GenTreeLclVarCommon* Compiler::gtCallGetDefinedAsyncResumedIndicatorLclAddr(GenTreeCall* call)
+{
+    if (!call->IsAsync() || !call->GetAsyncInfo().HasResumptionIndicatorDef)
+    {
+        return nullptr;
+    }
+
+    CallArg* asyncResumedIndicatorArg = call->gtArgs.FindWellKnownArg(WellKnownArg::AsyncResumedDef);
+    assert(asyncResumedIndicatorArg != nullptr);
+    GenTree* node = asyncResumedIndicatorArg->GetNode();
 
     assert(node->OperIs(GT_LCL_ADDR) && lvaGetDesc(node->AsLclVarCommon())->IsDefinedViaAddress());
 

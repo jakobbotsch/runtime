@@ -119,13 +119,15 @@ class AsyncTransformation
                                   const CallDefinitionInfo& callDefInfo,
                                   unsigned                  stateNum,
                                   const ContinuationLayout& layout);
-    void         SetSuspendedIndicator(BasicBlock* block, BasicBlock* callBlock, GenTreeCall* call);
     void         RestoreFromDataOnResumption(const ContinuationLayout& layout, BasicBlock* resumeBB);
     BasicBlock* RethrowExceptionOnResumption(BasicBlock* block, const ContinuationLayout& layout, BasicBlock* resumeBB);
     void        CopyReturnValueOnResumption(GenTreeCall*              call,
                                             const CallDefinitionInfo& callDefInfo,
                                             const ContinuationLayout& layout,
                                             BasicBlock*               storeResultBB);
+    void        SetAsyncResumedToPrevious(BasicBlock* callBlock, GenTreeCall* call);
+    void        SetAsyncResumedToTrue(BasicBlock* block, BasicBlock* callBlock, GenTreeCall* call);
+    void        RemoveAsyncResumedArgs(BasicBlock* callBlock, GenTreeCall* call);
 
     GenTreeIndir*    LoadFromOffset(GenTree*     base,
                                     unsigned     offset,

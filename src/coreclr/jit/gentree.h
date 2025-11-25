@@ -4361,6 +4361,9 @@ struct AsyncCallInfo
     // configured and whether it is a task await or custom await. This field
     // records that behavior.
     ContinuationContextHandling ContinuationContextHandling = ContinuationContextHandling::None;
+
+    // If this call has an AsyncResumedDef then this is set to true.
+    bool HasResumptionIndicatorDef = false;
 };
 
 // Return type descriptor of a GT_CALL node.
@@ -4635,6 +4638,8 @@ enum class WellKnownArg : unsigned
     RuntimeMethodHandle,
     AsyncExecutionContext,
     AsyncSynchronizationContext,
+    AsyncResumed,
+    AsyncResumedDef,
 };
 
 #ifdef DEBUG
