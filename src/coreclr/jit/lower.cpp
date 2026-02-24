@@ -4847,13 +4847,14 @@ GenTree* Lowering::LowerSelect(GenTreeConditional* select)
         JITDUMP("Converted to SELECTCC:\n");
         DISPTREERANGE(BlockRange(), newSelect);
         JITDUMP("\n");
+        cond = select->gtPrev;
     }
     else
     {
         ContainCheckSelect(select);
     }
 
-#ifdef TARGET_ARM64
+#if defined(TARGET_ARM64)
     if (trueVal->OperIs(GT_NOT, GT_NEG, GT_ADD) || falseVal->OperIs(GT_NOT, GT_NEG, GT_ADD))
     {
         TryLowerCselToCSOp(select, cond);
@@ -4861,6 +4862,18 @@ GenTree* Lowering::LowerSelect(GenTreeConditional* select)
     else if (trueVal->IsCnsIntOrI() || falseVal->IsCnsIntOrI())
     {
         TryLowerCnsIntCselToCinc(select, cond);
+    }
+#elif defined(TARGET_XARCH)
+    // On xarch it is beneficial to evaluate either the true or false operand
+    // before the condition's operands, since that will make it more likely
+    // that one of the operands starts out in the register that the select is
+    // evaluated into.
+    if (trueVal->IsIntegralConst() || falseVal->IsIntegralConst())
+    {
+        GenTree* op = trueVal->IsIntegralConst() ? trueVal : falseVal;
+        assert(!op->isContained());
+        BlockRange().Remove(op);
+        BlockRange().InsertBefore(cond->gtFirstNodeInOperandOrder(), op);
     }
 #endif
 
