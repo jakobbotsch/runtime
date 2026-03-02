@@ -25,7 +25,7 @@ namespace System.Runtime.CompilerServices
         [BypassReadyToRun]
         [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.Async)]
         [StackTraceHidden]
-        public static void AwaitAwaiter<TAwaiter>(TAwaiter awaiter) where TAwaiter : INotifyCompletion
+        public static unsafe void AwaitAwaiter<TAwaiter>(TAwaiter awaiter) where TAwaiter : INotifyCompletion
         {
             ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
             Continuation? sentinelContinuation = state.SentinelContinuation;
@@ -34,7 +34,22 @@ namespace System.Runtime.CompilerServices
 
             state.Notifier = awaiter;
             state.CaptureContexts();
+            state.OnCompleted = &CallOnCompletedGenericNotifier;
             AsyncSuspend(sentinelContinuation);
+        }
+
+        private static void CallOnCompletedGenericNotifier(ref RuntimeAsyncAwaitState state, Continuation headContinuation, Task task)
+        {
+            ExecutionContext? execCtx = state.ExecutionContext;
+            SynchronizationContext? syncCtx = state.SynchronizationContext;
+            INotifyCompletion? notifier = state.Notifier;
+            Debug.Assert(notifier != null && task.m_action is Action);
+
+            state.ExecutionContext = null;
+            state.SynchronizationContext = null;
+            state.Notifier = null;
+
+            notifier.OnCompleted(Unsafe.As<Delegate, Action>(ref task.m_action));
         }
 
         // Must be NoInlining because we use AsyncSuspend to manufacture an explicit suspension point.
@@ -48,7 +63,7 @@ namespace System.Runtime.CompilerServices
         [BypassReadyToRun]
         [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.Async)]
         [StackTraceHidden]
-        public static void UnsafeAwaitAwaiter<TAwaiter>(TAwaiter awaiter) where TAwaiter : ICriticalNotifyCompletion
+        public static unsafe void UnsafeAwaitAwaiter<TAwaiter>(TAwaiter awaiter) where TAwaiter : ICriticalNotifyCompletion
         {
             ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
             Continuation? sentinelContinuation = state.SentinelContinuation;
@@ -57,7 +72,22 @@ namespace System.Runtime.CompilerServices
 
             state.CriticalNotifier = awaiter;
             state.CaptureContexts();
+            state.OnCompleted = &CallOnCompletedGenericCriticalNotifier;
             AsyncSuspend(sentinelContinuation);
+        }
+
+        private static void CallOnCompletedGenericCriticalNotifier(ref RuntimeAsyncAwaitState state, Continuation headContinuation, Task task)
+        {
+            ExecutionContext? execCtx = state.ExecutionContext;
+            SynchronizationContext? syncCtx = state.SynchronizationContext;
+            ICriticalNotifyCompletion? notifier = state.CriticalNotifier;
+            Debug.Assert(notifier != null && task.m_action is Action);
+
+            state.ExecutionContext = null;
+            state.SynchronizationContext = null;
+            state.CriticalNotifier = null;
+
+            notifier.UnsafeOnCompleted(Unsafe.As<Delegate, Action>(ref task.m_action));
         }
 
         /// <summary>
@@ -215,6 +245,71 @@ namespace System.Runtime.CompilerServices
 
             return awaiter.GetResult();
         }
+
+        [Intrinsic]
+        [BypassReadyToRun]
+        [MethodImpl(MethodImplOptions.Async)]
+        [StackTraceHidden]
+        internal static unsafe void UnsafeAwaitAwaiterInContinuation<T>(int offset) where T : ICriticalNotifyCompletion
+        {
+            ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
+            Continuation? sentinelContinuation = state.SentinelContinuation;
+            if (sentinelContinuation == null)
+                state.SentinelContinuation = sentinelContinuation = new Continuation();
+
+            state.NotifierOffset = offset;
+            state.OnCompleted = default(T) is null ? &CallOnCompletedOnCriticalNotifier : &CallOnCompletedOnCriticalNotifier<T>;
+            AsyncSuspend(sentinelContinuation);
+        }
+
+        [Intrinsic]
+        [BypassReadyToRun]
+        [MethodImpl(MethodImplOptions.Async)]
+        [StackTraceHidden]
+        internal static unsafe void AwaitAwaiterInContinuation<T>(int offset) where T : INotifyCompletion
+        {
+            ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
+            Continuation? sentinelContinuation = state.SentinelContinuation;
+            if (sentinelContinuation == null)
+                state.SentinelContinuation = sentinelContinuation = new Continuation();
+
+            state.NotifierOffset = offset;
+            state.OnCompleted = default(T) is null ? &CallOnCompletedOnNotifier : &CallOnCompletedOnNotifier<T>;
+            AsyncSuspend(sentinelContinuation);
+        }
+
+        private static void CallOnCompletedOnCriticalNotifier(ref RuntimeAsyncAwaitState state, Continuation headContinuation, Task task)
+        {
+            ref object notifierStorage = ref Unsafe.As<byte, object>(ref Unsafe.Add(ref RuntimeHelpers.GetRawData(headContinuation), state.NotifierOffset));
+            Debug.Assert(notifierStorage is ICriticalNotifyCompletion && task.m_action is Action);
+            ref ICriticalNotifyCompletion notifier = ref Unsafe.As<object, ICriticalNotifyCompletion>(ref notifierStorage);
+            notifier.UnsafeOnCompleted(Unsafe.As<Delegate, Action>(ref task.m_action));
+        }
+
+        private static void CallOnCompletedOnNotifier(ref RuntimeAsyncAwaitState state, Continuation headContinuation, Task task)
+        {
+            ref object notifierStorage = ref Unsafe.As<byte, object>(ref Unsafe.Add(ref RuntimeHelpers.GetRawData(headContinuation), state.NotifierOffset));
+            Debug.Assert(notifierStorage is INotifyCompletion && task.m_action is Action);
+            ref INotifyCompletion notifier = ref Unsafe.As<object, INotifyCompletion>(ref notifierStorage);
+            notifier.OnCompleted(Unsafe.As<Delegate, Action>(ref task.m_action));
+        }
+
+        private static void CallOnCompletedOnCriticalNotifier<T>(ref RuntimeAsyncAwaitState state, Continuation headContinuation, Task task) where T : ICriticalNotifyCompletion
+        {
+            ref T notifierStorage = ref Unsafe.As<byte, T>(ref Unsafe.Add(ref RuntimeHelpers.GetRawData(headContinuation), state.NotifierOffset));
+            Debug.Assert(task.m_action is Action);
+            T notifier = notifierStorage; // We need a copy here to have same semantics as C# compiler and the non-optimized case
+            notifier.UnsafeOnCompleted(Unsafe.As<Delegate, Action>(ref task.m_action));
+        }
+
+        private static void CallOnCompletedOnNotifier<T>(ref RuntimeAsyncAwaitState state, Continuation headContinuation, Task task) where T : INotifyCompletion
+        {
+            ref T notifierStorage = ref Unsafe.As<byte, T>(ref Unsafe.Add(ref RuntimeHelpers.GetRawData(headContinuation), state.NotifierOffset));
+            Debug.Assert(task.m_action is Action);
+            T notifier = notifierStorage; // We need a copy here to have same semantics as C# compiler and the non-optimized case
+            notifier.OnCompleted(Unsafe.As<Delegate, Action>(ref task.m_action));
+        }
+
 #else
         public static void UnsafeAwaitAwaiter<TAwaiter>(TAwaiter awaiter) where TAwaiter : ICriticalNotifyCompletion { throw new PlatformNotSupportedException("Runtime Async is not supported on this platform."); }
         public static void AwaitAwaiter<TAwaiter>(TAwaiter awaiter) where TAwaiter : INotifyCompletion { throw new PlatformNotSupportedException("Runtime Async is not supported on this platform."); }
