@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Internal;
 
 namespace System.Runtime.CompilerServices
 {
@@ -25,6 +26,21 @@ namespace System.Runtime.CompilerServices
         }
 
         internal void Execute(bool canInline)
+        {
+            Debug.Assert(RuntimeAsyncTask != null);
+
+            if (!AsyncHelpers.ProgressRuntimeAsyncTask(RuntimeAsyncTask))
+            {
+                // We haven't finished constructing the continuation chain.
+                // RuntimeAsyncTask will call ExecuteWithoutProgress when it
+                // does so.
+                return;
+            }
+
+            ExecuteWithoutProgress(canInline);
+        }
+
+        internal void ExecuteWithoutProgress(bool canInline)
         {
             Debug.Assert(RuntimeAsyncTask != null);
 
@@ -114,15 +130,17 @@ namespace System.Runtime.CompilerServices
             _getResult(task, ref returnValue);
         }
 
-        public void Initialize(Task task)
+        public void Initialize(Task task, Task runtimeAsyncTask)
         {
             Task = task;
+            RuntimeAsyncTask = runtimeAsyncTask;
             _getResult = &GetResult;
         }
 
-        public void Initialize<T>(Task<T> task)
+        public void Initialize<T>(Task<T> task, Task runtimeAsyncTask)
         {
             Task = task;
+            RuntimeAsyncTask = runtimeAsyncTask;
             _getResult = &GetResult<T>;
         }
 

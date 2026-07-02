@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Sources;
+using Internal;
 
 namespace System.Runtime.CompilerServices
 {
@@ -30,8 +31,12 @@ namespace System.Runtime.CompilerServices
         {
             ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
             Continuation? sentinelContinuation = state.SentinelContinuation ??= new Continuation();
-            state.StackState->Notifier = awaiter;
-            state.CaptureContexts();
+
+            RuntimeAsyncStackState* stackState = state.StackState;
+            Task raTask = stackState->RuntimeAsyncTask ??= stackState->CreateTask();
+
+            awaiter.OnCompleted((Action)raTask.m_action!);
+
             AsyncSuspend(sentinelContinuation);
         }
 
@@ -50,8 +55,12 @@ namespace System.Runtime.CompilerServices
         {
             ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
             Continuation? sentinelContinuation = state.SentinelContinuation ??= new Continuation();
-            state.StackState->CriticalNotifier = awaiter;
-            state.CaptureContexts();
+
+            RuntimeAsyncStackState* stackState = state.StackState;
+            Task raTask = stackState->RuntimeAsyncTask ??= stackState->CreateTask();
+
+            awaiter.UnsafeOnCompleted((Action)raTask.m_action!);
+
             AsyncSuspend(sentinelContinuation);
         }
 

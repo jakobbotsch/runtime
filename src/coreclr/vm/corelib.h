@@ -748,7 +748,9 @@ DEFINE_CLASS(RUNTIME_ASYNC_AWAIT_STATE,  CompilerServices,    AsyncHelpers+Runti
 DEFINE_METHOD(RUNTIME_ASYNC_AWAIT_STATE, PUSH,                Push, NoSig)
 DEFINE_METHOD(RUNTIME_ASYNC_AWAIT_STATE, POP,                 Pop,  NoSig)
 
-DEFINE_CLASS(RUNTIME_ASYNC_STACK_STATE,  CompilerServices,    AsyncHelpers+RuntimeAsyncStackState)
+DEFINE_CLASS(RUNTIME_ASYNC_STACK_STATE,  CompilerServices,      AsyncHelpers+RuntimeAsyncStackState)
+DEFINE_METHOD(RUNTIME_ASYNC_STACK_STATE, SETUP_WITH_NEW_TASK_T, SetupWithNewTaskOfT, NoSig)
+DEFINE_METHOD(RUNTIME_ASYNC_STACK_STATE, SETUP_WITH_NEW_TASK,   SetupWithNewTask, NoSig)
 
 DEFINE_CLASS_U(CompilerServices, Continuation,          ContinuationObject)
 DEFINE_FIELD_U(Next,             ContinuationObject,    Next)

@@ -8,6 +8,8 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Sources;
+using Internal;
+using static System.Threading.Tasks.Task;
 
 #if NATIVEAOT
 using Internal.Runtime;
@@ -209,17 +211,8 @@ namespace System.Runtime.CompilerServices
         // costly write barriers on the hot path of suspension/resumption.
         private ref struct RuntimeAsyncStackState
         {
-            // The following are the possible introducers of asynchrony into a chain of awaits.
-            // In other words - when we build a chain of continuations it would be logicaly attached
-            // to one of these notifiers.
-            public ICriticalNotifyCompletion? CriticalNotifier;
-            public INotifyCompletion? Notifier;
-            public ValueTaskSourceContinuation? ValueTaskSourceContinuation;
-            public RuntimeAsyncTaskContinuation? TaskContinuation;
-
-            // When we suspend in the leaf, the contexts are captured into these fields.
-            public ExecutionContext? LeafExecutionContext;
-            public SynchronizationContext? LeafSynchronizationContext;
+            public Task? RuntimeAsyncTask;
+            public delegate*<Task> CreateTask;
 
             // When we enter the root of the async chain (either an async thunk
             // or DispatchContinuations), the contexts are captured into these
@@ -250,6 +243,31 @@ namespace System.Runtime.CompilerServices
                     ExecutionContext.RestoreChangedContextToThread(thread, RootExecutionContext, currentExecutionCtx);
                 }
             }
+
+            public void SetupWithExistingTask(Task t)
+            {
+                RuntimeAsyncTask = t;
+                CreateTask = null;
+            }
+
+            private void SetupWithNewTask()
+            {
+                // TODO: Just save method table and allocate it in caller?
+                // Seems coreclr does not have MethodTable.Of
+                CreateTask = &CreateRuntimeAsyncTask<VoidTaskResult>;
+            }
+
+            private void SetupWithNewTaskOfT<T>()
+            {
+                // TODO: Just save method table and allocate it in caller?
+                // Seems coreclr does not have MethodTable.Of
+                CreateTask = &CreateRuntimeAsyncTask<T>;
+            }
+
+            private static RuntimeAsyncTask<T> CreateRuntimeAsyncTask<T>()
+            {
+                return new RuntimeAsyncTask<T>();
+            }
         }
 
         // Used during suspensions to hold the continuation chain and on what we are waiting.
@@ -264,21 +282,6 @@ namespace System.Runtime.CompilerServices
             public Thread? CurrentThread;
 
             public RuntimeAsyncStackState* StackState;
-
-            public void CaptureContexts()
-            {
-                // CaptureContext is called from leaf await helpers. We either just started a runtime async chain
-                // (from a thunk), or we came from DispatchContinuations (on resumption).
-                // Both cases have already initialized CurrentThread.
-                Thread? curThread = CurrentThread;
-                Debug.Assert(curThread != null);
-                Debug.Assert(StackState != null);
-                // Here we get the execution context for presenting to the notifier,
-                // not for flowing across suspension to potentially another thread.
-                // Therefore we do not need to worry about IsFlowSuppressed
-                StackState->LeafExecutionContext = curThread._executionContext;
-                StackState->LeafSynchronizationContext = curThread._synchronizationContext;
-            }
 
             // At the start of an async chain (task-returning thunk or DispatchContinuations) this function
             // is called
@@ -356,6 +359,9 @@ namespace System.Runtime.CompilerServices
             ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
             Continuation? sentinelContinuation = state.SentinelContinuation ??= new Continuation();
 
+            RuntimeAsyncStackState* stackState = state.StackState;
+            Task raTask = stackState->RuntimeAsyncTask ??= stackState->CreateTask();
+
             RuntimeAsyncTaskContinuation? taskCont = state.CachedTaskContinuation;
             if (taskCont != null)
             {
@@ -366,7 +372,12 @@ namespace System.Runtime.CompilerServices
                 taskCont = new RuntimeAsyncTaskContinuation();
             }
 
-            taskCont.Initialize(task);
+            taskCont.Initialize(task, raTask);
+
+            if (!task.AddTaskContinuation(taskCont, addBeforeOthers: false))
+            {
+                MarkTaskReadyForDispatch(raTask);
+            }
 
             if ((options & ConfigureAwaitOptions.ContinueOnCapturedContext) != 0)
             {
@@ -378,9 +389,7 @@ namespace System.Runtime.CompilerServices
             }
 
             sentinelContinuation.Next = taskCont;
-            state.StackState->TaskContinuation = taskCont;
 
-            state.CaptureContexts();
             AsyncSuspend(taskCont);
         }
 
@@ -391,6 +400,9 @@ namespace System.Runtime.CompilerServices
             ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
             Continuation? sentinelContinuation = state.SentinelContinuation ??= new Continuation();
 
+            RuntimeAsyncStackState* stackState = state.StackState;
+            Task raTask = stackState->RuntimeAsyncTask ??= stackState->CreateTask();
+
             RuntimeAsyncTaskContinuation? taskCont = state.CachedTaskContinuation;
             if (taskCont != null)
             {
@@ -401,7 +413,12 @@ namespace System.Runtime.CompilerServices
                 taskCont = new RuntimeAsyncTaskContinuation();
             }
 
-            taskCont.Initialize<T>(task);
+            taskCont.Initialize<T>(task, raTask);
+
+            if (!task.AddTaskContinuation(taskCont, addBeforeOthers: false))
+            {
+                MarkTaskReadyForDispatch(raTask);
+            }
 
             if ((options & ConfigureAwaitOptions.ContinueOnCapturedContext) != 0)
             {
@@ -413,9 +430,7 @@ namespace System.Runtime.CompilerServices
             }
 
             sentinelContinuation.Next = taskCont;
-            state.StackState->TaskContinuation = taskCont;
 
-            state.CaptureContexts();
             AsyncSuspend(taskCont);
             return default!;
         }
@@ -437,6 +452,9 @@ namespace System.Runtime.CompilerServices
             ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
             Continuation? sentinelContinuation = state.SentinelContinuation ??= new Continuation();
 
+            RuntimeAsyncStackState* stackState = state.StackState;
+            Task raTask = stackState->RuntimeAsyncTask ??= stackState->CreateTask();
+
             Continuation nextCont;
             object? obj = valueTask._obj;
             if (obj is Task t)
@@ -451,8 +469,13 @@ namespace System.Runtime.CompilerServices
                     taskCont = new RuntimeAsyncTaskContinuation();
                 }
 
-                taskCont.Initialize(t);
-                state.StackState->TaskContinuation = taskCont;
+                taskCont.Initialize(t, raTask);
+
+                if (!t.AddTaskContinuation(taskCont, addBeforeOthers: false))
+                {
+                    MarkTaskReadyForDispatch(raTask);
+                }
+
                 nextCont = taskCont;
             }
             else
@@ -469,13 +492,10 @@ namespace System.Runtime.CompilerServices
 
                 Debug.Assert(obj is IValueTaskSource);
                 vtsCont.Initialize(Unsafe.As<object, IValueTaskSource>(ref obj), valueTask._token);
-                state.StackState->ValueTaskSourceContinuation = vtsCont;
                 nextCont = vtsCont;
             }
 
             sentinelContinuation.Next = nextCont;
-
-            state.CaptureContexts();
             AsyncSuspend(nextCont);
         }
 
@@ -485,6 +505,9 @@ namespace System.Runtime.CompilerServices
         {
             ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
             Continuation? sentinelContinuation = state.SentinelContinuation ??= new Continuation();
+
+            RuntimeAsyncStackState* stackState = state.StackState;
+            stackState->RuntimeAsyncTask ??= stackState->CreateTask();
 
             ValueTaskSourceContinuation? vtsCont = state.CachedValueTaskSourceContinuation;
             if (vtsCont != null)
@@ -510,9 +533,7 @@ namespace System.Runtime.CompilerServices
             }
 
             sentinelContinuation.Next = vtsCont;
-            state.StackState->ValueTaskSourceContinuation = vtsCont;
 
-            state.CaptureContexts();
             AsyncSuspend(vtsCont);
         }
 
@@ -522,6 +543,9 @@ namespace System.Runtime.CompilerServices
         {
             ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
             Continuation? sentinelContinuation = state.SentinelContinuation ??= new Continuation();
+
+            RuntimeAsyncStackState* stackState = state.StackState;
+            Task raTask = stackState->RuntimeAsyncTask ??= stackState->CreateTask();
 
             Continuation nextCont;
             object? obj = valueTask._obj;
@@ -537,8 +561,13 @@ namespace System.Runtime.CompilerServices
                     taskCont = new RuntimeAsyncTaskContinuation();
                 }
 
-                taskCont.Initialize<T>(t);
-                state.StackState->TaskContinuation = taskCont;
+                taskCont.Initialize<T>(t, raTask);
+
+                if (!t.AddTaskContinuation(taskCont, addBeforeOthers: false))
+                {
+                    MarkTaskReadyForDispatch(raTask);
+                }
+
                 nextCont = taskCont;
             }
             else
@@ -555,12 +584,10 @@ namespace System.Runtime.CompilerServices
 
                 Debug.Assert(obj is IValueTaskSource<T>);
                 vtsCont.Initialize<T>(Unsafe.As<object, IValueTaskSource<T>>(ref obj), valueTask._token);
-                state.StackState->ValueTaskSourceContinuation = vtsCont;
                 nextCont = vtsCont;
             }
 
             sentinelContinuation.Next = nextCont;
-            state.CaptureContexts();
             AsyncSuspend(nextCont);
             return default!;
         }
@@ -571,6 +598,9 @@ namespace System.Runtime.CompilerServices
         {
             ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
             Continuation? sentinelContinuation = state.SentinelContinuation ??= new Continuation();
+
+            RuntimeAsyncStackState* stackState = state.StackState;
+            stackState->RuntimeAsyncTask ??= stackState->CreateTask();
 
             ValueTaskSourceContinuation? vtsCont = state.CachedValueTaskSourceContinuation;
             if (vtsCont != null)
@@ -596,9 +626,7 @@ namespace System.Runtime.CompilerServices
             }
 
             sentinelContinuation.Next = vtsCont;
-            state.StackState->ValueTaskSourceContinuation = vtsCont;
 
-            state.CaptureContexts();
             AsyncSuspend(vtsCont);
             return default!;
         }
@@ -614,6 +642,9 @@ namespace System.Runtime.CompilerServices
             ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
             Continuation? sentinelContinuation = state.SentinelContinuation ??= new Continuation();
 
+            RuntimeAsyncStackState* stackState = state.StackState;
+            Task raTask = stackState->RuntimeAsyncTask ??= stackState->CreateTask();
+
             RuntimeAsyncTaskContinuation? taskCont = state.CachedTaskContinuation;
             if (taskCont != null)
             {
@@ -624,12 +655,15 @@ namespace System.Runtime.CompilerServices
                 taskCont = new RuntimeAsyncTaskContinuation();
             }
 
-            taskCont.Initialize(task);
+            taskCont.Initialize(task, raTask);
+
+            if (!task.AddTaskContinuation(taskCont, addBeforeOthers: false))
+            {
+                MarkTaskReadyForDispatch(raTask);
+            }
 
             sentinelContinuation.Next = taskCont;
-            state.StackState->TaskContinuation = taskCont;
 
-            state.CaptureContexts();
             AsyncSuspend(taskCont);
         }
 
@@ -644,6 +678,9 @@ namespace System.Runtime.CompilerServices
             ref RuntimeAsyncAwaitState state = ref t_runtimeAsyncAwaitState;
             Continuation? sentinelContinuation = state.SentinelContinuation ??= new Continuation();
 
+            RuntimeAsyncStackState* stackState = state.StackState;
+            Task raTask = stackState->RuntimeAsyncTask ??= stackState->CreateTask();
+
             RuntimeAsyncTaskContinuation? taskCont = state.CachedTaskContinuation;
             if (taskCont != null)
             {
@@ -654,12 +691,15 @@ namespace System.Runtime.CompilerServices
                 taskCont = new RuntimeAsyncTaskContinuation();
             }
 
-            taskCont.Initialize<T>(task);
+            taskCont.Initialize<T>(task, raTask);
+
+            if (!task.AddTaskContinuation(taskCont, addBeforeOthers: false))
+            {
+                MarkTaskReadyForDispatch(raTask);
+            }
 
             sentinelContinuation.Next = taskCont;
-            state.StackState->TaskContinuation = taskCont;
 
-            state.CaptureContexts();
             AsyncSuspend(taskCont);
             return default!;
         }
@@ -729,13 +769,13 @@ namespace System.Runtime.CompilerServices
                 // Ensure that state object isn't published out for others to see.
                 Debug.Assert((m_stateFlags & (int)InternalTaskOptions.PromiseTask) != 0, "Expected state flags to already be configured.");
                 Debug.Assert(m_stateObject is null, "Expected to be able to use the state object field for Continuation.");
-                m_action = DispatchContinuations;
+                m_action = ProgressAndDispatchContinuations;
                 m_stateFlags |= (int)InternalTaskOptions.HiddenState;
             }
 
             internal override void ExecuteDirectly(Thread? threadPoolThread)
             {
-                DispatchContinuations();
+                ProgressAndDispatchContinuations();
             }
 
             private Action GetContinuationAction()
@@ -747,104 +787,106 @@ namespace System.Runtime.CompilerServices
 
             private Continuation MoveContinuationState()
             {
-                object? stateObject = m_stateObject;
+                object? stateObject = Volatile.Read(ref m_stateObject);
                 Debug.Assert(stateObject is Continuation);
-                m_stateObject = null;
+                Volatile.Write(ref m_stateObject, null);
                 return Unsafe.As<Continuation>(stateObject);
             }
 
             private void SetContinuationState(Continuation value)
             {
                 Debug.Assert(m_stateObject == null);
-                m_stateObject = value;
+                Volatile.Write(ref m_stateObject, value);
             }
 
-            internal unsafe bool HandleSuspended(ref RuntimeAsyncAwaitState state)
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal bool HandleSuspended(ref RuntimeAsyncAwaitState state)
             {
-                Thread? currentThread = state.CurrentThread;
-                Debug.Assert(currentThread != null);
-
-                RuntimeAsyncStackState* stackState = state.StackState;
-                ExecutionContext? suspendingExecutionContext = stackState->LeafExecutionContext;
-                SynchronizationContext? suspendingSyncContext = stackState->LeafSynchronizationContext;
-                if (suspendingExecutionContext != currentThread._executionContext)
-                {
-                    currentThread._executionContext = suspendingExecutionContext;
-                }
-
-                if (suspendingSyncContext != currentThread._synchronizationContext)
-                {
-                    currentThread._synchronizationContext = suspendingSyncContext;
-                }
-
                 Continuation sentinelContinuation = state.SentinelContinuation!;
                 Continuation headContinuation = sentinelContinuation.Next!;
                 sentinelContinuation.Next = null;
 
+                Debug.Assert(headContinuation != null);
+
+                if (headContinuation is ValueTaskSourceContinuation valueTaskSourceCont)
+                {
+                    HandleSuspendedWithValueTaskSource(valueTaskSourceCont);
+                }
+
                 SetContinuationState(headContinuation);
+                // We have finished constructing the continuation chain.
+                // Mark that we are ready to dispatch the next time something happens.
+                if (!ProgressRuntimeAsyncTask(this))
+                {
+                    // No need to dispatch yet. This is the common case. We
+                    // will dispatch when the actual resumption happens.
+                    return true;
+                }
+
+                // We need to dispatch continuations here.
+
+                // RuntimeAsyncTaskContinuation is special because we allow it
+                // to be a leaf continuation that needs to resume in specified
+                // async contexts. To not pay the cost of checking for this in
+                // DispatchContinuations we instead inline the context logic in
+                // RuntimeAsyncTaskContinuation itself.
+                //
+                if (headContinuation is RuntimeAsyncTaskContinuation taskCont)
+                {
+                    // The case we are in right now means resumption happened while
+                    // we were constructing the continuation chain. So now we need
+                    // to make sure we properly move to the right contexts.
+                    //
+                    taskCont.ExecuteWithoutProgress(canInline: false);
+                    return true;
+                }
+
+                return false;
+            }
+
+            private void HandleSuspendedWithValueTaskSource(ValueTaskSourceContinuation valueTaskSourceCont)
+            {
+                object? source = valueTaskSourceCont.Source;
+                Debug.Assert(source != null);
+                // The awaiter must inform the ValueTaskSource on whether the continuation
+                // wants to run on a context, although the source may decide to ignore the suggestion.
+                // Since the behavior of the source takes precedence, we clear the context flags of
+                // the awaiting continuation (so it will run transparently on what the source decides)
+                // and then tell the source if the awaiting frame prefers to continue on a context.
+                // The reason why we do it here and not when the notifier is created is because
+                // the continuation chain builds from the innermost frame out and at the time when the
+                // notifier is created we do not know yet if the caller wants to continue on a context.
+
+                // Skip to a nontransparent/user continuation. Such continuation must exist.
+                // Since we see a VTS notifier, something was directly or indirectly
+                // awaiting either an async thunk for a ValueTask-returning method or
+                // the direct AsyncHelpers.Await(ValueTask/ValueTask<T>) path.
+                // In either case, that can only happen in nontransparent/user code.
+                Continuation contWithContinueFlags = valueTaskSourceCont;
+                while ((contWithContinueFlags.Flags & ContinuationFlags.AllContinuationFlags) == 0 && contWithContinueFlags.Next != null)
+                {
+                    contWithContinueFlags = contWithContinueFlags.Next;
+                }
+
+                ContinuationFlags continuationFlags = contWithContinueFlags.Flags;
+                const ContinuationFlags continueOnContextFlags =
+                    ContinuationFlags.ContinueOnCapturedSynchronizationContext |
+                    ContinuationFlags.ContinueOnCapturedTaskScheduler;
+
+                ValueTaskSourceOnCompletedFlags configFlags = ValueTaskSourceOnCompletedFlags.None;
+                if ((continuationFlags & continueOnContextFlags) != 0)
+                {
+                    // if await has captured some context, inform the source
+                    configFlags = ValueTaskSourceOnCompletedFlags.UseSchedulingContext;
+                }
+
+                // Clear continuation flags, so that continuation runs transparently
+                contWithContinueFlags.Flags &= ~ContinuationFlags.AllContinuationFlags;
 
                 try
                 {
-                    if (stackState->CriticalNotifier is { } critNotifier)
+                    unsafe
                     {
-                        // Result of async call to AwaitAwaiter or UnsafeAwaitAwaiter.
-                        // These never have special continuation context handling.
-                        Debug.Assert((headContinuation.Flags & ContinuationFlags.AllContinuationFlags) == 0);
-                        critNotifier.UnsafeOnCompleted(GetContinuationAction());
-                    }
-                    else if (stackState->TaskContinuation is { } taskCont)
-                    {
-                        Debug.Assert(headContinuation == taskCont);
-                        // Runtime async callable wrapper for task returning
-                        // method. This implements the context transparent
-                        // forwarding and makes these wrappers minimal cost.
-                        Debug.Assert(taskCont.Task != null);
-                        taskCont.RuntimeAsyncTask = this;
-                        if (!taskCont.Task.AddTaskContinuation(taskCont, addBeforeOthers: false))
-                        {
-                            taskCont.Execute(canInline: false);
-                        }
-                    }
-                    else if (stackState->ValueTaskSourceContinuation is { } valueTaskSourceCont)
-                    {
-                        Debug.Assert(headContinuation == valueTaskSourceCont);
-                        object? source = valueTaskSourceCont.Source;
-                        Debug.Assert(source != null);
-                        // The awaiter must inform the ValueTaskSource on whether the continuation
-                        // wants to run on a context, although the source may decide to ignore the suggestion.
-                        // Since the behavior of the source takes precedence, we clear the context flags of
-                        // the awaiting continuation (so it will run transparently on what the source decides)
-                        // and then tell the source if the awaiting frame prefers to continue on a context.
-                        // The reason why we do it here and not when the notifier is created is because
-                        // the continuation chain builds from the innermost frame out and at the time when the
-                        // notifier is created we do not know yet if the caller wants to continue on a context.
-
-                        // Skip to a nontransparent/user continuation. Such continuation must exist.
-                        // Since we see a VTS notifier, something was directly or indirectly
-                        // awaiting either an async thunk for a ValueTask-returning method or
-                        // the direct AsyncHelpers.Await(ValueTask/ValueTask<T>) path.
-                        // In either case, that can only happen in nontransparent/user code.
-                        Continuation contWithContinueFlags = valueTaskSourceCont;
-                        while ((contWithContinueFlags.Flags & ContinuationFlags.AllContinuationFlags) == 0 && contWithContinueFlags.Next != null)
-                        {
-                            contWithContinueFlags = contWithContinueFlags.Next;
-                        }
-
-                        ContinuationFlags continuationFlags = contWithContinueFlags.Flags;
-                        const ContinuationFlags continueOnContextFlags =
-                            ContinuationFlags.ContinueOnCapturedSynchronizationContext |
-                            ContinuationFlags.ContinueOnCapturedTaskScheduler;
-
-                        ValueTaskSourceOnCompletedFlags configFlags = ValueTaskSourceOnCompletedFlags.None;
-                        if ((continuationFlags & continueOnContextFlags) != 0)
-                        {
-                            // if await has captured some context, inform the source
-                            configFlags = ValueTaskSourceOnCompletedFlags.UseSchedulingContext;
-                        }
-
-                        // Clear continuation flags, so that continuation runs transparently
-                        contWithContinueFlags.Flags &= ~ContinuationFlags.AllContinuationFlags;
-
                         valueTaskSourceCont.OnCompletedValueTaskSource(
                             source,
                             ThreadPool.s_dispatchRuntimeAsyncContinuationsCallback,
@@ -852,40 +894,27 @@ namespace System.Runtime.CompilerServices
                             valueTaskSourceCont.Token,
                             configFlags);
                     }
-                    else
-                    {
-                        Debug.Assert((headContinuation.Flags & ContinuationFlags.AllContinuationFlags) == 0);
-                        Debug.Assert(stackState->Notifier != null);
-                        stackState->Notifier!.OnCompleted(GetContinuationAction());
-                    }
-
-                    return true;
                 }
                 catch (Exception ex)
                 {
+                    // TODO: Shouldn't we actually rethrow this back to
+                    // DispatchContinuations to invoke the next
+                    // continuation with the exception? That would better
+                    // match async1.
                     Task.ThrowAsync(ex, targetContext: null);
                 }
-
-                return false;
             }
 
-            internal void InstrumentedHandleSuspended(AsyncInstrumentation.Flags flags, ref RuntimeAsyncAwaitState state)
+            internal bool InstrumentedHandleSuspended(AsyncInstrumentation.Flags flags, ref RuntimeAsyncAwaitState state)
             {
                 if (AsyncInstrumentation.IsEnabled.AsyncDebugger(flags))
                 {
                     Continuation? nextContinuation = state.SentinelContinuation!.Next;
 
                     AsyncDebugger.HandleSuspended(nextContinuation);
-
-                    if (!HandleSuspended(ref state))
-                    {
-                        AsyncDebugger.HandleSuspendedFailed(this, nextContinuation);
-                    }
-
-                    return;
                 }
 
-                HandleSuspended(ref state);
+                return HandleSuspended(ref state);
             }
 
 #pragma warning disable CA1822 // Mark members as static
@@ -896,8 +925,23 @@ namespace System.Runtime.CompilerServices
 #pragma warning restore CA1822
 
             [StackTraceHidden]
+            private void ProgressAndDispatchContinuations()
+            {
+                if (!ProgressRuntimeAsyncTask(this))
+                {
+                    return;
+                }
+
+                // TODO: This atomic update followed by masking off the bit
+                // could be Interlocked.Xor if the API existed.
+                Interlocked.And(ref m_stateFlags, ~(int)TaskStateFlags.ReadyToDispatchContinuations);
+
+                DispatchContinuations();
+            }
+
+            [StackTraceHidden]
             // NOTE, any changes done to this method need to be replicated in InstrumentedDispatchContinuations as well.
-            private unsafe void DispatchContinuations()
+            internal unsafe void DispatchContinuations()
             {
                 if (RuntimeAsyncInstrumentationHelpers.InstrumentCheckPoint)
                 {
@@ -909,13 +953,15 @@ namespace System.Runtime.CompilerServices
                     }
                 }
 
-                // Intentionally skip initialization for this state; the Push
-                // call below will initialize non-GC refs, and GC refs will be
+                // Intentionally skip initialization for this state; the calls
+                // below will initialize non-GC refs, and GC refs will be
                 // zeroed by prolog.
                 RuntimeAsyncStackState stackState;
 
                 ref RuntimeAsyncAwaitState awaitState = ref t_runtimeAsyncAwaitState;
                 awaitState.Push(&stackState);
+
+                stackState.SetupWithExistingTask(this);
 
                 ref AsyncDispatcherInfo* refDispatcherInfo = ref AsyncDispatcherInfo.t_current;
 
@@ -946,7 +992,12 @@ namespace System.Runtime.CompilerServices
                         if (newContinuation != null)
                         {
                             newContinuation.Next = nextContinuation;
-                            HandleSuspended(ref awaitState);
+                            if (!HandleSuspended(ref awaitState))
+                            {
+                                Interlocked.And(ref m_stateFlags, ~(int)TaskStateFlags.ReadyToDispatchContinuations);
+                                asyncDispatcherInfo.NextContinuation = MoveContinuationState();
+                                continue;
+                            }
 
                             awaitState.Pop();
                             refDispatcherInfo = asyncDispatcherInfo.Next;
@@ -1017,13 +1068,14 @@ namespace System.Runtime.CompilerServices
             [StackTraceHidden]
             private unsafe void InstrumentedDispatchContinuations(AsyncInstrumentation.Flags flags)
             {
-                // Intentionally skip initialization for this state; the Push
-                // call below will initialize non-GC refs, and GC refs will be
+                // Intentionally skip initialization for this state; the calls
+                // below will initialize non-GC refs, and GC refs will be
                 // zeroed by prolog.
                 RuntimeAsyncStackState stackState;
 
                 ref RuntimeAsyncAwaitState awaitState = ref t_runtimeAsyncAwaitState;
                 awaitState.Push(&stackState);
+                stackState.SetupWithExistingTask(this);
 
                 ref AsyncDispatcherInfo* refDispatcherInfo = ref AsyncDispatcherInfo.t_current;
 
@@ -1169,6 +1221,7 @@ namespace System.Runtime.CompilerServices
                     }
 
                     SetContinuationState(continuation);
+                    MarkTaskReadyForDispatch(this);
                     ThreadPool.UnsafeQueueUserWorkItemInternal(this, preferLocal: true);
                     return true;
                 }
@@ -1186,6 +1239,7 @@ namespace System.Runtime.CompilerServices
                     }
 
                     SetContinuationState(continuation);
+                    MarkTaskReadyForDispatch(this);
 
                     try
                     {
@@ -1206,6 +1260,8 @@ namespace System.Runtime.CompilerServices
                     TaskScheduler sched = (TaskScheduler)continuationContext;
 
                     SetContinuationState(continuation);
+                    MarkTaskReadyForDispatch(this);
+
                     TaskSchedulerAwaitTaskContinuation.RunOrScheduleAction(GetContinuationAction(), sched, capturedContext: null, allowInlining: true);
 
                     return true;
@@ -1217,8 +1273,34 @@ namespace System.Runtime.CompilerServices
             private static readonly SendOrPostCallback s_postCallback = static state =>
             {
                 Debug.Assert(state is RuntimeAsyncTask<T>);
-                ((RuntimeAsyncTask<T>)state).DispatchContinuations();
+                ((RuntimeAsyncTask<T>)state).ProgressAndDispatchContinuations();
             };
+        }
+
+        /// <summary>
+        /// Progresses the runtime async task. Used either when the
+        /// continuation chain has finished creation or when source of
+        /// asynchrony resumes. Returns true if it is time to dispatch
+        /// continuations and false otherwise.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool ProgressRuntimeAsyncTask(Task task)
+        {
+            return !task.AtomicStateUpdate(
+                (int)TaskStateFlags.ReadyToDispatchContinuations,
+                (int)TaskStateFlags.ReadyToDispatchContinuations);
+        }
+
+        // Mark that a task is ready for dispatch. Should only be used in cases
+        // where there is no racing and where we know that the task is
+        // definitely not ready for dispatch.
+        internal static void MarkTaskReadyForDispatch(Task task)
+        {
+            Debug.Assert((task.m_stateFlags & (int)TaskStateFlags.ReadyToDispatchContinuations) == 0);
+            // We know that we are not racing with other threads on this flag,
+            // but we may race with other threads on the other flags, so we
+            // still need to ensure we do not lose their updates.
+            Interlocked.Or(ref task.m_stateFlags, (int)TaskStateFlags.ReadyToDispatchContinuations);
         }
 
         private static void InstrumentedFinalizeRuntimeAsyncTask<T>(RuntimeAsyncTask<T> task, ref RuntimeAsyncAwaitState state, AsyncInstrumentation.Flags flags)
@@ -1241,7 +1323,10 @@ namespace System.Runtime.CompilerServices
                 }
             }
 
-            task.InstrumentedHandleSuspended(flags, ref state);
+            if (!task.InstrumentedHandleSuspended(flags, ref state))
+            {
+                task.ExecuteDirectly(null);
+            }
             return;
         }
 
@@ -1258,25 +1343,33 @@ namespace System.Runtime.CompilerServices
                 }
             }
 
-            task.HandleSuspended(ref state);
+            if (!task.HandleSuspended(ref state))
+            {
+                Interlocked.And(ref task.m_stateFlags, ~(int)TaskStateFlags.ReadyToDispatchContinuations);
+                task.DispatchContinuations();
+            }
         }
 
         // Change return type to RuntimeAsyncTask<T?> -- no benefit since this is used for Task returning thunks only
 #pragma warning disable CA1859
         // When a Task-returning thunk gets a continuation result
         // it calls here to make a Task that awaits on the current async state.
-        private static Task<T?> FinalizeTaskReturningThunk<T>(ref RuntimeAsyncAwaitState state)
+        private static unsafe Task<T?> FinalizeTaskReturningThunk<T>(ref RuntimeAsyncAwaitState state)
         {
-            RuntimeAsyncTask<T?> result = new();
-            FinalizeRuntimeAsyncTask(ref state, result!);
-            return result;
+            Task? task = state.StackState->RuntimeAsyncTask;
+            Debug.Assert(task is RuntimeAsyncTask<T?>);
+            RuntimeAsyncTask<T?> raTask = Unsafe.As<Task?, RuntimeAsyncTask<T?>>(ref task);
+            FinalizeRuntimeAsyncTask(ref state, raTask);
+            return raTask;
         }
 
-        private static Task FinalizeTaskReturningThunk(ref RuntimeAsyncAwaitState state)
+        private static unsafe Task FinalizeTaskReturningThunk(ref RuntimeAsyncAwaitState state)
         {
-            RuntimeAsyncTask<VoidTaskResult> result = new();
-            FinalizeRuntimeAsyncTask(ref state, result!);
-            return result;
+            Task? task = state.StackState->RuntimeAsyncTask;
+            Debug.Assert(task is RuntimeAsyncTask<VoidTaskResult>);
+            RuntimeAsyncTask<VoidTaskResult> raTask = Unsafe.As<Task?, RuntimeAsyncTask<VoidTaskResult>>(ref task);
+            FinalizeRuntimeAsyncTask(ref state, raTask);
+            return raTask;
         }
 
         private static ValueTask<T?> FinalizeValueTaskReturningThunk<T>(ref RuntimeAsyncAwaitState state)
@@ -1808,18 +1901,6 @@ namespace System.Runtime.CompilerServices
                 if (nextContinuation != null)
                 {
                     Task.TryAddRuntimeAsyncContinuationChainTimestamps(nextContinuation);
-                }
-            }
-
-            public static void HandleSuspendedFailed(Task task, Continuation? nextContinuation)
-            {
-                if (nextContinuation != null)
-                {
-                    Task.RemoveRuntimeAsyncTask(task, nextContinuation);
-                }
-                else
-                {
-                    Task.RemoveRuntimeAsyncTask(task);
                 }
             }
         }

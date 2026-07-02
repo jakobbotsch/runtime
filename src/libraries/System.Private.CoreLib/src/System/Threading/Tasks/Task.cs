@@ -123,7 +123,7 @@ namespace System.Threading.Tasks
         // The delegate to invoke for a delegate-backed Task.
         // This field also may be used by async state machines to cache an Action.
         internal Delegate? m_action;
-        private protected object? m_stateObject; // A state object that can be optionally supplied, passed to action.
+        internal object? m_stateObject; // A state object that can be optionally supplied, passed to action.
         internal TaskScheduler? m_taskScheduler; // The task scheduler this task runs under.
 
         internal volatile int m_stateFlags; // SOS DumpAsync command depends on this name
@@ -140,20 +140,21 @@ namespace System.Threading.Tasks
             //   0x000000FF - publicly exposed TaskCreationOptions flags
             // See TaskCreationOptions for bit values associated with TaskCreationOptions
 
-            Started = 0x10000,                       // bin: 0000 0000 0000 0001 0000 0000 0000 0000
-            DelegateInvoked = 0x20000,               // bin: 0000 0000 0000 0010 0000 0000 0000 0000
-            Disposed = 0x40000,                      // bin: 0000 0000 0000 0100 0000 0000 0000 0000
-            ExceptionObservedByParent = 0x80000,     // bin: 0000 0000 0000 1000 0000 0000 0000 0000
-            CancellationAcknowledged = 0x100000,     // bin: 0000 0000 0001 0000 0000 0000 0000 0000
-            Faulted = 0x200000,                      // bin: 0000 0000 0010 0000 0000 0000 0000 0000
-            Canceled = 0x400000,                     // bin: 0000 0000 0100 0000 0000 0000 0000 0000
-            WaitingOnChildren = 0x800000,            // bin: 0000 0000 1000 0000 0000 0000 0000 0000
-            RanToCompletion = 0x1000000,             // bin: 0000 0001 0000 0000 0000 0000 0000 0000
-            WaitingForActivation = 0x2000000,        // bin: 0000 0010 0000 0000 0000 0000 0000 0000
-            CompletionReserved = 0x4000000,          // bin: 0000 0100 0000 0000 0000 0000 0000 0000
-            WaitCompletionNotification = 0x10000000, // bin: 0001 0000 0000 0000 0000 0000 0000 0000
-            ExecutionContextIsNull = 0x20000000,     // bin: 0010 0000 0000 0000 0000 0000 0000 0000
-            TaskScheduledWasFired = 0x40000000,      // bin: 0100 0000 0000 0000 0000 0000 0000 0000
+            Started = 0x10000,                        // bin: 0000 0000 0000 0001 0000 0000 0000 0000
+            DelegateInvoked = 0x20000,                // bin: 0000 0000 0000 0010 0000 0000 0000 0000
+            Disposed = 0x40000,                       // bin: 0000 0000 0000 0100 0000 0000 0000 0000
+            ExceptionObservedByParent = 0x80000,      // bin: 0000 0000 0000 1000 0000 0000 0000 0000
+            CancellationAcknowledged = 0x100000,      // bin: 0000 0000 0001 0000 0000 0000 0000 0000
+            Faulted = 0x200000,                       // bin: 0000 0000 0010 0000 0000 0000 0000 0000
+            Canceled = 0x400000,                      // bin: 0000 0000 0100 0000 0000 0000 0000 0000
+            WaitingOnChildren = 0x800000,             // bin: 0000 0000 1000 0000 0000 0000 0000 0000
+            RanToCompletion = 0x1000000,              // bin: 0000 0001 0000 0000 0000 0000 0000 0000
+            WaitingForActivation = 0x2000000,         // bin: 0000 0010 0000 0000 0000 0000 0000 0000
+            CompletionReserved = 0x4000000,           // bin: 0000 0100 0000 0000 0000 0000 0000 0000
+            ReadyToDispatchContinuations = 0x8000000, // bin: 0000 1000 0000 0000 0000 0000 0000 0000
+            WaitCompletionNotification = 0x10000000,  // bin: 0001 0000 0000 0000 0000 0000 0000 0000
+            ExecutionContextIsNull = 0x20000000,      // bin: 0010 0000 0000 0000 0000 0000 0000 0000
+            TaskScheduledWasFired = 0x40000000,       // bin: 0100 0000 0000 0000 0000 0000 0000 0000
 
             CompletedMask = Canceled | Faulted | RanToCompletion, // A mask for all of the final states a task may be in. SOS DumpAsync command depends on these values.
             OptionsMask = 0xFFFF,                    // signifies the Options portion of m_stateFlags bin: 0000 0000 0000 0000 1111 1111 1111 1111

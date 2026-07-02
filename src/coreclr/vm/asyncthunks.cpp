@@ -83,6 +83,7 @@ void MethodDesc::EmitTaskReturningThunk(MethodDesc* pAsyncCallVariant, MetaSig& 
     // RuntimeAsyncStackState stackState;
     // ref RuntimeAsyncAwaitState awaitState = ref AsyncHelpers.t_runtimeAsyncAwaitState;
     // awaitState.Push(&stackState);
+    // stackState.SetupWithNewTask<T>();
     //
     // try
     // {
@@ -139,6 +140,21 @@ void MethodDesc::EmitTaskReturningThunk(MethodDesc* pAsyncCallVariant, MetaSig& 
     pCode->EmitLDLOC(refAwaitStateLocal);
     pCode->EmitLDLOCA(stackStateLocal);
     pCode->EmitCALL(METHOD__RUNTIME_ASYNC_AWAIT_STATE__PUSH, 2, 0);
+
+    MethodDesc* setupWithNewTask;
+    if (logicalResultLocal != UINT_MAX)
+    {
+        setupWithNewTask = CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_STACK_STATE__SETUP_WITH_NEW_TASK_T);
+        setupWithNewTask = FindOrCreateAssociatedMethodDesc(setupWithNewTask, setupWithNewTask->GetMethodTable(), FALSE, Instantiation(&thLogicalRetType, 1), FALSE);
+    }
+    else
+    {
+        setupWithNewTask = CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_STACK_STATE__SETUP_WITH_NEW_TASK);
+    }
+
+    int setupWithNewTaskToken = GetTokenForGenericMethodCallWithAsyncReturnType(pCode, setupWithNewTask);
+    pCode->EmitLDLOCA(stackStateLocal);
+    pCode->EmitCALL(setupWithNewTaskToken, 1, 0);
 
     {
         pCode->BeginTryBlock();
