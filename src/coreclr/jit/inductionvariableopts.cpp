@@ -855,17 +855,6 @@ bool Compiler::optWidenIVs(ScalarEvolutionContext& scevContext, FlowGraphNatural
         LclVarDsc* lclDsc = lvaGetDesc(lclNum);
         JITDUMP("  V%02u is a primary induction variable in " FMT_LP "\n", lclNum, loop->GetIndex());
 
-        assert(!lclDsc->lvPromoted);
-
-        // For a struct field with occurrences of the parent local we won't
-        // be able to do much.
-        if (lclDsc->lvIsStructField && loopInfo->HasAnyOccurrences(loop, lclDsc->lvParentLcl))
-        {
-            JITDUMP("  V%02u is a struct field whose parent local V%02u has occurrences inside the loop\n", lclNum,
-                    lclDsc->lvParentLcl);
-            continue;
-        }
-
         if (optWidenPrimaryIV(loop, lclNum, addRec, loopInfo))
         {
             numWidened++;
@@ -1327,11 +1316,6 @@ bool Compiler::optCanAndShouldChangeExitTest(GenTree* cond, bool dump)
 bool Compiler::optLocalHasNonLoopUses(unsigned lclNum, FlowGraphNaturalLoop* loop, PerLoopInfo* loopInfo)
 {
     LclVarDsc* varDsc = lvaGetDesc(lclNum);
-    if (varDsc->lvIsStructField && loopInfo->HasAnyOccurrences(loop, varDsc->lvParentLcl))
-    {
-        return true;
-    }
-
     if (!varDsc->lvTracked && !varDsc->lvInSsa)
     {
         // We do not have liveness we can use for this untracked local.

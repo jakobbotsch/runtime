@@ -2176,12 +2176,7 @@ bool Compiler::fgTryMorphStructArg(CallArg* arg)
         // Try to see if we can and should use promoted fields to pass this
         // argument.
         //
-        if (varDsc->lvPromoted && !varDsc->lvDoNotEnregister && (!isSplit || FieldsMatchAbi(varDsc, arg->AbiInfo)))
-        {
-            newArg = fgMorphLclToFieldList(lclNode)->SoleFieldOrThis();
-            newArg = fgMorphTree(newArg);
-        }
-    }
+}
     else if (argNode->OperIsFieldList())
     {
         // We can already see a field list here if physical promotion created it.
@@ -2388,34 +2383,7 @@ bool Compiler::fgTryMorphStructArg(CallArg* arg)
 //
 bool Compiler::FieldsMatchAbi(LclVarDsc* varDsc, const ABIPassingInformation& abiInfo)
 {
-    if (varDsc->lvFieldCnt != abiInfo.CountRegsAndStackSlots())
-    {
-        return false;
-    }
-
-    for (const ABIPassingSegment& seg : abiInfo.Segments())
-    {
-        if (seg.IsPassedInRegister())
-        {
-            unsigned fieldLclNum = lvaGetFieldLocal(varDsc, seg.Offset);
-            if (fieldLclNum == BAD_VAR_NUM)
-            {
-                return false;
-            }
-        }
-        else
-        {
-            for (unsigned offset = 0; offset < seg.Size; offset += TARGET_POINTER_SIZE)
-            {
-                if (lvaGetFieldLocal(varDsc, seg.Offset + offset) == BAD_VAR_NUM)
-                {
-                    return false;
-                }
-            }
-        }
-    }
-
-    return true;
+    return false;
 }
 
 //------------------------------------------------------------------------
@@ -2429,22 +2397,7 @@ bool Compiler::FieldsMatchAbi(LclVarDsc* varDsc, const ABIPassingInformation& ab
 //
 GenTreeFieldList* Compiler::fgMorphLclToFieldList(GenTreeLclVar* lcl)
 {
-    LclVarDsc* varDsc = lvaGetDesc(lcl);
-    assert(varDsc->lvPromoted);
-    unsigned fieldCount  = varDsc->lvFieldCnt;
-    unsigned fieldLclNum = varDsc->lvFieldLclStart;
-
-    GenTreeFieldList* fieldList = new (this, GT_FIELD_LIST) GenTreeFieldList();
-
-    for (unsigned i = 0; i < fieldCount; i++)
-    {
-        LclVarDsc* fieldVarDsc = lvaGetDesc(fieldLclNum);
-        GenTree*   lclVar      = gtNewLclvNode(fieldLclNum, fieldVarDsc->TypeGet());
-        fieldList->AddField(this, lclVar, fieldVarDsc->lvFldOffset, fieldVarDsc->TypeGet());
-        fieldLclNum++;
-    }
-
-    return fieldList;
+    unreached();
 }
 
 //------------------------------------------------------------------------
@@ -2502,7 +2455,7 @@ void Compiler::fgMakeOutgoingStructArgCopy(GenTreeCall* call, CallArg* arg)
             if (!omitCopy && fgGlobalMorph)
             {
                 omitCopy = (varDsc->lvIsLastUseCopyOmissionCandidate || (implicitByRefLcl != nullptr)) &&
-                           !varDsc->lvPromoted && !varDsc->lvIsStructField && ((lcl->gtFlags & GTF_VAR_DEATH) != 0);
+                           ((lcl->gtFlags & GTF_VAR_DEATH) != 0);
             }
 
             // Disallow the argument from potentially aliasing the return
@@ -3238,76 +3191,31 @@ GenTree* Compiler::fgMorphExpandStackArgForVarArgs(GenTreeLclVarCommon* lclNode)
 //
 GenTree* Compiler::fgMorphExpandImplicitByRefArg(GenTreeLclVarCommon* lclNode)
 {
-    unsigned   lclNum         = lclNode->GetLclNum();
-    LclVarDsc* varDsc         = lvaGetDesc(lclNum);
-    unsigned   fieldOffset    = 0;
-    unsigned   newLclNum      = BAD_VAR_NUM;
-    bool       isStillLastUse = false;
+    unsigned   lclNum = lclNode->GetLclNum();
+    LclVarDsc* varDsc = lvaGetDesc(lclNum);
 
-    assert(lvaIsImplicitByRefLocal(lclNum) ||
-           (varDsc->lvIsStructField && lvaIsImplicitByRefLocal(varDsc->lvParentLcl)));
+    assert(lvaIsImplicitByRefLocal(lclNum));
 
-    if (lvaIsImplicitByRefLocal(lclNum))
+    // The SIMD transformation to coalesce contiguous references to SIMD vector fields will re-invoke
+    // the traversal to mark address-taken locals. So, we may encounter a tree that has already been
+    // transformed to TYP_BYREF. If we do, leave it as-is.
+    if (lclNode->OperIs(GT_LCL_VAR) && lclNode->TypeIs(TYP_BYREF))
     {
-        // The SIMD transformation to coalesce contiguous references to SIMD vector fields will re-invoke
-        // the traversal to mark address-taken locals. So, we may encounter a tree that has already been
-        // transformed to TYP_BYREF. If we do, leave it as-is.
-        if (lclNode->OperIs(GT_LCL_VAR) && lclNode->TypeIs(TYP_BYREF))
-        {
-            return nullptr;
-        }
-
-        if (varDsc->lvPromoted)
-        {
-            // fgRetypeImplicitByRefArgs created a new promoted struct local to represent this arg.
-            // Rewrite the node to refer to it.
-            assert(varDsc->lvFieldLclStart != 0);
-
-            lclNode->SetLclNum(varDsc->lvFieldLclStart);
-            return lclNode;
-        }
-
-        newLclNum = lclNum;
-
-        // As a special case, for implicit byref args where we undid promotion we
-        // can still know whether the use of the implicit byref local is a last
-        // use, and whether we can omit a copy when passed as an argument (the
-        // common reason why promotion is undone).
-        //
-        // We skip this propagation for the fields of the promoted local. Those are
-        // going to be transformed into accesses off of the parent and we cannot
-        // know here if this is going to be the last use of the parent local (this
-        // would require tracking a full life set on the side, which we do not do
-        // in morph).
-        //
-        if (!varDsc->lvPromoted)
-        {
-            if (varDsc->lvFieldLclStart != 0)
-            {
-                // Reference to whole implicit byref parameter that was promoted
-                // but isn't anymore. Check if all fields are dying.
-                GenTreeFlags allFieldsDying = lvaGetDesc(varDsc->lvFieldLclStart)->AllFieldDeathFlags();
-                isStillLastUse              = (lclNode->gtFlags & allFieldsDying) == allFieldsDying;
-            }
-            else
-            {
-                // Was never promoted, treated as single value.
-                isStillLastUse = (lclNode->gtFlags & GTF_VAR_DEATH) != 0;
-            }
-        }
+        return nullptr;
     }
-    else
-    {
-        // This was a field reference to an implicit-by-reference struct parameter that was dependently promoted.
-        newLclNum   = varDsc->lvParentLcl;
-        fieldOffset = varDsc->lvFldOffset;
-    }
+
+    unsigned newLclNum = lclNum;
+
+    // For implicit byref args we can know whether the use of the implicit byref
+    // local is a last use, and whether we can omit a copy when passed as an
+    // argument (the common reason why the copy is omitted).
+    bool isStillLastUse = (lclNode->gtFlags & GTF_VAR_DEATH) != 0;
 
     // Add a level of indirection to this node. The "base" will be a local node referring to "newLclNum".
     // We will also add an offset, and, if the original "lclNode" represents a location, a dereference.
     GenTree*     data          = lclNode->OperIsLocalStore() ? lclNode->Data() : nullptr;
     bool         isLoad        = lclNode->OperIsLocalRead();
-    unsigned     offset        = lclNode->GetLclOffs() + fieldOffset;
+    unsigned     offset        = lclNode->GetLclOffs();
     var_types    argNodeType   = lclNode->TypeGet();
     ClassLayout* argNodeLayout = (argNodeType == TYP_STRUCT) ? lclNode->GetLayout(this) : nullptr;
 
@@ -3367,7 +3275,7 @@ GenTree* Compiler::fgMorphExpandLocal(GenTreeLclVarCommon* lclNode)
     if (fgGlobalMorph)
     {
         LclVarDsc* dsc = lvaGetDesc(lclNode);
-        if (dsc->lvIsImplicitByRef || (dsc->lvIsStructField && lvaIsImplicitByRefLocal(dsc->lvParentLcl)))
+        if (dsc->lvIsImplicitByRef)
         {
             expandedTree = fgMorphExpandImplicitByRefArg(lclNode);
         }
@@ -4283,30 +4191,10 @@ bool Compiler::fgCallArgWillPointIntoLocalFrame(GenTreeCall* call, CallArg& arg)
     const unsigned   lclNum = lcl->GetLclNum();
     LclVarDsc* const varDsc = lvaGetDesc(lcl);
 
-    // The param must not be promoted; if we've promoted, then the arg will be
-    // a local struct assembled from the promoted fields.
-    if (varDsc->lvPromoted)
-    {
-        JITDUMP("Arg [%06u] is promoted implicit byref V%02u, so no tail call\n", dspTreeID(arg.GetNode()), lclNum);
-
-        return true;
-    }
-
-    assert(!varDsc->lvIsStructField);
-
     JITDUMP("Arg [%06u] is unpromoted implicit byref V%02u, seeing if we can still tail call\n",
             dspTreeID(arg.GetNode()), lclNum);
 
-    GenTreeFlags deathFlags;
-    if (varDsc->lvFieldLclStart != 0)
-    {
-        // Undone promotion case.
-        deathFlags = lvaGetDesc(varDsc->lvFieldLclStart)->AllFieldDeathFlags();
-    }
-    else
-    {
-        deathFlags = GTF_VAR_DEATH;
-    }
+    GenTreeFlags deathFlags = GTF_VAR_DEATH;
 
     if ((lcl->gtFlags & deathFlags) == deathFlags)
     {
@@ -4479,18 +4367,8 @@ GenTree* Compiler::fgMorphPotentialTailCall(GenTreeCall* call)
                 {
                     // The address of the implicit-byref is a non-address use of the pointer parameter.
                 }
-                else if (varDsc->lvIsStructField && lvaIsImplicitByRefLocal(varDsc->lvParentLcl))
-                {
-                    // The address of the implicit-byref's field is likewise a non-address use of the pointer
-                    // parameter.
-                }
-                else if (varDsc->lvPromoted && (lvaTable[varDsc->lvFieldLclStart].lvParentLcl != varNum))
-                {
-                    // This temp was used for struct promotion bookkeeping.  It will not be used, and will have
-                    // its ref count and address-taken flag reset in fgMarkDemotedImplicitByRefArgs.
-                    assert(lvaIsImplicitByRefLocal(lvaTable[varDsc->lvFieldLclStart].lvParentLcl));
-                    assert(fgGlobalMorph);
-                }
+
+
                 else if (varDsc->IsStackAllocatedObject())
                 {
                     // Stack allocated objects currently cannot be passed to callees
@@ -6045,23 +5923,7 @@ void Compiler::fgMorphRecursiveFastTailCallIntoLoop(BasicBlock* block, GenTreeCa
             }
 
 #if FEATURE_IMPLICIT_BYREFS
-            if (varDsc->lvPromoted)
-            {
-                LclVarDsc* firstField = lvaGetDesc(varDsc->lvFieldLclStart);
-                if (firstField->lvParentLcl != varNum)
-                {
-                    // Local copy for implicit byref promotion that was undone. Do
-                    // not introduce new references to it, all uses have been
-                    // morphed to access the parameter.
 
-#ifdef DEBUG
-                    LclVarDsc* param = lvaGetDesc(firstField->lvParentLcl);
-                    assert(param->lvIsImplicitByRef && !param->lvPromoted);
-                    assert(param->lvFieldLclStart == varNum);
-#endif
-                    continue;
-                }
-            }
 #endif
 
             var_types lclType            = varDsc->TypeGet();
@@ -8349,10 +8211,7 @@ bool Compiler::fgTryReplaceStructLocalWithFields(GenTree** use)
 
     LclVarDsc* varDsc = lvaGetDesc((*use)->AsLclVar());
 
-    if (varDsc->lvDoNotEnregister || !varDsc->lvPromoted)
-    {
-        return false;
-    }
+    return false;
 
     *use = fgMorphLclToFieldList((*use)->AsLclVar());
     return true;
@@ -11444,10 +11303,7 @@ GenTree* Compiler::fgMorphHWIntrinsic(GenTreeHWIntrinsic* tree)
         {
             GenTreeLclVar* lclVar = operand->AsLclVar();
 
-            if (lvaGetDesc(lclVar)->lvPromoted)
-            {
-                lvaSetVarDoNotEnregister(lclVar->GetLclNum() DEBUGARG(DoNotEnregisterReason::SimdUserForcesDep));
-            }
+
         }
     }
 
@@ -12709,12 +12565,7 @@ GenTree* Compiler::fgMorphTree(GenTree* tree)
                 // independent promotion.
                 //
                 GenTree* const operand = use.GetNode();
-                if (operand->OperIs(GT_LCL_VAR) && varTypeIsSIMD(operand) &&
-                    lvaGetDesc(operand->AsLclVar())->lvPromoted)
-                {
-                    lvaSetVarDoNotEnregister(operand->AsLclVar()->GetLclNum()
-                                                 DEBUGARG(DoNotEnregisterReason::SimdUserForcesDep));
-                }
+
             }
             break;
 
@@ -12812,38 +12663,7 @@ void Compiler::fgKillDependentAssertionsSingle(unsigned lclNum DEBUGARG(GenTree*
 //
 void Compiler::fgKillDependentAssertions(unsigned lclNum DEBUGARG(GenTree* tree))
 {
-    if (BitVecOps::IsEmpty(apTraits, apLocal) && BitVecOps::IsEmpty(apTraits, apLocalPostorder))
-    {
-        return;
-    }
-
-    LclVarDsc* const varDsc = lvaGetDesc(lclNum);
-
-    if (varDsc->lvPromoted)
-    {
-        noway_assert(varTypeIsStruct(varDsc));
-
-        // Kill the field locals.
-        for (unsigned i = varDsc->lvFieldLclStart; i < varDsc->lvFieldLclStart + varDsc->lvFieldCnt; ++i)
-        {
-            fgKillDependentAssertionsSingle(i DEBUGARG(tree));
-        }
-
-        // Kill the struct local itself.
-        fgKillDependentAssertionsSingle(lclNum DEBUGARG(tree));
-    }
-    else if (varDsc->lvIsStructField)
-    {
-        // Kill the field local.
-        fgKillDependentAssertionsSingle(lclNum DEBUGARG(tree));
-
-        // Kill the parent struct.
-        fgKillDependentAssertionsSingle(varDsc->lvParentLcl DEBUGARG(tree));
-    }
-    else
-    {
-        fgKillDependentAssertionsSingle(lclNum DEBUGARG(tree));
-    }
+    fgKillDependentAssertionsSingle(lclNum DEBUGARG(tree));
 }
 
 //------------------------------------------------------------------------
@@ -15053,10 +14873,14 @@ PhaseStatus Compiler::fgExpandQmarkNodes(bool early)
 }
 
 //------------------------------------------------------------------------
-// fgPromoteStructs: promote structs to collections of per-field locals
+// fgPromoteStructs: mark SIMD/mask locals that can be enregistered as a whole.
 //
 // Returns:
 //    Suitable phase status.
+//
+// Notes:
+//    Old struct promotion has been removed; this phase now only decides which
+//    SIMD/mask locals can be enregistered as "reg structs".
 //
 PhaseStatus Compiler::fgPromoteStructs()
 {
@@ -15072,89 +14896,27 @@ PhaseStatus Compiler::fgPromoteStructs()
         return PhaseStatus::MODIFIED_NOTHING;
     }
 
-#ifdef DEBUG
-    if (compStressCompile(STRESS_NO_OLD_PROMOTION, 10))
-    {
-        JITDUMP("  skipping due to stress\n");
-        return PhaseStatus::MODIFIED_NOTHING;
-    }
-#endif
-
     if (info.compIsVarArgs)
     {
         JITDUMP("  promotion disabled because of varargs\n");
         return PhaseStatus::MODIFIED_NOTHING;
     }
 
-#ifdef DEBUG
-    if (verbose)
-    {
-        printf("\nlvaTable before fgPromoteStructs\n");
-        lvaTableDump();
-    }
-#endif // DEBUG
-
     // The lvaTable might grow as we grab temps. Make a local copy here.
     unsigned startLvaCount = lvaCount;
 
-    //
-    // Loop through the original lvaTable. Looking for struct locals to be promoted.
-    //
-    lvaStructPromotionInfo structPromotionInfo;
-    bool                   tooManyLocalsReported = false;
-    bool                   madeChanges           = false;
-
-    // Clear the structPromotionHelper, since it is used during inlining, at which point it
-    // may be conservative about looking up SIMD info.
-    // We don't want to preserve those conservative decisions for the actual struct promotion.
-    structPromotionHelper->Clear();
-
     for (unsigned lclNum = 0; lclNum < startLvaCount; lclNum++)
     {
-        // Whether this var got promoted
-        bool       promotedVar = false;
-        LclVarDsc* varDsc      = lvaGetDesc(lclNum);
+        LclVarDsc* varDsc = lvaGetDesc(lclNum);
 
         if (varTypeIsSIMDOrMask(varDsc) || varDsc->IsBitcastToSimd())
         {
             // Attempt to enregister the entire struct.
             varDsc->lvRegStruct = true;
         }
-        // Don't promote if we have reached the tracking limit.
-        else if (lvaHaveManyLocals())
-        {
-            // Print the message first time when we detected this condition
-            if (!tooManyLocalsReported)
-            {
-                JITDUMP("Stopped promoting struct fields, due to too many locals.\n");
-            }
-            tooManyLocalsReported = true;
-        }
-        else if (varTypeIsStruct(varDsc))
-        {
-            assert(structPromotionHelper != nullptr);
-            promotedVar = structPromotionHelper->TryPromoteStructVar(lclNum);
-        }
-
-        madeChanges |= promotedVar;
-
-        if (!promotedVar && varTypeIsSIMD(varDsc) && !varDsc->lvFieldAccessed)
-        {
-            // Even if we have not used this in a SIMD intrinsic, if it is not being promoted,
-            // we will treat it as a reg struct.
-            varDsc->lvRegStruct = true;
-        }
     }
 
-#ifdef DEBUG
-    if (verbose && madeChanges)
-    {
-        printf("\nlvaTable after fgPromoteStructs\n");
-        lvaTableDump();
-    }
-#endif // DEBUG
-
-    return madeChanges ? PhaseStatus::MODIFIED_EVERYTHING : PhaseStatus::MODIFIED_NOTHING;
+    return PhaseStatus::MODIFIED_NOTHING;
 }
 
 //------------------------------------------------------------------------
@@ -15256,7 +15018,7 @@ PhaseStatus Compiler::fgMarkImplicitByRefCopyOmissionCandidates()
                     continue;
                 }
 
-                if (varDsc->lvPromoted || varDsc->lvIsStructField || ((argNode->gtFlags & GTF_VAR_DEATH) == 0))
+                if (((argNode->gtFlags & GTF_VAR_DEATH) == 0))
                 {
                     // Not a candidate.
                     continue;
@@ -15339,148 +15101,6 @@ PhaseStatus Compiler::fgRetypeImplicitByRefArgs()
         {
             madeChanges = true;
 
-            if (varDsc->lvPromoted)
-            {
-                // This implicit-by-ref was promoted; create a new temp to represent the
-                // promoted struct before rewriting this parameter as a pointer.
-                unsigned newLclNum = lvaGrabTemp(false DEBUGARG("Promoted implicit byref"));
-                // Update varDsc since lvaGrabTemp might have re-allocated the var dsc array.
-                varDsc = lvaGetDesc(lclNum);
-
-                lvaSetStruct(newLclNum, varDsc->GetLayout(), true);
-
-                // Copy the struct promotion annotations to the new temp.
-                LclVarDsc* newVarDsc       = lvaGetDesc(newLclNum);
-                newVarDsc->lvPromoted      = true;
-                newVarDsc->lvFieldLclStart = varDsc->lvFieldLclStart;
-                newVarDsc->lvFieldCnt      = varDsc->lvFieldCnt;
-                newVarDsc->lvContainsHoles = varDsc->lvContainsHoles;
-#ifdef DEBUG
-                newVarDsc->lvKeepType = true;
-#endif // DEBUG
-
-                // Propagate address-taken-ness and do-not-enregister-ness.
-                newVarDsc->SetAddressExposed(varDsc->IsAddressExposed() DEBUGARG(varDsc->GetAddrExposedReason()));
-                newVarDsc->lvDoNotEnregister       = varDsc->lvDoNotEnregister;
-                newVarDsc->lvSingleDef             = varDsc->lvSingleDef;
-                newVarDsc->lvSingleDefRegCandidate = varDsc->lvSingleDefRegCandidate;
-                newVarDsc->lvSpillAtSingleDef      = varDsc->lvSpillAtSingleDef;
-#ifdef DEBUG
-                newVarDsc->SetDoNotEnregReason(varDsc->GetDoNotEnregReason());
-#endif // DEBUG
-
-                // If the promotion is dependent, the promoted temp would just be committed
-                // to memory anyway, so we'll rewrite its appearances to be indirections
-                // through the pointer parameter, the same as we'd do for this
-                // parameter if it weren't promoted at all (otherwise the initialization
-                // of the new temp would just be a needless memcpy at method entry).
-                //
-                // Otherwise, see how many appearances there are. We keep two early ref counts: total
-                // number of references to the struct or some field, and how many of these are
-                // arguments to calls. We undo promotion unless we see enough non-call uses.
-                //
-                const unsigned totalAppearances = varDsc->lvRefCnt(RCS_EARLY);
-                const unsigned callAppearances  = (unsigned)varDsc->lvRefCntWtd(RCS_EARLY);
-                assert(totalAppearances >= callAppearances);
-                const unsigned nonCallAppearances = totalAppearances - callAppearances;
-
-                bool undoPromotion = ((lvaGetPromotionType(newVarDsc) == PROMOTION_TYPE_DEPENDENT) ||
-                                      (nonCallAppearances <= varDsc->lvFieldCnt));
-
-#ifdef DEBUG
-                // Above is a profitability heuristic; either value of
-                // undoPromotion should lead to correct code. So,
-                // under stress, make different decisions at times.
-                if (compStressCompile(STRESS_BYREF_PROMOTION, 25))
-                {
-                    undoPromotion = !undoPromotion;
-                    JITDUMP("Stress -- changing byref undo promotion for V%02u to %s undo\n", lclNum,
-                            undoPromotion ? "" : "NOT");
-                }
-#endif // DEBUG
-
-                JITDUMP("%s promotion of implicit by-ref V%02u: %s total: %u non-call: %u fields: %u\n",
-                        undoPromotion ? "Undoing" : "Keeping", lclNum,
-                        (lvaGetPromotionType(newVarDsc) == PROMOTION_TYPE_DEPENDENT) ? "dependent;" : "",
-                        totalAppearances, nonCallAppearances, varDsc->lvFieldCnt);
-
-                if (!undoPromotion)
-                {
-                    // Insert IR that initializes the temp from the parameter.
-                    // The first BB should already be a valid insertion point,
-                    // which is a precondition for this phase when optimizing.
-                    assert(fgFirstBB->bbPreds == nullptr);
-                    GenTree* addr  = gtNewLclvNode(lclNum, TYP_BYREF);
-                    GenTree* data  = varDsc->TypeIs(TYP_STRUCT) ? gtNewBlkIndir(varDsc->GetLayout(), addr)
-                                                                : gtNewIndir(varDsc->TypeGet(), addr);
-                    GenTree* store = gtNewStoreLclVarNode(newLclNum, data);
-                    fgNewStmtAtBeg(fgFirstBB, store);
-                }
-
-                // Update the locals corresponding to the promoted fields.
-                unsigned fieldLclStart = varDsc->lvFieldLclStart;
-                unsigned fieldCount    = varDsc->lvFieldCnt;
-                unsigned fieldLclStop  = fieldLclStart + fieldCount;
-
-                for (unsigned fieldLclNum = fieldLclStart; fieldLclNum < fieldLclStop; ++fieldLclNum)
-                {
-                    LclVarDsc* fieldVarDsc = lvaGetDesc(fieldLclNum);
-
-                    if (undoPromotion)
-                    {
-                        // Leave lvParentLcl pointing to the parameter so that fgMorphExpandImplicitByRefArg
-                        // will know to rewrite appearances of this local.
-                        assert(fieldVarDsc->lvParentLcl == lclNum);
-                    }
-                    else
-                    {
-                        // Set the new parent.
-                        fieldVarDsc->lvParentLcl = newLclNum;
-                    }
-
-                    fieldVarDsc->lvIsParam = false;
-                    // The fields shouldn't inherit any register preferences from
-                    // the parameter which is really a pointer to the struct.
-                    fieldVarDsc->lvIsRegArg      = false;
-                    fieldVarDsc->lvIsMultiRegArg = false;
-                    // Promoted fields of implicit byrefs can't be OSR locals.
-                    //
-                    if (fieldVarDsc->lvIsOSRLocal)
-                    {
-                        assert(opts.IsOSR());
-                        fieldVarDsc->lvIsOSRLocal        = false;
-                        fieldVarDsc->lvIsOSRExposedLocal = false;
-                    }
-                }
-
-                // Hijack lvFieldLclStart to record the new temp number.
-                // It will get fixed up in fgMarkDemotedImplicitByRefArgs.
-                varDsc->lvFieldLclStart = newLclNum;
-                // Go ahead and clear lvFieldCnt -- either we're promoting
-                // a replacement temp or we're not promoting this arg, and
-                // in either case the parameter is now a pointer that doesn't
-                // have these fields.
-                varDsc->lvFieldCnt = 0;
-
-                // Hijack lvPromoted to communicate to fgMorphExpandImplicitByRefArg
-                // whether references to the struct should be rewritten as
-                // indirections off the pointer (not promoted) or references
-                // to the new struct local (promoted).
-                varDsc->lvPromoted = !undoPromotion;
-            }
-            else
-            {
-                // The "undo promotion" path above clears lvPromoted for args that struct
-                // promotion wanted to promote but that aren't considered profitable to
-                // rewrite.  It hijacks lvFieldLclStart to communicate to
-                // fgMarkDemotedImplicitByRefArgs that it needs to clean up annotations left
-                // on such args for fgMorphExpandImplicitByRefArg to consult in the interim.
-                // Here we have an arg that was simply never promoted, so make sure it doesn't
-                // have nonzero lvFieldLclStart, since that would confuse the aforementioned
-                // functions.
-                assert(varDsc->lvFieldLclStart == 0);
-            }
-
             // Since the parameter in this position is really a pointer, its type is TYP_BYREF.
             varDsc->lvType = TYP_BYREF;
 
@@ -15507,81 +15127,6 @@ PhaseStatus Compiler::fgRetypeImplicitByRefArgs()
 #endif // FEATURE_IMPLICIT_BYREFS
 
     return madeChanges ? PhaseStatus::MODIFIED_EVERYTHING : PhaseStatus::MODIFIED_NOTHING;
-}
-
-//------------------------------------------------------------------------
-// fgMarkDemotedImplicitByRefArgs: Clear annotations for any implicit byrefs that struct promotion
-//                                 asked to promote.  Appearances of these have now been rewritten
-//                                 (by fgMorphExpandImplicitByRefArg) using indirections from
-//                                 the pointer parameter or references to the promotion temp, as
-//                                 appropriate.
-//
-void Compiler::fgMarkDemotedImplicitByRefArgs()
-{
-    JITDUMP("\n*************** In fgMarkDemotedImplicitByRefArgs()\n");
-
-#if FEATURE_IMPLICIT_BYREFS
-
-    for (unsigned lclNum = 0; lclNum < info.compArgsCount; lclNum++)
-    {
-        LclVarDsc* varDsc = lvaGetDesc(lclNum);
-
-        if (lvaIsImplicitByRefLocal(lclNum))
-        {
-            JITDUMP("Clearing annotation for V%02d\n", lclNum);
-
-            if (varDsc->lvPromoted)
-            {
-                // The parameter is simply a pointer now, so clear lvPromoted.  It was left set by
-                // fgRetypeImplicitByRefArgs to communicate to fgMorphExpandImplicitByRefArg that
-                // appearances of this arg needed to be rewritten to a new promoted struct local.
-                varDsc->lvPromoted = false;
-
-                // Clear the lvFieldLclStart value that was set by fgRetypeImplicitByRefArgs
-                // to tell fgMorphExpandImplicitByRefArg which local is the new promoted struct one.
-                varDsc->lvFieldLclStart = 0;
-            }
-            else if (varDsc->lvFieldLclStart != 0)
-            {
-                // We created new temps to represent a promoted struct corresponding to this
-                // parameter, but decided not to go through with the promotion and have
-                // rewritten all uses as indirections off the pointer parameter.
-                // We stashed the pointer to the new struct temp in lvFieldLclStart; make
-                // note of that and clear the annotation.
-                unsigned structLclNum   = varDsc->lvFieldLclStart;
-                varDsc->lvFieldLclStart = 0;
-
-                // The temp struct is now unused; set flags appropriately so that we
-                // won't allocate space for it on the stack.
-                LclVarDsc* structVarDsc = lvaGetDesc(structLclNum);
-                structVarDsc->CleanAddressExposed();
-#ifdef DEBUG
-                structVarDsc->lvUnusedStruct          = true;
-                structVarDsc->lvUndoneStructPromotion = true;
-#endif // DEBUG
-
-                unsigned fieldLclStart = structVarDsc->lvFieldLclStart;
-                unsigned fieldCount    = structVarDsc->lvFieldCnt;
-                unsigned fieldLclStop  = fieldLclStart + fieldCount;
-
-                for (unsigned fieldLclNum = fieldLclStart; fieldLclNum < fieldLclStop; ++fieldLclNum)
-                {
-                    JITDUMP("Fixing pointer for field V%02d from V%02d to V%02d\n", fieldLclNum, lclNum, structLclNum);
-
-                    // Fix the pointer to the parent local.
-                    LclVarDsc* fieldVarDsc = lvaGetDesc(fieldLclNum);
-                    assert(fieldVarDsc->lvParentLcl == lclNum);
-                    fieldVarDsc->lvParentLcl = structLclNum;
-
-                    // The field local is now unused; set flags appropriately so that
-                    // we won't allocate stack space for it.
-                    fieldVarDsc->CleanAddressExposed();
-                }
-            }
-        }
-    }
-
-#endif // FEATURE_IMPLICIT_BYREFS
 }
 
 //------------------------------------------------------------------------

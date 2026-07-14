@@ -13665,14 +13665,9 @@ void Compiler::impMakeDiscretionaryInlineObservations(InlineInfo* pInlineInfo, I
         inlineResult->Note(InlineObservation::CALLEE_RETURNS_STRUCT);
     }
 
-    // Note if the callee's class is a promotable struct
+    // Note if the callee's class is a value type
     if ((info.compClassAttr & CORINFO_FLG_VALUECLASS) != 0)
     {
-        assert(structPromotionHelper != nullptr);
-        if (structPromotionHelper->CanPromoteStructType(info.compClassHnd))
-        {
-            inlineResult->Note(InlineObservation::CALLEE_CLASS_PROMOTABLE);
-        }
         inlineResult->Note(InlineObservation::CALLEE_CLASS_VALUETYPE);
     }
 

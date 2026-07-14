@@ -3568,12 +3568,6 @@ bool Compiler::optAssertionProp_LclVarTypeCheck(GenTree* tree, LclVarDsc* lclVar
         when we don't retrieve the wider value.
     */
 
-    if (copyVarDsc->lvIsStructField)
-    {
-        var_types varType = (var_types)copyVarDsc->lvType;
-        // Make sure we don't retrieve the wider value.
-        return !varTypeIsSmall(varType) || (varType == tree->TypeGet());
-    }
     // Called in the context of a single copy assertion, so the types should have been
     // taken care by the assertion gen logic for other cases. Just return true.
     return true;
@@ -3643,7 +3637,7 @@ GenTree* Compiler::optCopyAssertionProp(const AssertionDsc&  curAssertion,
     //
     if (tree->OperIs(GT_LCL_FLD))
     {
-        if (copyVarDsc->IsEnregisterableLcl() || copyVarDsc->lvPromoted)
+        if (copyVarDsc->IsEnregisterableLcl())
         {
             return nullptr;
         }
@@ -3651,14 +3645,6 @@ GenTree* Compiler::optCopyAssertionProp(const AssertionDsc&  curAssertion,
         {
             lvaSetVarDoNotEnregister(copyLclNum DEBUGARG(DoNotEnregisterReason::LocalField));
         }
-    }
-
-    // Do not propagate promoted locals if they are not DNER.
-    // This would require DNER'ing for many cases where the consumer
-    // does not support whole-local uses, such as GT_FIELD_LIST.
-    if (tree->OperIs(GT_LCL_VAR) && varTypeIsSIMD(tree) && copyVarDsc->lvPromoted && !copyVarDsc->lvDoNotEnregister)
-    {
-        return nullptr;
     }
 
     tree->SetLclNum(copyLclNum);

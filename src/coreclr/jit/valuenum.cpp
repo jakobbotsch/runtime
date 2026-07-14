@@ -6599,43 +6599,7 @@ void Compiler::fgValueNumberLocalStore(GenTree*             storeNode,
         }
     };
 
-    if (lclDefNode->HasCompositeSsaName())
-    {
-        LclVarDsc* varDsc = lvaGetDesc(lclDefNode);
-        assert(varDsc->lvPromoted);
-
-        for (unsigned index = 0; index < varDsc->lvFieldCnt; index++)
-        {
-            unsigned   fieldLclNum = varDsc->lvFieldLclStart + index;
-            LclVarDsc* fieldVarDsc = lvaGetDesc(fieldLclNum);
-
-            ssize_t   fieldStoreOffset;
-            ValueSize fieldStoreSize;
-            if (gtStoreMayDefineField(fieldVarDsc, offset, storeSize, &fieldStoreOffset, &fieldStoreSize))
-            {
-                // TYP_STRUCT can represent the general case where the value could be of any size.
-                var_types fieldStoreType = TYP_STRUCT;
-                if (vnStore->LoadStoreIsEntire(fieldVarDsc->lvValueSize(), fieldStoreOffset, fieldStoreSize))
-                {
-                    // Avoid redundant bitcasts for the common case of a full definition.
-                    fieldStoreType = fieldVarDsc->TypeGet();
-                }
-
-                // Calculate offset of this field's value, relative to the entire one.
-                ssize_t      fieldOffset      = fieldVarDsc->lvFldOffset;
-                ssize_t      fieldValueOffset = (fieldOffset < offset) ? 0 : (fieldOffset - offset);
-                ValueNumPair fieldStoreValue =
-                    vnStore->VNPairForLoad(value, storeSize, fieldStoreType, fieldValueOffset, fieldStoreSize);
-
-                processDef(fieldLclNum, lclDefNode->GetSsaNum(this, index), fieldStoreOffset, fieldStoreSize,
-                           fieldStoreValue);
-            }
-        }
-    }
-    else
-    {
-        processDef(lclDefNode->GetLclNum(), lclDefNode->GetSsaNum(), offset, storeSize, value);
-    }
+    processDef(lclDefNode->GetLclNum(), lclDefNode->GetSsaNum(), offset, storeSize, value);
 }
 
 //------------------------------------------------------------------------

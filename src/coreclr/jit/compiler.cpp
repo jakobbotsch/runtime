@@ -368,8 +368,6 @@ Compiler::Compiler(ArenaAllocator*       arena,
     }
 #endif // DEBUG
 
-    structPromotionHelper = new (this, CMK_Promotion) StructPromotionHelper(this);
-
     if (!compIsForInlining())
     {
         codeGen = getCodeGenerator(this);
@@ -3437,31 +3435,6 @@ bool Compiler::compStressCompileHelper(compStressArea stressArea, unsigned weigh
 }
 
 //------------------------------------------------------------------------
-// compPromoteFewerStructs: helper to determine if the local
-//   should not be promoted under a stress mode.
-//
-// Arguments:
-//   lclNum - local number to test
-//
-// Returns:
-//   true if this local should not be promoted.
-//
-// Notes:
-//   Reject ~50% of the potential promotions if STRESS_PROMOTE_FEWER_STRUCTS is active.
-//
-bool Compiler::compPromoteFewerStructs(unsigned lclNum)
-{
-    bool       rejectThisPromo = false;
-    const bool promoteLess     = compStressCompile(STRESS_PROMOTE_FEWER_STRUCTS, 50);
-    if (promoteLess)
-    {
-
-        rejectThisPromo = (((info.compMethodHash() ^ lclNum) & 1) == 0);
-    }
-    return rejectThisPromo;
-}
-
-//------------------------------------------------------------------------
 // dumpRegMask: display a register mask. For well-known sets of registers, display a well-known token instead of
 // a potentially large number of registers.
 //
@@ -4608,8 +4581,6 @@ void Compiler::compCompile(void** methodCodePtr, uint32_t* methodCodeSize, JitFl
     DoPhase(this, PHASE_MORPH_GLOBAL, &Compiler::fgMorphBlocks);
 
     auto postMorphPhase = [this]() {
-        // Fix any LclVar annotations on discarded struct promotion temps for implicit by-ref args
-        fgMarkDemotedImplicitByRefArgs();
         lvaRefCountState       = RCS_INVALID;
         fgLocalVarLivenessDone = false;
 
@@ -9708,19 +9679,9 @@ JITDBGAPI void __cdecl cTreeFlags(Compiler* comp, GenTree* tree)
                 {
                     chars += printf("[VAR_MOREUSES]");
                 }
-                if (!comp->lvaGetDesc(tree->AsLclVarCommon())->lvPromoted)
+                if (tree->gtFlags & GTF_VAR_DEATH)
                 {
-                    if (tree->gtFlags & GTF_VAR_DEATH)
-                    {
-                        chars += printf("[VAR_DEATH]");
-                    }
-                }
-                else
-                {
-                    if (tree->gtFlags & GTF_VAR_FIELD_DEATH0)
-                    {
-                        chars += printf("[VAR_FIELD_DEATH0]");
-                    }
+                    chars += printf("[VAR_DEATH]");
                 }
                 if (tree->gtFlags & GTF_VAR_FIELD_DEATH1)
                 {
@@ -10492,12 +10453,8 @@ bool Compiler::lvaIsOSRLocal(unsigned varNum)
         {
             // Sanity check for promoted fields of OSR locals.
             //
-            if ((varNum >= info.compLocalsCount) && (varNum != lvaMonAcquired) && (varNum != lvaAsyncThreadObjectVar) &&
-                (varNum != lvaAsyncExecutionContextVar) && (varNum != lvaAsyncSynchronizationContextVar))
-            {
-                assert(varDsc->lvIsStructField);
-                assert(varDsc->lvParentLcl < info.compLocalsCount);
-            }
+            assert((varNum < info.compLocalsCount) || (varNum == lvaMonAcquired) || (varNum == lvaAsyncThreadObjectVar) ||
+                   (varNum == lvaAsyncExecutionContextVar) || (varNum == lvaAsyncSynchronizationContextVar));
         }
     }
     else

@@ -270,30 +270,6 @@ LoopDefinitions::LocalDefinitionsMap* LoopDefinitions::GetOrCreateMap(FlowGraphN
 
             m_map->Set(lcl->GetLclNum(), true, LocalDefinitionsMap::Overwrite);
 
-            LclVarDsc* lclDsc = m_compiler->lvaGetDesc(lcl);
-            if (m_compiler->lvaIsImplicitByRefLocal(lcl->GetLclNum()) && lclDsc->lvPromoted)
-            {
-                // fgRetypeImplicitByRefArgs created a new promoted
-                // struct local to represent this arg. The stores will
-                // be rewritten by morph.
-                assert(lclDsc->lvFieldLclStart != 0);
-                m_map->Set(lclDsc->lvFieldLclStart, true, LocalDefinitionsMap::Overwrite);
-                lclDsc = m_compiler->lvaGetDesc(lclDsc->lvFieldLclStart);
-            }
-
-            if (lclDsc->lvPromoted)
-            {
-                for (unsigned i = 0; i < lclDsc->lvFieldCnt; i++)
-                {
-                    unsigned fieldLclNum = lclDsc->lvFieldLclStart + i;
-                    m_map->Set(fieldLclNum, true, LocalDefinitionsMap::Overwrite);
-                }
-            }
-            else if (lclDsc->lvIsStructField)
-            {
-                m_map->Set(lclDsc->lvParentLcl, true, LocalDefinitionsMap::Overwrite);
-            }
-
             return Compiler::WALK_CONTINUE;
         }
 
@@ -466,12 +442,6 @@ public:
     {
         BitVecTraits traits(m_compiler->lvaCount, m_compiler);
         if (BitVecOps::IsMember(&traits, m_localsToExpose, lclNum))
-        {
-            return true;
-        }
-
-        LclVarDsc* dsc = m_compiler->lvaGetDesc(lclNum);
-        if (dsc->lvIsStructField && BitVecOps::IsMember(&traits, m_localsToExpose, dsc->lvParentLcl))
         {
             return true;
         }
@@ -1019,29 +989,7 @@ public:
             LOCAL_NODE:
             {
                 unsigned const   lclNum = node->AsLclVarCommon()->GetLclNum();
-                LclVarDsc* const varDsc = m_compiler->lvaGetDesc(lclNum);
-
                 UpdateEarlyRefCount(lclNum, node, user);
-
-                if (varDsc->lvIsStructField)
-                {
-                    // Promoted field, increase count for the parent lclVar.
-                    //
-                    assert(!m_compiler->lvaIsImplicitByRefLocal(lclNum));
-                    unsigned parentLclNum = varDsc->lvParentLcl;
-                    UpdateEarlyRefCount(parentLclNum, node, user);
-                }
-
-                if (varDsc->lvPromoted)
-                {
-                    // Promoted struct, increase count for each promoted field.
-                    //
-                    for (unsigned childLclNum = varDsc->lvFieldLclStart;
-                         childLclNum < varDsc->lvFieldLclStart + varDsc->lvFieldCnt; ++childLclNum)
-                    {
-                        UpdateEarlyRefCount(childLclNum, node, user);
-                    }
-                }
             }
             break;
 
@@ -1144,18 +1092,6 @@ public:
 
                     unsigned lhsOffset = lhs.Offset();
                     unsigned rhsOffset = rhs.Offset();
-
-                    if (lhsDsc->lvIsStructField)
-                    {
-                        lhsLclNum = lhsDsc->lvParentLcl;
-                        lhsOffset += lhsDsc->lvFldOffset;
-                    }
-
-                    if (rhsDsc->lvIsStructField)
-                    {
-                        rhsLclNum = rhsDsc->lvParentLcl;
-                        rhsOffset += rhsDsc->lvFldOffset;
-                    }
 
                     if ((lhsLclNum == rhsLclNum) && (rhsOffset <= lhsOffset) && FitsIn<int>(lhsOffset - rhsOffset))
                     {
@@ -1500,9 +1436,7 @@ private:
         {
             // We will only attempt this optimization for locals that do not
             // later turn into indirections.
-            bool isSuitableLocal =
-                varTypeIsStruct(varDsc) && !m_compiler->lvaIsImplicitByRefLocal(lclNum) &&
-                (!varDsc->lvIsStructField || !m_compiler->lvaIsImplicitByRefLocal(varDsc->lvParentLcl));
+            bool isSuitableLocal = varTypeIsStruct(varDsc) && !m_compiler->lvaIsImplicitByRefLocal(lclNum);
 #ifdef TARGET_X86
             if (m_compiler->lvaIsArgAccessedViaVarArgsCookie(lclNum))
             {
@@ -1529,7 +1463,7 @@ private:
 
         if (escapeAddr)
         {
-            unsigned exposedLclNum = varDsc->lvIsStructField ? varDsc->lvParentLcl : lclNum;
+            unsigned exposedLclNum = lclNum;
 
             if (m_lclAddrAssertions != nullptr)
             {
@@ -1547,8 +1481,7 @@ private:
         // a ByRef to an INT32 when they actually write a SIZE_T or INT64. There are cases where
         // overwriting these extra 4 bytes corrupts some data (such as a saved register) that leads
         // to A/V. Whereas previously the JIT64 codegen did not lead to an A/V.
-        if ((callUser != nullptr) && !varDsc->lvIsParam && !varDsc->lvIsStructField && genActualTypeIsInt(varDsc) &&
-            escapeAddr)
+        if ((callUser != nullptr) && !varDsc->lvIsParam && genActualTypeIsInt(varDsc) && escapeAddr)
         {
             varDsc->lvQuirkToLong = true;
             JITDUMP("Adding a quirk for the storage size of V%02u of type %s\n", val.LclNum(),
@@ -1593,7 +1526,7 @@ private:
 
         if (indirSize.IsNull() || m_compiler->IsWideAccess(lclNum, offset, indirSize))
         {
-            unsigned exposedLclNum = varDsc->lvIsStructField ? varDsc->lvParentLcl : lclNum;
+            unsigned exposedLclNum = lclNum;
             if (m_lclAddrAssertions != nullptr)
             {
                 m_lclAddrAssertions->OnExposed(exposedLclNum);
@@ -1905,7 +1838,7 @@ private:
                 // incorrect state. Address-expose such locals to make them
                 // normalize-on-load, ensuring correct upper bits on every read.
                 LclVarDsc* varDsc = m_compiler->lvaGetDesc(lclNum);
-                if (varTypeIsSmall(varDsc->TypeGet()) && !varDsc->lvIsStructField)
+                if (varTypeIsSmall(varDsc->TypeGet()))
                 {
                     m_compiler->lvaSetVarAddrExposed(lclNum DEBUGARG(AddressExposedReason::SMALL_TYPE_PARTIAL_DEF));
                 }
@@ -2018,7 +1951,7 @@ private:
                 }
 
                 if ((genTypeSize(indir) == genTypeSize(varDsc)) && (genTypeSize(indir) <= TARGET_POINTER_SIZE) &&
-                    (varTypeIsFloating(indir) || varTypeIsFloating(varDsc)) && !varDsc->lvPromoted)
+                    (varTypeIsFloating(indir) || varTypeIsFloating(varDsc)))
                 {
                     return IndirTransform::BitCast;
                 }
@@ -2117,47 +2050,6 @@ private:
             addr         = addr->AsFieldAddr()->GetFldObj();
         }
 
-        if (addr->OperIs(GT_LCL_ADDR))
-        {
-            offset += addr->AsLclFld()->GetLclOffs();
-            const LclVarDsc* varDsc = m_compiler->lvaGetDesc(addr->AsLclVarCommon());
-
-            if (varDsc->lvPromoted)
-            {
-                unsigned fieldLclNum = m_compiler->lvaGetFieldLocal(varDsc, offset);
-                if (fieldLclNum == BAD_VAR_NUM)
-                {
-                    // Access a promoted struct's field with an offset that doesn't correspond to any field.
-                    // It can happen if the struct was cast to another struct with different offsets.
-                    return BAD_VAR_NUM;
-                }
-
-                LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(fieldLclNum);
-                ValueSize  fieldSize   = fieldVarDsc->lvValueSize();
-
-                // Span's Length is never negative unconditionally
-                if (isSpanLength && (accessSize.GetExact() == genTypeSize(TYP_INT)))
-                {
-                    unsigned exactSize      = accessSize.GetExact();
-                    unsigned exactFieldSize = fieldSize.GetExact();
-                }
-
-                if (!accessSize.IsNull() && m_compiler->IsWideAccess(fieldLclNum, 0, accessSize))
-                {
-                    return BAD_VAR_NUM;
-                }
-
-                JITDUMP("Replacing the field in promoted struct with local var V%02u\n", fieldLclNum);
-                m_stmtModified = true;
-
-                node->ChangeOper(GT_LCL_ADDR);
-                node->AsLclFld()->SetLclNum(fieldLclNum);
-                node->AsLclFld()->SetLclOffs(0);
-
-                return fieldLclNum;
-            }
-        }
-
         return BAD_VAR_NUM;
     }
 
@@ -2180,43 +2072,10 @@ private:
     {
         assert(node->OperIs(GT_LCL_FLD, GT_STORE_LCL_FLD));
 
-        unsigned   lclNum = node->AsLclFld()->GetLclNum();
-        LclVarDsc* varDsc = m_compiler->lvaGetDesc(lclNum);
-
-        if (varDsc->lvPromoted)
-        {
-            unsigned fldOffset   = node->AsLclFld()->GetLclOffs();
-            unsigned fieldLclNum = m_compiler->lvaGetFieldLocal(varDsc, fldOffset);
-
-            if (fieldLclNum != BAD_VAR_NUM)
-            {
-                LclVarDsc* fldVarDsc = m_compiler->lvaGetDesc(fieldLclNum);
-                var_types  fieldType = fldVarDsc->TypeGet();
-
-                if (node->TypeGet() == fieldType)
-                {
-                    // There is an existing sub-field we can use.
-                    node->SetLclNum(fieldLclNum);
-
-                    if (node->OperIs(GT_STORE_LCL_FLD))
-                    {
-                        node->SetOper(GT_STORE_LCL_VAR);
-                        node->gtFlags &= ~GTF_VAR_USEASG;
-                    }
-                    else
-                    {
-                        node->SetOper(GT_LCL_VAR);
-                    }
-
-                    JITDUMP("Replacing the GT_LCL_FLD in promoted struct with local var V%02u\n", fieldLclNum);
-                }
-            }
-        }
-
         // If we haven't replaced the field, make sure to set DNER on the local.
         if (!node->OperIsScalarLocal())
         {
-            m_compiler->lvaSetVarDoNotEnregister(lclNum DEBUGARG(DoNotEnregisterReason::LocalField));
+            m_compiler->lvaSetVarDoNotEnregister(node->AsLclFld()->GetLclNum() DEBUGARG(DoNotEnregisterReason::LocalField));
         }
         else
         {
@@ -2240,10 +2099,7 @@ private:
         if (data.IsAddress() && store->OperIs(GT_STORE_LCL_VAR))
         {
             LclVarDsc* dsc = m_compiler->lvaGetDesc(store);
-            // TODO-CQ: We currently don't handle promoted fields, but that has
-            // no impact since practically all promoted structs end up with
-            // lvHasLdAddrOp set.
-            if (!dsc->lvPromoted && !dsc->lvIsStructField && !dsc->lvHasLdAddrOp)
+            if (!dsc->lvHasLdAddrOp)
             {
                 m_lclAddrAssertions->Record(store->GetLclNum(), data.LclNum(), data.Offset());
             }
@@ -2482,67 +2338,6 @@ PhaseStatus Compiler::fgUnpinNonMovableLocals()
                         LclVarDsc* const dstDsc    = lvaGetDesc(dstLclNum);
                         GenTree* const   value     = lcl->Data();
 
-                        // A struct store to a promoted destination implicitly
-                        // defines each field. Propagate per-field from a
-                        // matching promoted source LCL_VAR; otherwise mark
-                        // each destination field as has-GC.
-                        //
-                        if (varTypeIsStruct(dstDsc->TypeGet()) && dstDsc->lvPromoted)
-                        {
-                            LclVarDsc* srcDsc      = nullptr;
-                            unsigned   srcLclN     = BAD_VAR_NUM;
-                            bool       srcEligible = false;
-                            if (value->OperIs(GT_LCL_VAR))
-                            {
-                                srcLclN     = value->AsLclVar()->GetLclNum();
-                                srcDsc      = lvaGetDesc(srcLclN);
-                                srcEligible = varTypeIsStruct(srcDsc->TypeGet()) && srcDsc->lvPromoted &&
-                                              (srcDsc->lvFieldCnt == dstDsc->lvFieldCnt);
-                            }
-
-                            for (unsigned i = 0; i < dstDsc->lvFieldCnt; i++)
-                            {
-                                unsigned const dstFieldLclNum = dstDsc->lvFieldLclStart + i;
-                                if (!BitVecOps::IsMember(&traits, hasNoGcValue, dstFieldLclNum))
-                                {
-                                    continue;
-                                }
-
-                                bool isNoGc = false;
-                                if (srcEligible)
-                                {
-                                    LclVarDsc* const dstFld         = lvaGetDesc(dstFieldLclNum);
-                                    unsigned const   srcFieldLclNum = srcDsc->lvFieldLclStart + i;
-                                    LclVarDsc* const srcFld         = lvaGetDesc(srcFieldLclNum);
-                                    if (dstFld->lvIsStructField && srcFld->lvIsStructField &&
-                                        (dstFld->lvParentLcl == dstLclNum) && (srcFld->lvParentLcl == srcLclN) &&
-                                        (dstFld->lvFldOffset == srcFld->lvFldOffset) &&
-                                        (dstFld->lvFldOrdinal == srcFld->lvFldOrdinal) &&
-                                        (dstFld->TypeGet() == srcFld->TypeGet()))
-                                    {
-                                        isNoGc = BitVecOps::IsMember(&traits, hasNoGcValue, srcFieldLclNum);
-                                    }
-                                }
-
-                                if (!isNoGc)
-                                {
-                                    BitVecOps::RemoveElemD(&traits, hasNoGcValue, dstFieldLclNum);
-                                    changed = true;
-                                }
-                            }
-
-                            // Mark the promoted parent as has-GC for tidiness;
-                            // it is never consulted as a pinned local.
-                            //
-                            if (BitVecOps::IsMember(&traits, hasNoGcValue, dstLclNum))
-                            {
-                                BitVecOps::RemoveElemD(&traits, hasNoGcValue, dstLclNum);
-                                changed = true;
-                            }
-
-                            continue;
-                        }
-
                         if (!BitVecOps::IsMember(&traits, hasNoGcValue, dstLclNum))
                         {
                             continue;
@@ -2571,26 +2366,12 @@ PhaseStatus Compiler::fgUnpinNonMovableLocals()
                     if ((lcl->gtFlags & GTF_VAR_DEF) != 0)
                     {
                         unsigned const   dstLclNum = lcl->GetLclNum();
-                        LclVarDsc* const dstDsc    = lvaGetDesc(dstLclNum);
-
                         if (BitVecOps::IsMember(&traits, hasNoGcValue, dstLclNum))
                         {
                             BitVecOps::RemoveElemD(&traits, hasNoGcValue, dstLclNum);
                             changed = true;
                         }
 
-                        if (varTypeIsStruct(dstDsc->TypeGet()) && dstDsc->lvPromoted)
-                        {
-                            for (unsigned i = 0; i < dstDsc->lvFieldCnt; i++)
-                            {
-                                unsigned const dstFieldLclNum = dstDsc->lvFieldLclStart + i;
-                                if (BitVecOps::IsMember(&traits, hasNoGcValue, dstFieldLclNum))
-                                {
-                                    BitVecOps::RemoveElemD(&traits, hasNoGcValue, dstFieldLclNum);
-                                    changed = true;
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -2721,9 +2502,7 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
                         continue;
                     }
 
-                    LclVarDsc* lclDsc        = lvaGetDesc(lcl);
-                    unsigned   exposedLclNum = lclDsc->lvIsStructField ? lclDsc->lvParentLcl : lcl->GetLclNum();
-                    BitVecOps::AddElemD(&localsTraits, exposedLocals, exposedLclNum);
+                    BitVecOps::AddElemD(&localsTraits, exposedLocals, lcl->GetLclNum());
                 }
             }
         }

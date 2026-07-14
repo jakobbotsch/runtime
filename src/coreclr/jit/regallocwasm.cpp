@@ -1065,7 +1065,7 @@ void WasmRegAlloc::ResolveReferences()
             {
                 // ABI registers in the main method
                 //
-                if ((varDsc != nullptr) && varDsc->lvIsRegArg && !varDsc->lvIsStructField)
+                if ((varDsc != nullptr) && varDsc->lvIsRegArg)
                 {
                     unsigned                     lclNum  = m_compiler->lvaGetLclNum(varDsc);
                     const ABIPassingInformation& abiInfo = m_compiler->lvaGetParameterABIInfo(lclNum);

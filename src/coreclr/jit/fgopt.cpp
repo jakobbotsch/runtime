@@ -5862,24 +5862,6 @@ bool Compiler::fgCanMoveFirstStatementIntoPred(bool early, Statement* firstStmt,
             return false;
         }
 
-        if (dsc->lvIsStructField && gtHasRef(tree1, dsc->lvParentLcl))
-        {
-            JITDUMP("  cannot reorder with interfering use of parent struct local\n");
-            return false;
-        }
-
-        if (dsc->lvPromoted)
-        {
-            for (int i = 0; i < dsc->lvFieldCnt; i++)
-            {
-                if (gtHasRef(tree1, dsc->lvFieldLclStart + i))
-                {
-                    JITDUMP("  cannot reorder with interfering use of struct field\n");
-                    return false;
-                }
-            }
-        }
-
         // We've validated that the store does not interfere. Get rid of the
         // flag for the future checks.
         tree2Flags &= ~GTF_ASG;

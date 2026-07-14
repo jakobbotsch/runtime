@@ -7930,16 +7930,6 @@ bool Compiler::gtTreeHasLocalRead(GenTree* tree, unsigned lclNum)
                     return WALK_ABORT;
                 }
 
-                if (m_lclDsc->lvIsStructField && (node->AsLclVarCommon()->GetLclNum() == m_lclDsc->lvParentLcl))
-                {
-                    return WALK_ABORT;
-                }
-
-                if (m_lclDsc->lvPromoted && (node->AsLclVarCommon()->GetLclNum() >= m_lclDsc->lvFieldLclStart) &&
-                    (node->AsLclVarCommon()->GetLclNum() < m_lclDsc->lvFieldLclStart + m_lclDsc->lvFieldCnt))
-                {
-                    return WALK_ABORT;
-                }
             }
 
             return WALK_CONTINUE;
@@ -7992,15 +7982,6 @@ bool Compiler::gtTreeHasLocalStore(GenTree* tree, unsigned lclNum)
 
             auto visit = [&](GenTreeLclVarCommon* lclVar) {
                 if (lclVar->GetLclNum() == m_lclNum)
-                {
-                    return GenTree::VisitResult::Abort;
-                }
-                if (m_lclDsc->lvIsStructField && (lclVar->GetLclNum() == m_lclDsc->lvParentLcl))
-                {
-                    return GenTree::VisitResult::Abort;
-                }
-                if (m_lclDsc->lvPromoted && (lclVar->GetLclNum() >= m_lclDsc->lvFieldLclStart) &&
-                    (lclVar->GetLclNum() < m_lclDsc->lvFieldLclStart + m_lclDsc->lvFieldCnt))
                 {
                     return GenTree::VisitResult::Abort;
                 }
@@ -8919,8 +8900,7 @@ GenTreeFlags GenTree::OperEffects(Compiler* comp, ExceptionSetFlags* preciseExce
 unsigned int GenTreeLclVar::GetFieldCount(Compiler* compiler) const
 {
     assert(IsMultiReg());
-    LclVarDsc* varDsc = compiler->lvaGetDesc(GetLclNum());
-    return varDsc->lvFieldCnt;
+    unreached();
 }
 
 //-----------------------------------------------------------------------------------
@@ -8940,10 +8920,7 @@ unsigned int GenTreeLclVar::GetFieldCount(Compiler* compiler) const
 var_types GenTreeLclVar::GetFieldTypeByIndex(Compiler* compiler, unsigned idx)
 {
     assert(IsMultiReg());
-    LclVarDsc* varDsc      = compiler->lvaGetDesc(GetLclNum());
-    LclVarDsc* fieldVarDsc = compiler->lvaGetDesc(varDsc->lvFieldLclStart + idx);
-    assert(!fieldVarDsc->TypeIs(TYP_STRUCT)); // Don't expect struct fields.
-    return fieldVarDsc->TypeGet();
+    unreached();
 }
 
 #if DEBUGGABLE_GENTREE
@@ -13070,24 +13047,6 @@ void Compiler::gtDispNode(GenTree* tree, IndentStack* indentStack, _In_ _In_opt_
                 {
                     printf("(DA)"); // Variable is defined via address
                 }
-                if (varDsc->lvUnusedStruct)
-                {
-                    assert(varDsc->lvPromoted);
-                    printf("(U)"); // Unused struct
-                }
-                else if (varDsc->lvPromoted)
-                {
-                    if (varTypeIsPromotable(varDsc))
-                    {
-                        printf("(P)"); // Promoted struct
-                    }
-                    else
-                    {
-                        // Promoted implicit by-refs can have this state during
-                        // global morph while they are being rewritten
-                        printf("(P?!)"); // Promoted struct
-                    }
-                }
             }
 
             if (tree->OperIs(GT_RUNTIMELOOKUP))
@@ -13340,10 +13299,7 @@ void Compiler::gtGetLclVarNameInfo(unsigned lclNum, const char** ilKindOut, cons
     }
     else
     {
-        if (!lvaTable[lclNum].lvIsStructField)
-        {
-            ilKind = "loc";
-        }
+        ilKind = "loc";
         if (compIsForInlining())
         {
             ilNum -= impInlineInfo->InlinerCompiler->info.compILargsCount;
@@ -13955,47 +13911,10 @@ void Compiler::gtDispLocal(GenTreeLclVarCommon* tree, IndentStack* indentStack)
         printf(" %s", compRegVarName(tree->GetRegNum()));
     }
 
-    if (varDsc->lvPromoted)
+    if ((varDsc->lvTracked || varDsc->lvTrackedWithoutIndex) && fgLocalVarLivenessDone &&
+        ((tree->gtFlags & GTF_VAR_DEATH) != 0))
     {
-        if (!varTypeIsPromotable(varDsc) && !varDsc->lvUnusedStruct)
-        {
-            // Promoted implicit byrefs can get in this state while they are being rewritten
-            // in global morph.
-        }
-        else
-        {
-            for (unsigned index = 0; index < varDsc->lvFieldCnt; index++)
-            {
-                unsigned   fieldLclNum = varDsc->lvFieldLclStart + index;
-                LclVarDsc* fieldVarDsc = lvaGetDesc(fieldLclNum);
-
-                printf("\n");
-                printf("                                                            ");
-                printIndent(indentStack);
-                printf("    %-6s %s -> ", varTypeName(fieldVarDsc->TypeGet()), fieldVarDsc->lvReason);
-                gtDispLclVar(fieldLclNum);
-                gtDispSsaName(fieldLclNum, tree->GetSsaNum(this, index), isDef);
-
-                if (fieldVarDsc->lvRegister)
-                {
-                    printf(" ");
-                    fieldVarDsc->PrintVarReg();
-                }
-
-                if (fieldVarDsc->lvTracked && fgLocalVarLivenessDone && tree->IsLastUse(index))
-                {
-                    printf(" (last use)");
-                }
-            }
-        }
-    }
-    else // a normal not-promoted lclvar
-    {
-        if ((varDsc->lvTracked || varDsc->lvTrackedWithoutIndex) && fgLocalVarLivenessDone &&
-            ((tree->gtFlags & GTF_VAR_DEATH) != 0))
-        {
-            printf(" (last use)");
-        }
+        printf(" (last use)");
     }
 }
 
@@ -20733,45 +20652,7 @@ bool Compiler::gtStoreMayDefineField(LclVarDsc* fieldVarDsc,
                                      ssize_t*   pFieldRelativeOffset,
                                      ValueSize* pFieldAffectedBytes)
 {
-    ssize_t   fieldOffset = fieldVarDsc->lvFldOffset;
-    ValueSize fieldSize   = fieldVarDsc->lvValueSize();
-
-    if ((offset == fieldOffset) && (fieldSize == storeSize))
-    {
-        *pFieldRelativeOffset = 0;
-        *pFieldAffectedBytes  = fieldSize;
-        return true;
-    }
-    else if (fieldSize.IsExact() && storeSize.IsExact())
-    {
-        ssize_t storeEndOffset = offset + static_cast<ssize_t>(storeSize.GetExact());
-        ssize_t fieldEndOffset = fieldOffset + static_cast<ssize_t>(fieldSize.GetExact());
-        if ((fieldOffset < storeEndOffset) && (offset < fieldEndOffset))
-        {
-            *pFieldRelativeOffset = (offset < fieldOffset) ? 0 : (offset - fieldOffset);
-            *pFieldAffectedBytes =
-                ValueSize(static_cast<unsigned>(min(storeEndOffset, fieldEndOffset) - max(offset, fieldOffset)));
-
-            return true;
-        }
-
-        return false;
-    }
-    else
-    {
-        // One of either the field size or store size is inexact, and the store is not entire, which means we
-        // can't determine precise overlap of the field and store bounds. We assume that this will define the
-        // field in this situation and allow the caller to decide on what to do with this, based on
-        // pFieldAffectedBytes having some inexact ValueSize.
-        //
-        // TODO-SVE:
-        //     * Can we check against inequalities with vector min/max sizes?
-        //     * Can we check for exact store ranges terminating before the start of the unknown size field?
-        //     * Can we check for exact field ranges terminating before the offset of the store?
-        *pFieldRelativeOffset = (offset < fieldOffset) ? 0 : (offset - fieldOffset);
-        *pFieldAffectedBytes  = ValueSize::Unknown();
-        return true;
-    }
+    unreached();
 }
 
 //------------------------------------------------------------------------
@@ -33459,162 +33340,6 @@ regMaskTP ReturnTypeDesc::GetABIReturnRegs(CorInfoCallConvExtension callConv) co
     return resultMask;
 }
 #endif // HAS_FIXED_REGISTER_SET
-
-//------------------------------------------------------------------------
-//  GetNum: Get the SSA number for a given field.
-//
-//  Arguments:
-//     compiler - The Compiler instance
-//     index    - The field index
-//
-//  Return Value:
-//     The SSA number corresponding to the field at "index".
-//
-unsigned SsaNumInfo::GetNum(Compiler* compiler, unsigned index) const
-{
-    assert(IsComposite());
-    if (HasCompactFormat())
-    {
-        return (m_value >> (index * BITS_PER_SIMPLE_NUM)) & SIMPLE_NUM_MASK;
-    }
-
-    // We expect this case to be very rare (outside stress).
-    return *GetOutlinedNumSlot(compiler, index);
-}
-
-//------------------------------------------------------------------------
-// GetOutlinedNumSlot: Get a pointer the "outlined" SSA number for a field.
-//
-// Arguments:
-//    compiler - The Compiler instance
-//    index    - The field index
-//
-// Return Value:
-//    Pointer to the SSA number corresponding to the field at "index".
-//
-unsigned* SsaNumInfo::GetOutlinedNumSlot(Compiler* compiler, unsigned index) const
-{
-    assert(IsComposite() && !HasCompactFormat());
-
-    // The "outlined" format for a composite number encodes a 30-bit-sized index.
-    // First, extract it: this will need "bit stitching" from the two parts.
-    unsigned outIndexLow  = m_value & OUTLINED_INDEX_LOW_MASK;
-    unsigned outIndexHigh = (m_value & OUTLINED_INDEX_HIGH_MASK) >> 1;
-    unsigned outIndex     = outIndexLow | outIndexHigh;
-
-    return &compiler->m_outlinedCompositeSsaNums->GetRefNoExpand(outIndex + index);
-}
-
-//------------------------------------------------------------------------
-// NumCanBeEncodedCompactly: Can the given field ref be encoded compactly?
-//
-// Arguments:
-//    ssaNum - The SSA number
-//    index  - The field index
-//
-// Return Value:
-//    Whether the ref of the field at "index" can be encoded through the
-//    "compact" encoding scheme.
-//
-// Notes:
-//    Under stress, we randomly reduce the number of refs that can be
-//    encoded compactly, to stress the outlined encoding logic.
-//
-/* static */ bool SsaNumInfo::NumCanBeEncodedCompactly(unsigned index, unsigned ssaNum)
-{
-#ifdef DEBUG
-    if (JitTls::GetCompiler()->compStressCompile(Compiler::STRESS_SSA_INFO, 20))
-    {
-        return (ssaNum - 2) < index;
-    }
-#endif // DEBUG
-
-    assert(index < MAX_NumOfFieldsInPromotableStruct);
-
-    return (ssaNum <= MAX_SIMPLE_NUM) &&
-           ((index < SIMPLE_NUM_COUNT) || (SIMPLE_NUM_COUNT <= MAX_NumOfFieldsInPromotableStruct));
-}
-
-//------------------------------------------------------------------------
-// Composite: Form a composite SSA number, one capable of representing refs
-//    to more than one SSA local.
-//
-// Arguments:
-//    baseNum      - The SSA number to base the new one on (composite/invalid)
-//    compiler     - The Compiler instance
-//    parentLclNum - The promoted local representing a "whole" ref
-//    index        - The field index
-//    ssaNum       - The SSA number
-//
-// Return Value:
-//    A new, always composite, SSA number that represents all of the refs
-//    in "baseNum", with the field at "index" set to "ssaNum".
-//
-// Notes:
-//    It is assumed that the new number represents the same "whole" ref as
-//    the old one (the same parent local). If the SSA number needs to be
-//    reset fully, a new, RESERVED one should be created, and composed from
-//    with the appropriate parent reference.
-//
-/* static */ SsaNumInfo SsaNumInfo::Composite(
-    SsaNumInfo baseNum, Compiler* compiler, unsigned parentLclNum, unsigned index, unsigned ssaNum)
-{
-    assert(baseNum.IsInvalid() || baseNum.IsComposite());
-    assert(compiler->lvaGetDesc(parentLclNum)->lvPromoted);
-
-    if (NumCanBeEncodedCompactly(index, ssaNum) && (baseNum.IsInvalid() || baseNum.HasCompactFormat()))
-    {
-        unsigned ssaNumEncoded = ssaNum << (index * BITS_PER_SIMPLE_NUM);
-        if (baseNum.IsInvalid())
-        {
-            return SsaNumInfo(COMPOSITE_ENCODING_BIT | ssaNumEncoded);
-        }
-
-        return SsaNumInfo(ssaNumEncoded | (baseNum.m_value & ~(SIMPLE_NUM_MASK << (index * BITS_PER_SIMPLE_NUM))));
-    }
-
-    if (!baseNum.IsInvalid() && !baseNum.HasCompactFormat())
-    {
-        *baseNum.GetOutlinedNumSlot(compiler, index) = ssaNum;
-        return baseNum;
-    }
-
-    // This is the only path where we can encounter a null table.
-    if (compiler->m_outlinedCompositeSsaNums == nullptr)
-    {
-        CompAllocator alloc                  = compiler->getAllocator(CMK_SSA);
-        compiler->m_outlinedCompositeSsaNums = new (alloc) JitExpandArrayStack<unsigned>(alloc);
-    }
-
-    // Allocate a new chunk for the field numbers. Once allocated, it cannot be expanded.
-    int                            count      = compiler->lvaGetDesc(parentLclNum)->lvFieldCnt;
-    JitExpandArrayStack<unsigned>* table      = compiler->m_outlinedCompositeSsaNums;
-    int                            outIdx     = table->Size();
-    unsigned*                      pLastSlot  = &table->GetRef(outIdx + count - 1); // This will grow the table.
-    unsigned*                      pFirstSlot = pLastSlot - count + 1;
-
-    // Copy over all of the already encoded numbers.
-    if (!baseNum.IsInvalid())
-    {
-        for (int i = 0; i < count; i++)
-        {
-            pFirstSlot[i] = baseNum.GetNum(compiler, i);
-        }
-    }
-
-    // Copy the one being set last to overwrite any previous values.
-    pFirstSlot[index] = ssaNum;
-
-    // Split the index if it does not fit into a small encoding.
-    if ((outIdx & ~OUTLINED_INDEX_LOW_MASK) != 0)
-    {
-        int outIdxLow  = outIdx & OUTLINED_INDEX_LOW_MASK;
-        int outIdxHigh = (outIdx << 1) & OUTLINED_INDEX_HIGH_MASK;
-        outIdx         = outIdxLow | outIdxHigh;
-    }
-
-    return SsaNumInfo(COMPOSITE_ENCODING_BIT | OUTLINED_ENCODING_BIT | outIdx);
-}
 
 //------------------------------------------------------------------------
 // GetLclOffs: if `this` is a field or a field address it returns offset

@@ -202,14 +202,6 @@ public:
                 return fgWalkResult::WALK_CONTINUE;
             }
 
-            // Cannot convert any locals that r promoted struct fields
-            if (varDsc->lvIsStructField)
-            {
-                JITDUMP("is struct field. ");
-                weight->InvalidateWeight();
-                return fgWalkResult::WALK_CONTINUE;
-            }
-
             // TODO: Converting to a mask loses data - as each field is only a single bit.
             // For parameters, OSR locals, and locals which are used as vectors, then they
             // cannot be stored as a mask as data will be lost.

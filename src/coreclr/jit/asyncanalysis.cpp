@@ -145,17 +145,6 @@ static void MarkMutatedVarDsc(Compiler* compiler, LclVarDsc* varDsc, VARSET_TP& 
         return;
     }
 
-    if (varDsc->lvPromoted)
-    {
-        for (unsigned i = 0; i < varDsc->lvFieldCnt; i++)
-        {
-            LclVarDsc* fieldDsc = compiler->lvaGetDesc(varDsc->lvFieldLclStart + i);
-            if (fieldDsc->lvTracked)
-            {
-                VarSetOps::AddElemD(compiler, mutated, fieldDsc->lvVarIndex);
-            }
-        }
-    }
 }
 
 //------------------------------------------------------------------------
@@ -810,32 +799,6 @@ bool AsyncAnalysis::IsLive(unsigned lclNum)
     {
         // Independently promoted structs are handled only through their
         // fields.
-        return false;
-    }
-
-    if (promoType == Compiler::PROMOTION_TYPE_DEPENDENT)
-    {
-        // Dependently promoted structs are handled only through the base
-        // struct local.
-        //
-        // A dependently promoted struct is live if any of its fields are live.
-
-        bool anyLive    = false;
-        bool anyMutated = false;
-        for (unsigned i = 0; i < dsc->lvFieldCnt; i++)
-        {
-            LclVarDsc* fieldDsc = m_compiler->lvaGetDesc(dsc->lvFieldLclStart + i);
-            anyLive |=
-                !fieldDsc->lvTracked || VarSetOps::IsMember(m_compiler, m_compiler->compCurLife, fieldDsc->lvVarIndex);
-            anyMutated |=
-                !fieldDsc->lvTracked || VarSetOps::IsMember(m_compiler, m_mutatedValues, fieldDsc->lvVarIndex);
-        }
-
-        return anyLive && anyMutated;
-    }
-
-    if (dsc->lvIsStructField && (m_compiler->lvaGetParentPromotionType(dsc) == Compiler::PROMOTION_TYPE_DEPENDENT))
-    {
         return false;
     }
 

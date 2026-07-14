@@ -590,11 +590,6 @@ void Compiler::gsRewriteTreeForShadowParam(GenTree* tree)
 void Compiler::gsCopyIntoShadow(unsigned lclNum, unsigned shadowLclNum)
 {
     LclVarDsc* varDsc = lvaGetDesc(lclNum);
-    if (varDsc->lvPromoted && !varDsc->lvDoNotEnregister)
-    {
-        lvaSetVarDoNotEnregister(lclNum DEBUGARG(DoNotEnregisterReason::BlockOp));
-    }
-
 #if defined(TARGET_X86) && defined(FEATURE_IJW)
     if (lclNum < info.compArgsCount && argRequiresSpecialCopy(lclNum) && varDsc->TypeIs(TYP_STRUCT))
     {

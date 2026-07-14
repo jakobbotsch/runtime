@@ -1763,37 +1763,6 @@ void LinearScan::identifyCandidates()
             {
                 localVarIntervals[varDsc->lvVarIndex] = nullptr;
             }
-            // The current implementation of multi-reg structs that are referenced collectively
-            // (i.e. by referring to the parent lclVar rather than each field separately) relies
-            // on all or none of the fields being candidates.
-            if (varDsc->lvIsStructField)
-            {
-                LclVarDsc* parentVarDsc = m_compiler->lvaGetDesc(varDsc->lvParentLcl);
-                if (parentVarDsc->lvIsMultiRegDest && !parentVarDsc->lvDoNotEnregister)
-                {
-                    JITDUMP("Setting multi-reg-dest struct V%02u as not enregisterable:", varDsc->lvParentLcl);
-                    m_compiler->lvaSetVarDoNotEnregister(varDsc->lvParentLcl DEBUGARG(DoNotEnregisterReason::BlockOp));
-                    for (unsigned int i = 0; i < parentVarDsc->lvFieldCnt; i++)
-                    {
-                        LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(parentVarDsc->lvFieldLclStart + i);
-                        JITDUMP(" V%02u", parentVarDsc->lvFieldLclStart + i);
-                        if (fieldVarDsc->lvTracked)
-                        {
-                            fieldVarDsc->lvLRACandidate                = 0;
-                            localVarIntervals[fieldVarDsc->lvVarIndex] = nullptr;
-                            VarSetOps::RemoveElemD(m_compiler, registerCandidateVars, fieldVarDsc->lvVarIndex);
-#if FEATURE_PARTIAL_SIMD_CALLEE_SAVE
-                            VarSetOps::RemoveElemD(m_compiler, largeVectorVars, fieldVarDsc->lvVarIndex);
-#endif
-                            JITDUMP("*");
-                        }
-                        // This is not accurate, but we need a non-zero refCnt for the parent so that it will
-                        // be allocated to the stack.
-                        parentVarDsc->setLvRefCnt(parentVarDsc->lvRefCnt() + fieldVarDsc->lvRefCnt());
-                    }
-                    JITDUMP("\n");
-                }
-            }
             continue;
         }
 
@@ -1810,11 +1779,6 @@ void LinearScan::identifyCandidates()
 
             // we will set this later when we have determined liveness
             varDsc->lvMustInit = false;
-
-            if (varDsc->lvIsStructField)
-            {
-                newInt->isStructField = true;
-            }
 
             if (varDsc->IsLiveInOutOfHandler())
             {
@@ -6920,12 +6884,7 @@ void LinearScan::writeLocalReg(GenTreeLclVar* lclNode, unsigned varNum, regNumbe
     }
     else
     {
-        assert(m_compiler->lvaEnregMultiRegVars);
-        LclVarDsc* parentVarDsc = m_compiler->lvaGetDesc(lclNode);
-        assert(parentVarDsc->lvPromoted);
-        unsigned regIndex = varNum - parentVarDsc->lvFieldLclStart;
-        assert(regIndex < MAX_MULTIREG_COUNT);
-        lclNode->SetRegNumByIdx(reg, regIndex);
+        unreached();
     }
 }
 
@@ -10857,10 +10816,9 @@ void LinearScan::TupleStyleDump(LsraTupleDumpMode mode)
                     assert(mapping != nullptr);
                     argReg = mapping->RegisterSegment->GetRegister();
                 }
-                else if (varDsc->lvIsRegArg && !varDsc->lvIsStructField)
+                else if (varDsc->lvIsRegArg)
                 {
-                    const ABIPassingInformation& abiInfo = m_compiler->lvaGetParameterABIInfo(
-                        varDsc->lvIsStructField ? varDsc->lvParentLcl : interval->varNum);
+                    const ABIPassingInformation& abiInfo = m_compiler->lvaGetParameterABIInfo(interval->varNum);
                     argReg = abiInfo.Segment(0).GetRegister();
                 }
 

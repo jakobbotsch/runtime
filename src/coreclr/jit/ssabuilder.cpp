@@ -54,11 +54,6 @@ void Compiler::fgResetForSsa(bool deepClean)
         {
             m_memorySsaMap[memoryKind] = nullptr;
         }
-
-        if (m_outlinedCompositeSsaNums != nullptr)
-        {
-            m_outlinedCompositeSsaNums->Reset();
-        }
     }
 
     for (BasicBlock* const blk : Blocks())
@@ -438,39 +433,6 @@ void SsaBuilder::RenameDef(GenTree* defNode, BasicBlock* block)
             return GenTree::VisitResult::Continue;
         }
 
-        if (varDsc->lvPromoted)
-        {
-            for (unsigned index = 0; index < varDsc->lvFieldCnt; index++)
-            {
-                unsigned   fieldLclNum = varDsc->lvFieldLclStart + index;
-                LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(fieldLclNum);
-                if (m_compiler->lvaInSsa(fieldLclNum))
-                {
-                    ssize_t   fieldStoreOffset;
-                    ValueSize fieldStoreSize;
-                    unsigned  ssaNum = SsaConfig::RESERVED_SSA_NUM;
-
-                    // Fast-path the common case of an "entire" store.
-                    if (def.IsEntire)
-                    {
-                        ssaNum = RenamePushDef(defNode, block, fieldLclNum, /* defIsFull */ true);
-                    }
-                    else if (m_compiler->gtStoreMayDefineField(fieldVarDsc, def.Offset, def.Size, &fieldStoreOffset,
-                                                               &fieldStoreSize))
-                    {
-                        ssaNum = RenamePushDef(defNode, block, fieldLclNum,
-                                               ValueNumStore::LoadStoreIsEntire(fieldVarDsc->lvValueSize(),
-                                                                                fieldStoreOffset, fieldStoreSize));
-                    }
-
-                    if (ssaNum != SsaConfig::RESERVED_SSA_NUM)
-                    {
-                        def.Def->SetSsaNum(m_compiler, index, ssaNum);
-                    }
-                }
-            }
-        }
-
         if (varDsc->IsAddressExposed())
         {
             RenamePushMemoryDef(def.Def, block);
@@ -510,8 +472,7 @@ void SsaBuilder::RenameDef(GenTree* defNode, BasicBlock* block)
 //
 unsigned SsaBuilder::RenamePushDef(GenTree* defNode, BasicBlock* block, unsigned lclNum, bool isFullDef)
 {
-    // Promoted variables are not in SSA, only their fields are.
-    assert(m_compiler->lvaInSsa(lclNum) && !m_compiler->lvaGetDesc(lclNum)->lvPromoted);
+    assert(m_compiler->lvaInSsa(lclNum));
 
     LclVarDsc* const varDsc = m_compiler->lvaGetDesc(lclNum);
     unsigned const   ssaNum =
@@ -623,8 +584,6 @@ void SsaBuilder::RenameLclUse(GenTreeLclVarCommon* lclNode, BasicBlock* block)
     }
     else
     {
-        // Promoted variables are not in SSA, only their fields are.
-        assert(!lclVar->lvPromoted);
         ssaNum                      = m_renameStack.Top(lclNum);
         LclSsaVarDsc* const ssaDesc = lclVar->GetPerSsaData(ssaNum);
         ssaDesc->AddUse(block);

@@ -52,20 +52,7 @@ void Compiler::optBlockCopyPropPopStacks(BasicBlock* block, LclNumToLiveDefsMap*
             }
 
             auto visitDef = [=](GenTreeLclVarCommon* lcl) {
-                if (lcl->HasCompositeSsaName())
-                {
-                    LclVarDsc* varDsc = lvaGetDesc(lcl);
-                    assert(varDsc->lvPromoted);
-
-                    for (unsigned index = 0; index < varDsc->lvFieldCnt; index++)
-                    {
-                        popDef(varDsc->lvFieldLclStart + index, lcl->GetSsaNum(this, index));
-                    }
-                }
-                else
-                {
-                    popDef(lcl->GetLclNum(), lcl->GetSsaNum());
-                }
+                popDef(lcl->GetLclNum(), lcl->GetSsaNum());
 
                 return GenTree::VisitResult::Continue;
             };
@@ -348,21 +335,7 @@ void Compiler::optCopyPropPushDef(GenTreeLclVarCommon* lclNode, LclNumToLiveDefs
         defStack->Push(CopyPropSsaDef(ssaDef, lclNode));
     };
 
-    if (lclNode->HasCompositeSsaName())
-    {
-        LclVarDsc* varDsc = lvaGetDesc(lclNum);
-        assert(varDsc->lvPromoted);
-
-        for (unsigned index = 0; index < varDsc->lvFieldCnt; index++)
-        {
-            unsigned ssaNum = lclNode->GetSsaNum(this, index);
-            if (ssaNum != SsaConfig::RESERVED_SSA_NUM)
-            {
-                pushDef(varDsc->lvFieldLclStart + index, ssaNum);
-            }
-        }
-    }
-    else if (lclNode->HasSsaName())
+    if (lclNode->HasSsaName())
     {
         unsigned ssaNum = lclNode->GetSsaNum();
         pushDef(lclNum, ssaNum);

@@ -1379,8 +1379,6 @@ bool Compiler::optTryUnrollLoop(FlowGraphNaturalLoop* loop, bool* changedIR)
     bool       unsTest      = iterInfo.TestTree->IsUnsigned();
 
     assert(!lvaGetDesc(lvar)->IsAddressExposed());
-    assert(!lvaGetDesc(lvar)->lvIsStructField);
-
     JITDUMP("Analyzing candidate for loop unrolling:\n");
     DBEXEC(verbose, FlowGraphNaturalLoop::Dump(loop));
 
@@ -3581,7 +3579,6 @@ void Compiler::optRecordSsaUses(GenTree* tree, BasicBlock* block)
                 else
                 {
                     assert(!m_compiler->lvaInSsa(tree->GetLclNum()));
-                    assert(!tree->HasCompositeSsaName());
                 }
             }
 
@@ -5853,29 +5850,6 @@ void Compiler::optRemoveRedundantZeroInits()
                                 defsInBlock.Set(lclNum, 1);
                             }
                         }
-                        // Here we treat both "full" and "partial" tracked field defs as defs
-                        // (that is, we ignore the state of GTF_VAR_USEASG).
-                        //
-                        else if (varTypeIsStruct(lclDsc) && lvaGetPromotionType(lclDsc) != PROMOTION_TYPE_NONE)
-                        {
-                            for (unsigned i = lclDsc->lvFieldLclStart; i < lclDsc->lvFieldLclStart + lclDsc->lvFieldCnt;
-                                 ++i)
-                            {
-                                if (lvaGetDesc(i)->lvTracked)
-                                {
-                                    unsigned* pDefsCount = defsInBlock.LookupPointer(i);
-                                    if (pDefsCount != nullptr)
-                                    {
-                                        *pDefsCount = (*pDefsCount) + 1;
-                                    }
-                                    else
-                                    {
-                                        defsInBlock.Set(i, 1);
-                                    }
-                                }
-                            }
-                        }
-
                         if (!tree->OperIsLocalStore())
                         {
                             break;
@@ -5886,28 +5860,6 @@ void Compiler::optRemoveRedundantZeroInits()
                         // the present of LCL_ADDR (GTF_CALL_M_RETBUFFARG_LCLOPT) definitions.
                         pRefCount = refCounts.LookupPointer(lclNum);
                         if (*pRefCount != 1)
-                        {
-                            break;
-                        }
-
-                        unsigned parentRefCount = 0;
-                        if (lclDsc->lvIsStructField && refCounts.Lookup(lclDsc->lvParentLcl, &parentRefCount) &&
-                            (parentRefCount != 0))
-                        {
-                            break;
-                        }
-
-                        unsigned fieldRefCount = 0;
-                        if (lclDsc->lvPromoted)
-                        {
-                            for (unsigned i = lclDsc->lvFieldLclStart;
-                                 (fieldRefCount == 0) && (i < lclDsc->lvFieldLclStart + lclDsc->lvFieldCnt); ++i)
-                            {
-                                refCounts.Lookup(i, &fieldRefCount);
-                            }
-                        }
-
-                        if (fieldRefCount != 0)
                         {
                             break;
                         }
@@ -5923,12 +5875,9 @@ void Compiler::optRemoveRedundantZeroInits()
 
                             if (!bbInALoop || bbIsReturn)
                             {
-                                bool neverTracked = lclDsc->IsAddressExposed() || lclDsc->lvPinned ||
-                                                    (lclDsc->lvPromoted && varTypeIsStruct(lclDsc));
+                                bool neverTracked = lclDsc->IsAddressExposed() || lclDsc->lvPinned;
 
                                 if (BitVecOps::IsMember(&bitVecTraits, zeroInitLocals, lclNum) ||
-                                    (lclDsc->lvIsStructField &&
-                                     BitVecOps::IsMember(&bitVecTraits, zeroInitLocals, lclDsc->lvParentLcl)) ||
                                     ((neverTracked || !isEntire) &&
                                      !fgVarNeedsExplicitZeroInit(lclNum, bbInALoop, bbIsReturn)))
                                 {

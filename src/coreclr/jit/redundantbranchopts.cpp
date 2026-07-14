@@ -1938,17 +1938,6 @@ Compiler::JumpThreadCheckResult Compiler::optJumpThreadCheck(BasicBlock* const b
                 unsigned const             ssaNum = phiDef->GetSsaNum();
                 LclVarDsc* const           varDsc = lvaGetDesc(lclNum);
 
-                // We do not put implicit uses of promoted local fields into SSA.
-                // So assume the worst here, that there is some implicit use of this ssa
-                // def we don't know about.
-                //
-                if (varDsc->lvIsStructField)
-                {
-                    JITDUMP(FMT_BB " has phi for promoted field V%02u.%u; no phi-based threading\n", block->bbNum,
-                            lclNum, ssaNum);
-                    return JumpThreadCheckResult::CannotThread;
-                }
-
                 LclSsaVarDsc* const ssaVarDsc = varDsc->GetPerSsaData(ssaNum);
 
                 // Bypassing a global use might require SSA updates.

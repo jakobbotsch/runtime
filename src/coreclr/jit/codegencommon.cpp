@@ -814,19 +814,7 @@ regMaskTP CodeGenInterface::genGetRegMask(GenTree* tree)
 
     regMaskTP        regMask = RBM_NONE;
     const LclVarDsc* varDsc  = m_compiler->lvaGetDesc(tree->AsLclVarCommon());
-    if (varDsc->lvPromoted)
-    {
-        for (unsigned i = varDsc->lvFieldLclStart; i < varDsc->lvFieldLclStart + varDsc->lvFieldCnt; ++i)
-        {
-            const LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(i);
-            noway_assert(fieldVarDsc->lvIsStructField);
-            if (fieldVarDsc->lvIsInReg())
-            {
-                regMask |= genGetRegMask(fieldVarDsc);
-            }
-        }
-    }
-    else if (varDsc->lvIsInReg())
+    if (varDsc->lvIsInReg())
     {
         regMask = genGetRegMask(varDsc);
     }
@@ -3495,12 +3483,6 @@ void CodeGen::genHomeRegisterParams(regNumber initReg, bool* initRegStillZeroed)
             {
                 genSpillOrAddRegisterParam(mapping->LclNum, mapping->Offset, lclNum, segment, &graph);
 
-                // If home is shared with base local, then skip spilling to the
-                // base local.
-                if (lclDsc->lvPromoted)
-                {
-                    spillToBaseLocal = false;
-                }
             }
 
 #ifdef TARGET_ARM
@@ -4319,15 +4301,6 @@ void CodeGen::genEnregisterOSRArgsAndLocals(regNumber initReg, bool* pInitRegZer
 
         int      fieldOffset = 0;
         unsigned lclNum      = varNum;
-
-        if (varDsc->lvIsStructField)
-        {
-            lclNum = varDsc->lvParentLcl;
-            assert(lclNum < patchpointInfoLen);
-
-            fieldOffset = varDsc->lvFldOffset;
-            JITDUMP("---OSR--- V%02u is promoted field of V%02u at offset %d\n", varNum, lclNum, fieldOffset);
-        }
 
         // Note we are always reading from the tier0 frame here
         //
@@ -7763,12 +7736,7 @@ void CodeGen::genStructReturn(GenTree* treeNode)
                 // This is a spilled field of a multi-reg lclVar.
                 // We currently only mark a lclVar operand as RegOptional, since we don't have a way
                 // to mark a multi-reg tree node as used from spill (GTF_NOREG_AT_USE) on a per-reg basis.
-                LclVarDsc* varDsc = m_compiler->lvaGetDesc(actualOp1->AsLclVar());
-                assert(varDsc->lvPromoted);
-                unsigned fieldVarNum = varDsc->lvFieldLclStart + i;
-                assert(m_compiler->lvaGetDesc(fieldVarNum)->lvOnFrame);
-
-                GetEmitter()->emitIns_R_S(ins_Load(type), emitTypeSize(type), toReg, fieldVarNum, 0);
+                unreached();
             }
             else
             {
@@ -7893,9 +7861,6 @@ void CodeGen::genJmpPlaceArgs(GenTree* jmp)
     for (unsigned varNum = 0; varNum < m_compiler->info.compArgsCount; varNum++)
     {
         LclVarDsc* varDsc = m_compiler->lvaGetDesc(varNum);
-        // Promotion is currently disabled entirely for methods using CEE_JMP.
-        assert(!varDsc->lvPromoted);
-
         if (varDsc->GetRegNum() == REG_STK)
         {
             continue;
@@ -8066,8 +8031,7 @@ void CodeGen::genMultiRegStoreToLocal(GenTreeLclVar* lclNode)
 
     if (isMultiRegVar)
     {
-        assert(m_compiler->lvaEnregMultiRegVars);
-        assert(regCount == varDsc->lvFieldCnt);
+        unreached();
     }
 
 #if defined(TARGET_RISCV64) || defined(TARGET_LOONGARCH64)
@@ -8095,32 +8059,7 @@ void CodeGen::genMultiRegStoreToLocal(GenTreeLclVar* lclNode)
 
         if (isMultiRegVar)
         {
-            // Each field is passed in its own register, use the field types.
-            regNumber  varReg      = lclNode->GetRegByIndex(i);
-            unsigned   fieldLclNum = varDsc->lvFieldLclStart + i;
-            LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(fieldLclNum);
-            var_types  destType    = fieldVarDsc->TypeGet();
-            if (varReg != REG_NA)
-            {
-                hasRegs = true;
-
-                // We may need a cross register-file copy here.
-                inst_Mov(destType, varReg, reg, /* canSkip */ true);
-            }
-            else
-            {
-                varReg = REG_STK;
-            }
-            if ((varReg == REG_STK) || fieldVarDsc->IsAlwaysAliveInMemory())
-            {
-                if (!lclNode->IsLastUse(i))
-                {
-                    // A byte field passed in a long register should be written on the stack as a byte.
-                    instruction storeIns = ins_StoreFromSrc(reg, destType);
-                    GetEmitter()->emitIns_S_R(storeIns, emitTypeSize(destType), reg, fieldLclNum, 0);
-                }
-            }
-            fieldVarDsc->SetRegNum(varReg);
+            unreached();
         }
         else
         {
@@ -8337,24 +8276,7 @@ regNumber CodeGen::genRegCopy(GenTree* treeNode, unsigned multiRegIndex)
         var_types type;
         if (op1->IsMultiRegLclVar())
         {
-            LclVarDsc* parentVarDsc = m_compiler->lvaGetDesc(op1->AsLclVar());
-            unsigned   fieldVarNum  = parentVarDsc->lvFieldLclStart + multiRegIndex;
-            LclVarDsc* fieldVarDsc  = m_compiler->lvaGetDesc(fieldVarNum);
-            type                    = fieldVarDsc->TypeGet();
-            inst_Mov(type, targetReg, sourceReg, /* canSkip */ false);
-            if (!op1->AsLclVar()->IsLastUse(multiRegIndex) && fieldVarDsc->GetRegNum() != REG_STK)
-            {
-                // The old location is dying
-                genUpdateRegLife(fieldVarDsc, /*isBorn*/ false, /*isDying*/ true DEBUGARG(op1));
-                gcInfo.gcMarkRegSetNpt(genRegMask(sourceReg));
-                genUpdateVarReg(fieldVarDsc, treeNode);
-
-                // Report the home change for this variable
-                varLiveKeeper->siUpdateVariableLiveRange(fieldVarDsc, fieldVarNum);
-
-                // The new location is going live
-                genUpdateRegLife(fieldVarDsc, /*isBorn*/ true, /*isDying*/ false DEBUGARG(treeNode));
-            }
+            unreached();
         }
         else
         {

@@ -865,7 +865,7 @@ private:
             // Otherwise it could still be possible that the address is part of
             // the struct we're writing.
             unsigned dstLclNum = m_store->AsLclVarCommon()->GetLclNum();
-            if ((lclNum == dstLclNum) || (dsc->lvIsStructField && (dsc->lvParentLcl == dstLclNum)))
+            if (lclNum == dstLclNum)
             {
                 return false;
             }
@@ -1076,20 +1076,8 @@ private:
         //
         unsigned FindRegularlyPromotedField(unsigned offs, Compiler* comp)
         {
-            if (m_local == nullptr)
-            {
-                return BAD_VAR_NUM;
-            }
-
-            LclVarDsc* lclDsc  = comp->lvaGetDesc(m_local);
-            unsigned   lclOffs = m_local->GetLclOffs() + offs;
-
-            if (!lclDsc->lvPromoted)
-            {
-                return BAD_VAR_NUM;
-            }
-
-            return comp->lvaGetFieldLocal(lclDsc, lclOffs);
+            // Old struct promotion has been removed, so there are no regularly promoted fields.
+            return BAD_VAR_NUM;
         }
 
         //------------------------------------------------------------------------

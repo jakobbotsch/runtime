@@ -1662,33 +1662,6 @@ CallDefinitionInfo AsyncTransformation::CanonicalizeCallDefinition(BasicBlock*  
 
             unsigned newLclNum = use.ReplaceWithLclVar(m_compiler);
 
-            // In some cases we may have been assigning a multireg promoted local from the call.
-            // That's not supported with a LCL_VAR source. We need to decompose.
-            if (call->IsMultiRegCall() && use.User()->OperIs(GT_STORE_LCL_VAR))
-            {
-                LclVarDsc* dsc = m_compiler->lvaGetDesc(use.User()->AsLclVar());
-                if (m_compiler->lvaGetPromotionType(dsc) == Compiler::PROMOTION_TYPE_INDEPENDENT)
-                {
-                    m_compiler->lvaSetVarDoNotEnregister(newLclNum DEBUGARG(DoNotEnregisterReason::LocalField));
-                    JITDUMP("  Call is multi-reg stored to an independently promoted local; decomposing store\n");
-                    for (unsigned i = 0; i < dsc->lvFieldCnt; i++)
-                    {
-                        unsigned   fieldLclNum = dsc->lvFieldLclStart + i;
-                        LclVarDsc* fieldDsc    = m_compiler->lvaGetDesc(fieldLclNum);
-
-                        GenTree* value =
-                            m_compiler->gtNewLclFldNode(newLclNum, fieldDsc->TypeGet(), fieldDsc->lvFldOffset);
-                        GenTree* store = m_compiler->gtNewStoreLclVarNode(fieldLclNum, value);
-                        LIR::AsRange(block).InsertBefore(use.User(), value, store);
-                        DISPTREERANGE(LIR::AsRange(block), store);
-                    }
-
-                    // Remove the local and store that were created by ReplaceWithLclVar above
-                    assert(use.Def()->OperIs(GT_LCL_VAR));
-                    LIR::AsRange(block).Remove(use.Def());
-                    LIR::AsRange(block).Remove(use.User());
-                }
-            }
         }
         else
         {
@@ -2352,24 +2325,6 @@ void AsyncTransformation::FillInDataOnSuspension(const ContinuationLayout&      
 //
 SaveSet AsyncTransformation::GetLocalSaveSet(const LclVarDsc* dsc, VARSET_VALARG_TP mutatedSinceResumption)
 {
-    if (dsc->lvPromoted)
-    {
-        for (unsigned i = 0; i < dsc->lvFieldCnt; i++)
-        {
-            LclVarDsc* fieldDsc = m_compiler->lvaGetDesc(dsc->lvFieldLclStart + i);
-            if (!fieldDsc->lvTracked || VarSetOps::IsMember(m_compiler, mutatedSinceResumption, fieldDsc->lvVarIndex))
-            {
-                return SaveSet::MutatedLocals;
-            }
-        }
-
-        return SaveSet::UnmutatedLocals;
-    }
-
-    // We should only see struct fields for independently promoted structs
-    assert(!dsc->lvIsStructField ||
-           (m_compiler->lvaGetPromotionType(dsc->lvParentLcl) == Compiler::PROMOTION_TYPE_INDEPENDENT));
-
     if (!dsc->lvTracked || VarSetOps::IsMember(m_compiler, mutatedSinceResumption, dsc->lvVarIndex))
     {
         return SaveSet::MutatedLocals;
@@ -3073,39 +3028,6 @@ void AsyncTransformation::CopyReturnValueOnResumption(GenTreeCall*              
             }
 
             LIR::AsRange(storeResultBB).InsertAtEnd(LIR::SeqTree(m_compiler, storeResult));
-        }
-        else
-        {
-            assert(!call->gtArgs.HasRetBuffer()); // Locals defined through retbufs are never independently promoted.
-
-            if ((resultLcl->lvFieldCnt > 1) && !resultBase->OperIsLocal())
-            {
-                unsigned resultBaseVar   = GetResultBaseVar();
-                GenTree* storeResultBase = m_compiler->gtNewStoreLclVarNode(resultBaseVar, resultBase);
-                LIR::AsRange(storeResultBB).InsertAtEnd(LIR::SeqTree(m_compiler, storeResultBase));
-
-                resultBase = m_compiler->gtNewLclVarNode(resultBaseVar, TYP_REF);
-
-                // Can be reallocated by above call to GetResultBaseVar
-                resultLcl = m_compiler->lvaGetDesc(callDefInfo.DefinitionNode);
-            }
-
-            assert(callDefInfo.DefinitionNode->OperIs(GT_STORE_LCL_VAR));
-            for (unsigned i = 0; i < resultLcl->lvFieldCnt; i++)
-            {
-                unsigned   fieldLclNum = resultLcl->lvFieldLclStart + i;
-                LclVarDsc* fieldDsc    = m_compiler->lvaGetDesc(fieldLclNum);
-
-                unsigned fldOffset = resultOffset + fieldDsc->lvFldOffset;
-                GenTree* value     = LoadFromOffset(resultBase, fldOffset, fieldDsc->TypeGet(), indirFlags);
-                GenTree* store     = m_compiler->gtNewStoreLclVarNode(fieldLclNum, value);
-                LIR::AsRange(storeResultBB).InsertAtEnd(LIR::SeqTree(m_compiler, store));
-
-                if (i + 1 != resultLcl->lvFieldCnt)
-                {
-                    resultBase = m_compiler->gtCloneExpr(resultBase);
-                }
-            }
         }
     }
     else

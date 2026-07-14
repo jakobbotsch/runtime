@@ -421,12 +421,6 @@ void Liveness<TLiveness>::SelectTrackedLocals()
             isTracked = false;
         }
 
-        // Liveness for promoted structs are tracked more precisely for their fields.
-        if (varDsc->lvPromoted)
-        {
-            isTracked = false;
-        }
-
         // Pinned variables are never tracked since they effectively have
         // invisible uses by the runtime that we currently do not reason about.
         // For example, the nulling of these will look like dead stores, but
@@ -925,7 +919,7 @@ void Liveness<TLiveness>::MarkUseDef(GenTreeLclVarCommon* tree)
     LclVarDsc* const varDsc = m_compiler->lvaGetDesc(lclNum);
 
     // We should never encounter a reference to a lclVar that has a zero refCnt.
-    if (varDsc->lvRefCnt(m_compiler->lvaRefCountState) == 0 && (!varTypeIsPromotable(varDsc) || !varDsc->lvPromoted))
+    if (varDsc->lvRefCnt(m_compiler->lvaRefCountState) == 0)
     {
         JITDUMP("Found reference to V%02u with zero refCnt.\n", lclNum);
         assert(!"We should never encounter a reference to a lclVar that has a zero refCnt.");
@@ -987,32 +981,6 @@ void Liveness<TLiveness>::MarkUseDef(GenTreeLclVarCommon* tree)
             }
         }
 
-        if (varTypeIsPromotable(varDsc))
-        {
-            Compiler::lvaPromotionType promotionType = m_compiler->lvaGetPromotionType(varDsc);
-
-            if (promotionType != Compiler::PROMOTION_TYPE_NONE)
-            {
-                for (unsigned i = varDsc->lvFieldLclStart; i < varDsc->lvFieldLclStart + varDsc->lvFieldCnt; ++i)
-                {
-                    if (!m_compiler->lvaTable[i].lvTracked)
-                    {
-                        continue;
-                    }
-
-                    unsigned varIndex = m_compiler->lvaTable[i].lvVarIndex;
-                    if (isUse && !VarSetOps::IsMember(m_compiler, m_curDefSet, varIndex))
-                    {
-                        VarSetOps::AddElemD(m_compiler, m_curUseSet, varIndex);
-                    }
-
-                    if (TLiveness::SsaLiveness ? isDef : isFullDef)
-                    {
-                        VarSetOps::AddElemD(m_compiler, m_curDefSet, varIndex);
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -1378,7 +1346,6 @@ void Liveness<TLiveness>::MarkMustInitAndEHVars(VARSET_VALARG_TP finallyVars, VA
         {
             // Mark the variable appropriately.
             varDsc->lvLiveInOutOfHandler = true;
-            assert(!varDsc->lvPromoted);
 
             // Mark all pointer variables live on exit from a 'finally' block as
             // 'explicitly initialized' (must-init) for GC-ref types.
@@ -1409,7 +1376,6 @@ bool Liveness<TLiveness>::PerBlockAnalysis(BasicBlock* block, bool keepAliveThis
         const LclVarDsc* varDscEndParams = m_compiler->lvaTable + m_compiler->info.compArgsCount;
         for (LclVarDsc* varDsc = m_compiler->lvaTable; varDsc < varDscEndParams; varDsc++)
         {
-            noway_assert(!varDsc->lvPromoted);
             if (varDsc->lvTracked)
             {
                 VarSetOps::AddElemD(m_compiler, m_liveOut, varDsc->lvVarIndex);
@@ -1638,17 +1604,6 @@ void Liveness<TLiveness>::ComputeLife(VARSET_TP&           life,
             if (varDsc->lvTracked)
             {
                 VarSetOps::AddElemD(m_compiler, life, varDsc->lvVarIndex);
-            }
-            if (varDsc->lvPromoted)
-            {
-                for (unsigned fieldIndex = 0; fieldIndex < varDsc->lvFieldCnt; fieldIndex++)
-                {
-                    LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(varDsc->lvFieldLclStart + fieldIndex);
-                    if (fieldVarDsc->lvTracked)
-                    {
-                        VarSetOps::AddElemD(m_compiler, life, fieldVarDsc->lvVarIndex);
-                    }
-                }
             }
         }
 
@@ -1901,8 +1856,7 @@ bool Liveness<TLiveness>::ComputeLifeTrackedLocalDef(VARSET_TP&           life,
             // of the variable has been exposed. Improved alias analysis could allow
             // stores to these sorts of variables to be removed at the cost of compile
             // time.
-            return !varDsc.IsAddressExposed() &&
-                   !(varDsc.lvIsStructField && m_compiler->lvaTable[varDsc.lvParentLcl].IsAddressExposed());
+            return !varDsc.IsAddressExposed();
         }
     }
 
@@ -1938,19 +1892,9 @@ bool Liveness<TLiveness>::ComputeLifeUntrackedLocal(VARSET_TP&           life,
 
     bool isDef = ((lclVarNode->gtFlags & GTF_VAR_DEF) != 0);
 
-    // We have accurate ref counts when running late liveness so we can eliminate
-    // some stores if the lhs local has a ref count of 1.
     if (TLiveness::EliminateDeadCode && TLiveness::IsLIR && isDef && (varDsc.lvRefCnt() == 1) && !varDsc.lvPinned)
     {
-        if (varDsc.lvIsStructField)
-        {
-            if ((m_compiler->lvaGetDesc(varDsc.lvParentLcl)->lvRefCnt() == 1) &&
-                (m_compiler->lvaGetParentPromotionType(&varDsc) == Compiler::PROMOTION_TYPE_DEPENDENT))
-            {
-                return true;
-            }
-        }
-        else if (varTypeIsPromotable(varDsc.lvType))
+        if (varTypeIsPromotable(varDsc.lvType))
         {
             if (m_compiler->lvaGetPromotionType(&varDsc) != Compiler::PROMOTION_TYPE_INDEPENDENT)
             {
@@ -1961,62 +1905,6 @@ bool Liveness<TLiveness>::ComputeLifeUntrackedLocal(VARSET_TP&           life,
         {
             return true;
         }
-    }
-
-    if (!varTypeIsPromotable(varDsc.TypeGet()) ||
-        (m_compiler->lvaGetPromotionType(&varDsc) == Compiler::PROMOTION_TYPE_NONE))
-    {
-        return false;
-    }
-
-    assert(varDsc.lvFieldCnt <= 4);
-
-    lclVarNode->gtFlags &= ~GTF_VAR_DEATH_MASK;
-    bool anyFieldLive = false;
-    for (unsigned i = varDsc.lvFieldLclStart; i < varDsc.lvFieldLclStart + varDsc.lvFieldCnt; ++i)
-    {
-        LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(i);
-#if !defined(TARGET_64BIT)
-        if (!varTypeIsLong(fieldVarDsc->lvType) || !fieldVarDsc->lvPromoted)
-#endif // !defined(TARGET_64BIT)
-        {
-            noway_assert(fieldVarDsc->lvIsStructField);
-        }
-        if (fieldVarDsc->lvTracked)
-        {
-            const unsigned varIndex  = fieldVarDsc->lvVarIndex;
-            bool           fieldLive = VarSetOps::IsMember(m_compiler, life, varIndex);
-            anyFieldLive |= fieldLive;
-
-            if (!fieldLive)
-            {
-                lclVarNode->SetLastUse(i - varDsc.lvFieldLclStart);
-            }
-
-            if (isDef)
-            {
-                if (((lclVarNode->gtFlags & GTF_VAR_USEASG) == 0) &&
-                    !VarSetOps::IsMember(m_compiler, keepAliveVars, varIndex))
-                {
-                    VarSetOps::RemoveElemD(m_compiler, life, varIndex);
-                }
-            }
-            else
-            {
-                VarSetOps::AddElemD(m_compiler, life, varIndex);
-            }
-        }
-        else
-        {
-            anyFieldLive = true;
-        }
-    }
-
-    if (TLiveness::EliminateDeadCode && isDef && !anyFieldLive)
-    {
-        // Do not consider this store dead if the parent local variable is an address exposed local or
-        // if the struct has any significant padding we must retain the value of.
-        return !varDsc.IsAddressExposed();
     }
 
     return false;
@@ -2142,19 +2030,6 @@ bool Liveness<TLiveness>::RemoveDeadStore(GenTree**           pTree,
         {
             noway_assert(!VarSetOps::IsMember(m_compiler, life, varDsc->lvVarIndex));
         }
-        else
-        {
-            for (unsigned i = 0; i < varDsc->lvFieldCnt; ++i)
-            {
-                unsigned fieldVarNum = varDsc->lvFieldLclStart + i;
-                {
-                    LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(fieldVarNum);
-                    noway_assert(fieldVarDsc->lvTracked &&
-                                 !VarSetOps::IsMember(m_compiler, life, fieldVarDsc->lvVarIndex));
-                }
-            }
-        }
-
         if (sideEffList != nullptr)
         {
             noway_assert((sideEffList->gtFlags & GTF_SIDE_EFFECT) != 0);

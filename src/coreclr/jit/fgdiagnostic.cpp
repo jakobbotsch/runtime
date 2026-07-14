@@ -4426,45 +4426,17 @@ public:
 
             assert(!(def.IsEntire && isUse));
 
-            if (def.Def->HasCompositeSsaName())
+            unsigned const ssaNum = def.Def->GetSsaNum();
+            ProcessDef(def.Def, lclNum, ssaNum);
+
+            if (isUse)
             {
-                for (unsigned index = 0; index < varDsc->lvFieldCnt; index++)
+                unsigned useSsaNum = SsaConfig::RESERVED_SSA_NUM;
+                if (ssaNum != SsaConfig::RESERVED_SSA_NUM)
                 {
-                    unsigned const   fieldLclNum = varDsc->lvFieldLclStart + index;
-                    LclVarDsc* const fieldVarDsc = m_compiler->lvaGetDesc(fieldLclNum);
-                    unsigned const   fieldSsaNum = def.Def->GetSsaNum(m_compiler, index);
-
-                    ssize_t   fieldStoreOffset;
-                    ValueSize fieldStoreSize;
-                    if (m_compiler->gtStoreMayDefineField(fieldVarDsc, def.Offset, def.Size, &fieldStoreOffset,
-                                                          &fieldStoreSize))
-                    {
-                        ProcessDef(def.Def, fieldLclNum, fieldSsaNum);
-
-                        if (!ValueNumStore::LoadStoreIsEntire(fieldVarDsc->lvValueSize(), fieldStoreOffset,
-                                                              fieldStoreSize))
-                        {
-                            assert(isUse);
-                            unsigned const fieldUseSsaNum = fieldVarDsc->GetPerSsaData(fieldSsaNum)->GetUseDefSsaNum();
-                            ProcessUse(def.Def, fieldLclNum, fieldUseSsaNum);
-                        }
-                    }
+                    useSsaNum = varDsc->GetPerSsaData(ssaNum)->GetUseDefSsaNum();
                 }
-            }
-            else
-            {
-                unsigned const ssaNum = def.Def->GetSsaNum();
-                ProcessDef(def.Def, lclNum, ssaNum);
-
-                if (isUse)
-                {
-                    unsigned useSsaNum = SsaConfig::RESERVED_SSA_NUM;
-                    if (ssaNum != SsaConfig::RESERVED_SSA_NUM)
-                    {
-                        useSsaNum = varDsc->GetPerSsaData(ssaNum)->GetUseDefSsaNum();
-                    }
-                    ProcessUse(def.Def, lclNum, useSsaNum);
-                }
+                ProcessUse(def.Def, lclNum, useSsaNum);
             }
 
             return GenTree::VisitResult::Continue;
@@ -4524,15 +4496,6 @@ public:
     {
         unsigned const lclNum = tree->GetLclNum();
         unsigned const ssaNum = tree->GetSsaNum();
-
-        // We currently should not see composite SSA numbers for uses.
-        //
-        if (tree->HasCompositeSsaName())
-        {
-            SetHasErrors();
-            JITDUMP("[error] Composite SSA number on use [%06u] (V%02u)\n", m_compiler->dspTreeID(tree), lclNum);
-            return;
-        }
 
         ProcessUse(tree, lclNum, ssaNum);
     }

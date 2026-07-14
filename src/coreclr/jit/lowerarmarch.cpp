@@ -511,7 +511,7 @@ GenTree* Lowering::LowerStoreLoc(GenTreeLclVarCommon* storeLoc)
     if (storeLoc->OperIs(GT_STORE_LCL_VAR) && varTypeIsSmall(storeLoc) && storeLoc->Data()->IsCnsIntOrI())
     {
         LclVarDsc* varDsc = m_compiler->lvaGetDesc(storeLoc);
-        if (!varDsc->lvIsStructField && (varDsc->GetStackSlotHomeType() == TYP_INT))
+        if (varDsc->GetStackSlotHomeType() == TYP_INT)
         {
             storeLoc->gtType = TYP_INT;
         }

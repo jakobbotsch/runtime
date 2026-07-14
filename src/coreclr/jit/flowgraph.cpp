@@ -5554,14 +5554,7 @@ bool FlowGraphNaturalLoop::VisitDefs(TFunc func)
 GenTreeLclVarCommon* FlowGraphNaturalLoop::FindDef(unsigned lclNum)
 {
     LclVarDsc* dsc = m_dfsTree->GetCompiler()->lvaGetDesc(lclNum);
-    assert(!dsc->lvPromoted);
-
     unsigned lclNum2 = BAD_VAR_NUM;
-
-    if (dsc->lvIsStructField)
-    {
-        lclNum2 = dsc->lvParentLcl;
-    }
 
     GenTreeLclVarCommon* result = nullptr;
     VisitDefs([&result, lclNum, lclNum2](GenTreeLclVarCommon* def) {
@@ -5676,16 +5669,6 @@ bool FlowGraphNaturalLoop::AnalyzeIteration(NaturalLoopIterInfo* info, bool allo
         unsigned iterVar = comp->optIsLoopIncrTree(iterTree);
         assert(iterVar != BAD_VAR_NUM);
         LclVarDsc* const iterVarDsc = comp->lvaGetDesc(iterVar);
-        // Bail on promoted case, otherwise we'd have to search the loop
-        // for both iterVar and its parent.
-        // TODO-CQ: Fix this
-        //
-        if (iterVarDsc->lvIsStructField)
-        {
-            JITDUMP("    iterVar V%02u is a promoted field\n", iterVar);
-            continue;
-        }
-
         // Bail on the potentially aliased case.
         //
         if (iterVarDsc->IsAddressExposed())
@@ -6279,15 +6262,8 @@ bool FlowGraphNaturalLoop::HasDef(unsigned lclNum)
     LclVarDsc* dsc  = comp->lvaGetDesc(lclNum);
 
     assert(!comp->lvaVarAddrExposed(lclNum));
-    // Currently does not handle promoted locals, only fields.
-    assert(!dsc->lvPromoted);
-
     unsigned defLclNum1 = lclNum;
     unsigned defLclNum2 = BAD_VAR_NUM;
-    if (dsc->lvIsStructField)
-    {
-        defLclNum2 = dsc->lvParentLcl;
-    }
 
     bool result = VisitDefs([=](GenTreeLclVarCommon* lcl) {
         if ((lcl->GetLclNum() == defLclNum1) || (lcl->GetLclNum() == defLclNum2))

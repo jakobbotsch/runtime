@@ -321,7 +321,6 @@ void CodeGen::genHomeRegisterParams(regNumber initReg, bool* initRegStillZeroed)
 
     for (unsigned lclNum = 0; lclNum < m_compiler->info.compArgsCount; lclNum++)
     {
-        LclVarDsc*                   lclDsc  = m_compiler->lvaGetDesc(lclNum);
         const ABIPassingInformation& abiInfo = m_compiler->lvaGetParameterABIInfo(lclNum);
 
         for (const ABIPassingSegment& segment : abiInfo.Segments())
@@ -338,12 +337,6 @@ void CodeGen::genHomeRegisterParams(regNumber initReg, bool* initRegStillZeroed)
             if (mapping != nullptr)
             {
                 spillParam(mapping->LclNum, mapping->Offset, lclNum, segment);
-
-                // If home is shared with base local, then skip spilling to the base local.
-                if (lclDsc->lvPromoted)
-                {
-                    spillToBaseLocal = false;
-                }
             }
 
             if (spillToBaseLocal)

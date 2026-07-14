@@ -125,13 +125,15 @@ GenTree* DecomposeLongs::DecomposeNode(GenTree* tree)
     if (tree->TypeIs(TYP_INT) && tree->OperIsLocal())
     {
         LclVarDsc* varDsc = m_compiler->lvaGetDesc(tree->AsLclVarCommon());
-        if (varTypeIsLong(varDsc) && varDsc->lvPromoted)
+        unsigned   loVarNum;
+        unsigned   hiVarNum;
+        if (varTypeIsLong(varDsc) &&
+            m_compiler->lvaGetDecomposedLongFields(tree->AsLclVarCommon()->GetLclNum(), &loVarNum, &hiVarNum))
         {
             JITDUMP("Changing implicit reference to lo half of long lclVar to an explicit reference of its promoted "
                     "half:\n");
             DISPTREERANGE(Range(), tree);
 
-            unsigned loVarNum = varDsc->lvFieldLclStart;
             tree->AsLclVarCommon()->SetLclNum(loVarNum);
             return tree->gtNext;
         }
@@ -391,18 +393,16 @@ GenTree* DecomposeLongs::DecomposeLclVar(LIR::Use& use)
 
     GenTree*   tree     = use.Def();
     unsigned   varNum   = tree->AsLclVarCommon()->GetLclNum();
-    LclVarDsc* varDsc   = m_compiler->lvaGetDesc(varNum);
     GenTree*   loResult = tree;
     loResult->gtType    = TYP_INT;
 
     GenTree* hiResult = m_compiler->gtNewLclLNode(varNum, TYP_INT);
     Range().InsertAfter(loResult, hiResult);
 
-    if (varDsc->lvPromoted)
+    unsigned loVarNum;
+    unsigned hiVarNum;
+    if (m_compiler->lvaGetDecomposedLongFields(varNum, &loVarNum, &hiVarNum))
     {
-        assert(varDsc->lvFieldCnt == 2);
-        unsigned loVarNum = varDsc->lvFieldLclStart;
-        unsigned hiVarNum = loVarNum + 1;
         loResult->AsLclVarCommon()->SetLclNum(loVarNum);
         hiResult->AsLclVarCommon()->SetLclNum(hiVarNum);
     }
@@ -469,8 +469,9 @@ GenTree* DecomposeLongs::DecomposeStoreLclVar(LIR::Use& use)
 
     noway_assert(rhs->OperIs(GT_LONG));
 
-    const LclVarDsc* varDsc = m_compiler->lvaGetDesc(tree->AsLclVarCommon());
-    if (!varDsc->lvPromoted)
+    unsigned loVarNum;
+    unsigned hiVarNum;
+    if (!m_compiler->lvaGetDecomposedLongFields(tree->AsLclVarCommon()->GetLclNum(), &loVarNum, &hiVarNum))
     {
         // We cannot decompose a st.lclVar that is not promoted because doing so
         // changes its liveness semantics. For example, consider the following
@@ -507,18 +508,15 @@ GenTree* DecomposeLongs::DecomposeStoreLclVar(LIR::Use& use)
         return tree->gtNext;
     }
 
-    assert(varDsc->lvFieldCnt == 2);
     GenTreeOp* value = rhs->AsOp();
     Range().Remove(value);
 
-    const unsigned loVarNum = varDsc->lvFieldLclStart;
-    GenTree*       loStore  = tree;
+    GenTree* loStore = tree;
     loStore->AsLclVarCommon()->SetLclNum(loVarNum);
     loStore->AsOp()->gtOp1 = value->gtOp1;
     loStore->gtType        = TYP_INT;
 
-    const unsigned hiVarNum = loVarNum + 1;
-    GenTree*       hiStore  = m_compiler->gtNewLclLNode(hiVarNum, TYP_INT);
+    GenTree* hiStore = m_compiler->gtNewLclLNode(hiVarNum, TYP_INT);
     hiStore->SetOper(GT_STORE_LCL_VAR);
     hiStore->AsOp()->gtOp1 = value->gtOp2;
     hiStore->gtFlags |= GTF_VAR_DEF;
@@ -2510,67 +2508,46 @@ void DecomposeLongs::TryPromoteLongVar(unsigned lclNum)
     {
         return;
     }
-    if (varDsc->lvIsStructField)
+    if (varDsc->lvIsParam)
     {
+        // We do not promote long parameters. Their incoming value is homed to
+        // the parameter's stack/register home by the normal parameter homing,
+        // and references to them are decomposed into LCL_FLDs of the parameter
+        // itself. Promoting them into standalone INT locals would require
+        // re-homing the incoming parameter value into those locals, which the
+        // parameter homing machinery is not set up to do.
         return;
     }
     if (m_compiler->fgNoStructPromotion)
     {
         return;
     }
-    if (m_compiler->fgNoStructParamPromotion && varDsc->lvIsParam)
-    {
-        return;
-    }
-#if defined(FEATURE_HW_INTRINSICS) && defined(TARGET_X86)
-    if (varDsc->lvIsParam)
-    {
-        // Promotion blocks combined read optimizations for SIMD loads of long params
-        return;
-    }
-#endif // FEATURE_HW_INTRINSICS && TARGET_X86
-
-    varDsc->lvFieldCnt      = 2;
-    varDsc->lvFieldLclStart = m_compiler->lvaCount;
-    varDsc->lvPromoted      = true;
-    varDsc->lvContainsHoles = false;
-
-    bool isParam = varDsc->lvIsParam;
 
     JITDUMP("\nPromoting long local V%02u:", lclNum);
 
+    // The low and high halves are grabbed as two consecutive long-lifetime temps
+    // (their lifetime might span multiple BBs). The mapping recorded below relies
+    // on them being consecutive, with the low half first.
+    unsigned loLclNum = BAD_VAR_NUM;
     for (unsigned index = 0; index < 2; ++index)
     {
-        // Grab the temp for the field local.
-
-        // Lifetime of field locals might span multiple BBs, so they are long lifetime temps.
         unsigned fieldLclNum = m_compiler->lvaGrabTemp(
             false DEBUGARG(m_compiler->printfAlloc("%s V%02u.%s (fldOffset=0x%x)", "field", lclNum,
                                                    index == 0 ? "lo" : "hi", index * 4)));
-        varDsc = m_compiler->lvaGetDesc(lclNum);
 
-        LclVarDsc* fieldVarDsc       = m_compiler->lvaGetDesc(fieldLclNum);
-        fieldVarDsc->lvType          = TYP_INT;
-        fieldVarDsc->lvIsStructField = true;
-        fieldVarDsc->lvFldOffset     = (unsigned char)(index * genTypeSize(TYP_INT));
-        fieldVarDsc->lvFldOrdinal    = (unsigned char)index;
-        fieldVarDsc->lvParentLcl     = lclNum;
-        // Currently we do not support enregistering incoming promoted aggregates with more than one field.
-        if (isParam)
+        if (index == 0)
         {
-            fieldVarDsc->lvIsParam = true;
-            m_compiler->lvaSetVarDoNotEnregister(fieldLclNum DEBUGARG(DoNotEnregisterReason::LongParamField));
-
-            fieldVarDsc->lvIsRegArg = varDsc->lvIsRegArg;
+            loLclNum = fieldLclNum;
         }
+        else
+        {
+            assert(fieldLclNum == loLclNum + 1);
+        }
+
+        LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(fieldLclNum);
+        fieldVarDsc->lvType    = TYP_INT;
     }
 
-#ifdef TARGET_ARM
-    if (varDsc->lvIsParam)
-    {
-        // TODO-Cleanup: Allow independent promotion for ARM parameters
-        m_compiler->lvaSetVarDoNotEnregister(lclNum DEBUGARG(DoNotEnregisterReason::IsStructArg));
-    }
-#endif
+    m_compiler->lvaSetDecomposedLongFields(lclNum, loLclNum);
 }
 #endif // !defined(TARGET_64BIT)

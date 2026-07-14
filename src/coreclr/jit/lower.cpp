@@ -605,16 +605,11 @@ GenTree* Lowering::LowerNode(GenTree* node)
             // This merely checks whether it is possible for this to be a multireg node.
             if (lclNode->IsMultiRegLclVar())
             {
-                if (!varDsc->lvPromoted ||
-                    (m_compiler->lvaGetPromotionType(varDsc) != Compiler::PROMOTION_TYPE_INDEPENDENT) ||
-                    (varDsc->lvFieldCnt > MAX_MULTIREG_COUNT))
+                lclNode->ClearMultiReg();
+                if (lclNode->TypeIs(TYP_STRUCT))
                 {
-                    lclNode->ClearMultiReg();
-                    if (lclNode->TypeIs(TYP_STRUCT))
-                    {
-                        m_compiler->lvaSetVarDoNotEnregister(lclNode->GetLclNum()
-                                                                 DEBUGARG(DoNotEnregisterReason::BlockOp));
-                    }
+                    m_compiler->lvaSetVarDoNotEnregister(lclNode->GetLclNum()
+                                                             DEBUGARG(DoNotEnregisterReason::BlockOp));
                 }
             }
             break;
@@ -3322,18 +3317,7 @@ void Lowering::LowerFastTailCall(GenTreeCall* call)
                 // The above call can introduce temps and invalidate the pointer.
                 callerArgDsc = m_compiler->lvaGetDesc(callerArgLclNum);
 
-                // For promoted locals we have more work to do as its fields could also have been invalidated.
-                if (!callerArgDsc->lvPromoted)
-                {
-                    continue;
-                }
-
-                unsigned int fieldsFirst = callerArgDsc->lvFieldLclStart;
-                unsigned int fieldsEnd   = fieldsFirst + callerArgDsc->lvFieldCnt;
-                for (unsigned int j = fieldsFirst; j < fieldsEnd; j++)
-                {
-                    RehomeArgForFastTailCall(j, firstPutargStkOp, lookForUsesFrom, call);
-                }
+                continue;
             }
         }
 
@@ -5600,26 +5584,6 @@ GenTree* Lowering::LowerStoreLocCommon(GenTreeLclVarCommon* lclStore)
     LclVarDsc* varDsc        = m_compiler->lvaGetDesc(lclStore);
     const bool srcIsMultiReg = src->IsMultiRegNode();
 
-    if (!srcIsMultiReg && varTypeIsStruct(varDsc))
-    {
-        // TODO-Cleanup: we want to check `varDsc->lvRegStruct` as the last condition instead of `!varDsc->lvPromoted`,
-        // but we do not set it for `CSE` vars so it is currently failing.
-        assert(varDsc->CanBeReplacedWithItsField(m_compiler) || varDsc->lvDoNotEnregister || !varDsc->lvPromoted);
-        if (varDsc->CanBeReplacedWithItsField(m_compiler))
-        {
-            assert(varDsc->lvFieldCnt == 1);
-            unsigned   fldNum = varDsc->lvFieldLclStart;
-            LclVarDsc* fldDsc = m_compiler->lvaGetDesc(fldNum);
-
-            JITDUMP("Replacing an independently promoted local var V%02u with its only field V%02u for the store "
-                    "from a call [%06u]\n",
-                    lclStore->GetLclNum(), fldNum, m_compiler->dspTreeID(lclStore));
-            lclStore->SetLclNum(fldNum);
-            lclStore->ChangeType(fldDsc->TypeGet());
-            varDsc = fldDsc;
-        }
-    }
-
     if (srcIsMultiReg)
     {
         CheckMultiRegLclVar(lclStore->AsLclVar(), src->GetMultiRegCount(m_compiler));
@@ -5962,13 +5926,6 @@ void Lowering::LowerRetSingleRegStructLclVar(GenTreeUnOp* ret)
     assert(lclVar->OperIs(GT_LCL_VAR));
     unsigned   lclNum = lclVar->GetLclNum();
     LclVarDsc* varDsc = m_compiler->lvaGetDesc(lclNum);
-
-    if (varDsc->lvPromoted)
-    {
-        // TODO-1stClassStructs: We can no longer independently promote
-        // or enregister this struct, since it is referenced as a whole.
-        m_compiler->lvaSetVarDoNotEnregister(lclNum DEBUGARG(DoNotEnregisterReason::BlockOpRet));
-    }
 
     if (varDsc->lvDoNotEnregister)
     {
@@ -9027,19 +8984,21 @@ void Lowering::MapParameterRegisterLocals()
     m_compiler->m_paramRegLocalMappings =
         new (m_compiler, CMK_ABI) ArrayStack<ParameterRegisterLocalMapping>(m_compiler->getAllocator(CMK_ABI));
 
-    // Create initial mappings for promotions.
+    // Create initial mappings for parameters that were decomposed into their
+    // constituent register-sized locals. On 32-bit targets DecomposeLongs
+    // promotes some long parameters into two consecutive INT locals (low half
+    // first, then high half). On 64-bit targets there are no such parameters and
+    // this loop does nothing.
     for (unsigned lclNum = 0; lclNum < m_compiler->info.compArgsCount; lclNum++)
     {
-        LclVarDsc*                   lclDsc  = m_compiler->lvaGetDesc(lclNum);
-        const ABIPassingInformation& abiInfo = m_compiler->lvaGetParameterABIInfo(lclNum);
-
-        if (m_compiler->lvaGetPromotionType(lclDsc) != Compiler::PROMOTION_TYPE_INDEPENDENT)
+        unsigned loLclNum;
+        unsigned hiLclNum;
+        if (!m_compiler->lvaGetDecomposedLongFields(lclNum, &loLclNum, &hiLclNum))
         {
-            // If not promoted, then we do not need to create any mappings.
-            // If dependently promoted then the fields are never enregistered
-            // by LSRA, so no reason to try to create any mappings.
             continue;
         }
+
+        const ABIPassingInformation& abiInfo = m_compiler->lvaGetParameterABIInfo(lclNum);
 
         if (!abiInfo.HasAnyRegisterSegment())
         {
@@ -9052,27 +9011,28 @@ void Lowering::MapParameterRegisterLocals()
         // should not see any split parameters here.
         assert(!abiInfo.IsSplitAcrossRegistersAndStack());
 
-        for (int i = 0; i < lclDsc->lvFieldCnt; i++)
+        unsigned fieldLclNums[2] = {loLclNum, hiLclNum};
+        for (int i = 0; i < 2; i++)
         {
-            unsigned   fieldLclNum = lclDsc->lvFieldLclStart + i;
+            unsigned   fieldLclNum = fieldLclNums[i];
             LclVarDsc* fieldDsc    = m_compiler->lvaGetDesc(fieldLclNum);
+            unsigned   fldOffset   = i * genTypeSize(TYP_INT);
 
             for (const ABIPassingSegment& segment : abiInfo.Segments())
             {
-                if (segment.Offset + segment.Size <= fieldDsc->lvFldOffset)
+                if (segment.Offset + segment.Size <= fldOffset)
                 {
                     // This register does not map to this field (ends before the field starts)
                     continue;
                 }
 
-                if (fieldDsc->lvFldOffset + fieldDsc->lvExactSize() <= segment.Offset)
+                if (fldOffset + genTypeSize(TYP_INT) <= segment.Offset)
                 {
                     // This register does not map to this field (starts after the field ends)
                     continue;
                 }
 
-                m_compiler->m_paramRegLocalMappings->Emplace(&segment, fieldLclNum,
-                                                             segment.Offset - fieldDsc->lvFldOffset);
+                m_compiler->m_paramRegLocalMappings->Emplace(&segment, fieldLclNum, segment.Offset - fldOffset);
             }
 
             assert(!fieldDsc->lvIsParamRegTarget);
@@ -9118,7 +9078,9 @@ void Lowering::FindInducedParameterRegisterLocals()
     for (unsigned lclNum = 0; lclNum < m_compiler->info.compArgsCount; lclNum++)
     {
         LclVarDsc* lcl = m_compiler->lvaGetDesc(lclNum);
-        if (lcl->lvPromoted || !lcl->lvDoNotEnregister)
+        unsigned   loLclNum;
+        unsigned   hiLclNum;
+        if (m_compiler->lvaGetDecomposedLongFields(lclNum, &loLclNum, &hiLclNum) || !lcl->lvDoNotEnregister)
         {
             continue;
         }
@@ -9169,14 +9131,6 @@ void Lowering::FindInducedParameterRegisterLocals()
         GenTreeLclFld* fld = node->AsLclFld();
         if (fld->GetLclNum() >= m_compiler->info.compArgsCount)
         {
-            continue;
-        }
-
-        LclVarDsc* paramDsc = m_compiler->lvaGetDesc(fld);
-        if (paramDsc->lvPromoted)
-        {
-            // These are complicated to reason about since they may be
-            // defined/used through their fields, so just skip them.
             continue;
         }
 
@@ -9385,11 +9339,6 @@ unsigned Lowering::TryReuseLocalForParameterAccess(const LIR::Use& use, const Lo
         return BAD_VAR_NUM;
     }
 
-    if (destLclDsc->lvIsStructField)
-    {
-        return BAD_VAR_NUM;
-    }
-
     if (destLclDsc->TypeIs(TYP_STRUCT))
     {
         return BAD_VAR_NUM;
@@ -9505,10 +9454,6 @@ void Lowering::CheckNode(Compiler* compiler, GenTree* node)
                        (compiler->lvaLclStackHomeSize(node->AsLclVar()->GetLclNum()) == 12));
             }
 #endif // FEATURE_SIMD && TARGET_64BIT
-            if (varDsc->lvPromoted)
-            {
-                assert(varDsc->lvDoNotEnregister || (node->OperIs(GT_STORE_LCL_VAR) && varDsc->lvIsMultiRegDest));
-            }
         }
         break;
 
@@ -9773,43 +9718,8 @@ bool Lowering::CheckMultiRegLclVar(GenTreeLclVar* lclNode, int registerCount)
         return false;
     }
 
-    if ((m_compiler->lvaEnregMultiRegVars) && varDsc->lvPromoted)
-    {
-        // We can enregister if we have a promoted struct and all the fields' types match the ABI requirements.
-        // Note that we don't promote structs with explicit layout, so we don't need to check field offsets, and
-        // if we have multiple types packed into a single register, we won't have matching reg and field counts,
-        // so we can tolerate mismatches of integer size.
-        if (m_compiler->lvaGetPromotionType(varDsc) == Compiler::PROMOTION_TYPE_INDEPENDENT)
-        {
-            if (registerCount == varDsc->lvFieldCnt)
-            {
-                canEnregisterAsMultiReg = true;
-
-#ifdef FEATURE_SIMD
-                // TYP_SIMD12 breaks the above invariant that "we won't have
-                // matching reg and field counts"; for example, consider
-                //
-                // * STORE_LCL_VAR<struct{Vector3, int}>(CALL)
-                // * RETURN(LCL_VAR<struct{Vector3, int}>)
-                //
-                // These return in two GPR registers, while the fields of the
-                // local are stored in SIMD and GPR register, so registerCount
-                // == varDsc->lvFieldCnt == 2. But the backend cannot handle
-                // this.
-
-                for (int i = 0; i < varDsc->lvFieldCnt; i++)
-                {
-                    if (m_compiler->lvaGetDesc(varDsc->lvFieldLclStart + i)->TypeIs(TYP_SIMD12))
-                    {
-                        canEnregisterAsMultiReg = false;
-                        break;
-                    }
-                }
-#endif
-            }
-        }
-    }
-    else
+    // Old struct promotion has been removed, so locals are never enregistered as
+    // multiple registers.
     {
         canEnregisterAsSingleReg = varTypeIsSIMD(lclNode);
 #ifdef TARGET_XARCH

@@ -597,12 +597,6 @@ public:
     unsigned char lvIsPtr : 1; // Might this be used in an address computation? (used by buffer overflow security
                                // checks)
     unsigned char lvIsUnsafeBuffer : 1; // Does this contain an unsafe buffer requiring buffer overflow security checks?
-    unsigned char lvPromoted : 1; // True when this local is a promoted struct, a normed struct, or a "split" long on a
-                                  // 32-bit target.  For implicit byref parameters, this gets hijacked between
-                                  // fgRetypeImplicitByRefArgs and fgMarkDemotedImplicitByRefArgs to indicate whether
-                                  // references to the arg are being rewritten as references to a promoted shadow local.
-    unsigned char lvIsStructField : 1; // Is this local var a field of a promoted struct local?
-    unsigned char lvContainsHoles : 1; // Is this a promoted struct whose fields do not cover the struct local?
 
     unsigned char lvIsMultiRegArg  : 1; // true if this is a multireg LclVar struct used in an argument context
     unsigned char lvIsMultiRegRet  : 1; // true if this is a multireg LclVar struct assigned from a multireg call
@@ -615,18 +609,6 @@ public:
 #ifdef FEATURE_HFA_FIELDS_PRESENT
     CorInfoHFAElemType _lvHfaElemKind : 3; // What kind of an HFA this is (CORINFO_HFA_ELEM_NONE if it is not an HFA).
 #endif                                     // FEATURE_HFA_FIELDS_PRESENT
-
-#ifdef DEBUG
-    // TODO-Cleanup: this flag is only in use by asserts that are checking for struct
-    // types, and is needed because of cases where TYP_STRUCT is bashed to an integral type.
-    // Consider cleaning this up so this workaround is not required.
-    unsigned char lvUnusedStruct : 1; // All references to this promoted struct are through its field locals.
-                                      // I.e. there is no longer any reference to the struct directly.
-                                      // In this case we can simply remove this struct local.
-
-    unsigned char lvUndoneStructPromotion : 1; // The struct promotion was undone and hence there should be no
-                                               // reference to the fields of this struct.
-#endif
 
     unsigned char lvLRACandidate : 1; // Tracked for linear scan register allocation purposes
 
@@ -669,20 +651,6 @@ private:
     unsigned char lvIsSpan : 1; // The local is a Span<T>
 
 public:
-    union
-    {
-        unsigned lvFieldLclStart; // The index of the local var representing the first field in the promoted struct
-                                  // local.  For implicit byref parameters, this gets hijacked between
-                                  // fgRetypeImplicitByRefArgs and fgMarkDemotedImplicitByRefArgs to point to the
-                                  // struct local created to model the parameter's struct promotion, if any.
-        unsigned lvParentLcl; // The index of the local var representing the parent (i.e. the promoted struct local).
-                              // Valid on promoted struct local fields.
-    };
-
-    unsigned char lvFieldCnt; //  Number of fields in the promoted VarDsc.
-    unsigned char lvFldOffset;
-    unsigned char lvFldOrdinal;
-
 #ifdef DEBUG
     unsigned char lvSingleDefDisqualifyReason = 'H';
 #endif
@@ -925,33 +893,14 @@ public:
 #endif // HAS_FIXED_REGISTER_SET
 
     //-----------------------------------------------------------------------------
-    // AllFieldDeathFlags: Get a bitset of flags that represents all fields dying.
-    //
-    // Returns:
-    //    A bit mask that has GTF_VAR_FIELD_DEATH0 to GTF_VAR_FIELD_DEATH3 set,
-    //    depending on how many fields this promoted local has.
-    //
-    // Remarks:
-    //    Only usable for promoted locals.
-    //
-    GenTreeFlags AllFieldDeathFlags() const
-    {
-        assert(lvPromoted && (lvFieldCnt > 0) && (lvFieldCnt <= 4));
-        GenTreeFlags flags = static_cast<GenTreeFlags>(((1 << lvFieldCnt) - 1) << FIELD_LAST_USE_SHIFT);
-        assert((flags & ~GTF_VAR_DEATH_MASK) == 0);
-        return flags;
-    }
-
-    //-----------------------------------------------------------------------------
     // FullDeathFlags: Get a bitset of flags that represents this local fully dying.
     //
     // Returns:
-    //    For promoted locals, this returns AllFieldDeathFlags(). Otherwise
-    //    returns GTF_VAR_DEATH.
+    //    GTF_VAR_DEATH.
     //
     GenTreeFlags FullDeathFlags() const
     {
-        return lvPromoted ? AllFieldDeathFlags() : GTF_VAR_DEATH;
+        return GTF_VAR_DEATH;
     }
 
     unsigned short lvVarIndex; // variable tracking index
@@ -1061,14 +1010,14 @@ public:
     {
         return varTypeIsSmall(TypeGet()) &&
                // OSR exposed locals were normalize on load in the Tier0 frame so must be so for OSR too.
-               (lvIsParam || m_addrExposed || lvIsStructField || lvIsOSRExposedLocal);
+               (lvIsParam || m_addrExposed || lvIsOSRExposedLocal);
     }
 
     bool lvNormalizeOnStore() const
     {
         return varTypeIsSmall(TypeGet()) &&
                // OSR exposed locals were normalize on load in the Tier0 frame so must be so for OSR too.
-               !(lvIsParam || m_addrExposed || lvIsStructField || lvIsOSRExposedLocal);
+               !(lvIsParam || m_addrExposed || lvIsOSRExposedLocal);
     }
 
     void incRefCnts(weight_t weight, Compiler* pComp, RefCountState state = RCS_NORMAL, bool propagate = true);
@@ -4816,79 +4765,6 @@ public:
     void lvaUpdateClass(unsigned varNum, CORINFO_CLASS_HANDLE clsHnd, bool isExact = false, bool singleDefOnly = true);
     void lvaUpdateClass(unsigned varNum, GenTree* tree, CORINFO_CLASS_HANDLE stackHandle = nullptr);
 
-#define MAX_NumOfFieldsInPromotableStruct 4 // Maximum number of fields in promotable struct
-
-    // Info about struct type fields.
-    struct lvaStructFieldInfo
-    {
-        // Class handle for SIMD type recognition, see CORINFO_TYPE_LAYOUT_NODE
-        // for more details on the restrictions.
-        CORINFO_CLASS_HANDLE fldSIMDTypeHnd = NO_CLASS_HANDLE;
-        uint8_t              fldOffset = 0;
-        uint8_t              fldOrdinal = 0;
-        var_types            fldType = TYP_UNDEF;
-        unsigned             fldSize = 0;
-
-#ifdef DEBUG
-        // Field handle for diagnostic purposes only. See CORINFO_TYPE_LAYOUT_NODE.
-        CORINFO_FIELD_HANDLE diagFldHnd = NO_FIELD_HANDLE;
-#endif
-    };
-
-    // Info about a struct type, instances of which may be candidates for promotion.
-    struct lvaStructPromotionInfo
-    {
-        CORINFO_CLASS_HANDLE typeHnd;
-        bool                 canPromote;
-        bool                 containsHoles;
-        bool                 fieldsSorted;
-        unsigned char        fieldCnt;
-        lvaStructFieldInfo   fields[MAX_NumOfFieldsInPromotableStruct];
-
-        lvaStructPromotionInfo(CORINFO_CLASS_HANDLE typeHnd = nullptr)
-            : typeHnd(typeHnd)
-            , canPromote(false)
-            , containsHoles(false)
-            , fieldsSorted(false)
-            , fieldCnt(0)
-        {
-        }
-    };
-
-    // This class is responsible for checking validity and profitability of struct promotion.
-    // If it is both legal and profitable, then TryPromoteStructVar promotes the struct and initializes
-    // necessary information for fgMorphStructField to use.
-    class StructPromotionHelper
-    {
-    public:
-        StructPromotionHelper(Compiler* compiler);
-
-        bool CanPromoteStructType(CORINFO_CLASS_HANDLE typeHnd);
-        bool TryPromoteStructVar(unsigned lclNum);
-        void Clear()
-        {
-            structPromotionInfo.typeHnd = NO_CLASS_HANDLE;
-        }
-
-    private:
-        bool CanPromoteStructVar(unsigned lclNum);
-        bool ShouldPromoteStructVar(unsigned lclNum);
-        void PromoteStructVar(unsigned lclNum);
-        void SortStructFields();
-        bool IsArmHfaParameter(unsigned lclNum);
-        bool IsSysVMultiRegType(ClassLayout* layout);
-
-        var_types TryPromoteValueClassAsPrimitive(CORINFO_TYPE_LAYOUT_NODE* treeNodes, size_t maxTreeNodes, size_t index);
-        void AdvanceSubTree(CORINFO_TYPE_LAYOUT_NODE* treeNodes, size_t maxTreeNodes, size_t* index);
-
-    private:
-        Compiler*              m_compiler;
-        lvaStructPromotionInfo structPromotionInfo;
-    };
-
-    StructPromotionHelper* structPromotionHelper;
-
-    unsigned lvaGetFieldLocal(const LclVarDsc* varDsc, unsigned int fldOffset);
     lvaPromotionType lvaGetPromotionType(const LclVarDsc* varDsc);
     lvaPromotionType lvaGetPromotionType(unsigned varNum);
     lvaPromotionType lvaGetParentPromotionType(const LclVarDsc* varDsc);
@@ -4906,19 +4782,7 @@ public:
 
         // We make local variable SIMD12 types 16 bytes instead of just 12.
         // lvaLclStackHomeSize() will return 16 bytes for SIMD12, even for fields.
-        // However, we can't do that mapping if the var is a dependently promoted struct field.
-        // Such a field must remain its exact size within its parent struct unless it is a single
-        // field *and* it is the only field in a struct of 16 bytes.
-        if (stackHomeSize != 16)
-        {
-            return false;
-        }
-        if (lvaIsFieldOfDependentlyPromotedStruct(varDsc))
-        {
-            LclVarDsc* parentVarDsc = lvaGetDesc(varDsc->lvParentLcl);
-            return (parentVarDsc->lvFieldCnt == 1) && (lvaLclStackHomeSize(varDsc->lvParentLcl) == 16);
-        }
-        return true;
+        return stackHomeSize == 16;
     }
 #endif // defined(FEATURE_SIMD)
 
@@ -6266,10 +6130,6 @@ public:
     FuncInfoRange Funcs() const;
     FuncInfoRange Funclets() const;
 
-    // This array, managed by the SSA numbering infrastructure, keeps "outlined composite SSA numbers".
-    // See "SsaNumInfo::GetNum" for more details on when this is needed.
-    JitExpandArrayStack<unsigned>* m_outlinedCompositeSsaNums = nullptr;
-
     // This map tracks nodes whose value numbers explicitly or implicitly depend on memory states.
     // The map provides the entry block of the most closely enclosing loop that
     // defines the memory region accessed when defining the nodes's VN.
@@ -7469,9 +7329,6 @@ private:
     // Change implicit byrefs' types from struct to pointer, and for any that were
     // promoted, create new promoted struct temps.
     PhaseStatus fgRetypeImplicitByRefArgs();
-
-    // Clear up annotations for any struct promotion temps created for implicit byrefs.
-    void fgMarkDemotedImplicitByRefArgs();
 
     PhaseStatus fgLocalMorph();
     bool fgExposeUnpropagatedLocals(bool propagatedAny, class LocalEqualsLocalAddrAssertions* assertions);
@@ -9392,6 +9249,41 @@ public:
 
     const ParameterRegisterLocalMapping* FindParameterRegisterLocalMappingByRegister(regNumber reg);
     const ParameterRegisterLocalMapping* FindParameterRegisterLocalMappingByLocal(unsigned lclNum, unsigned offset);
+
+    // On 32-bit targets, DecomposeLongs promotes some TYP_LONG locals into two
+    // consecutive TYP_INT locals (the low half first, the high half second).
+    // This maps such a long local's number to its low field's local number
+    // (the high field is that local number plus one). It is null on 64-bit
+    // targets and when no long local has been decomposed.
+    typedef JitHashTable<unsigned, JitSmallPrimitiveKeyFuncs<unsigned>, unsigned> LongToFieldLclMap;
+    LongToFieldLclMap* m_decomposedLongLocals = nullptr;
+
+    // Records that the given long local was decomposed into the two consecutive
+    // INT locals starting at loLclNum.
+    void lvaSetDecomposedLongFields(unsigned longLclNum, unsigned loLclNum)
+    {
+        if (m_decomposedLongLocals == nullptr)
+        {
+            m_decomposedLongLocals = new (this, CMK_LvaTable) LongToFieldLclMap(getAllocator(CMK_LvaTable));
+        }
+
+        m_decomposedLongLocals->Set(longLclNum, loLclNum);
+    }
+
+    // If the given long local was decomposed into two INT locals, returns true
+    // and sets loLclNum/hiLclNum to the low and high field locals.
+    bool lvaGetDecomposedLongFields(unsigned longLclNum, unsigned* loLclNum, unsigned* hiLclNum)
+    {
+        unsigned lo;
+        if ((m_decomposedLongLocals == nullptr) || !m_decomposedLongLocals->Lookup(longLclNum, &lo))
+        {
+            return false;
+        }
+
+        *loLclNum = lo;
+        *hiLclNum = lo + 1;
+        return true;
+    }
 
     Lowering* GetLowering() const
     {
@@ -11564,12 +11456,10 @@ public:
         STRESS_MODE(GENERIC_VARN)                                                               \
         STRESS_MODE(PROFILER_CALLBACKS) /* Will generate profiler hooks for ELT callbacks */    \
         STRESS_MODE(BYREF_PROMOTION) /* Change undoPromotion decisions for byrefs */            \
-        STRESS_MODE(PROMOTE_FEWER_STRUCTS)/* Don't promote some structs that can be promoted */ \
         STRESS_MODE(VN_BUDGET)/* Randomize the VN budget */                                     \
         STRESS_MODE(SSA_INFO) /* Select lower thresholds for "complex" SSA num encoding */      \
         STRESS_MODE(SPLIT_TREES_RANDOMLY) /* Split all statements at a random tree */           \
         STRESS_MODE(SPLIT_TREES_REMOVE_COMMAS) /* Remove all GT_COMMA nodes */                  \
-        STRESS_MODE(NO_OLD_PROMOTION) /* Do not use old promotion */                            \
         STRESS_MODE(PHYSICAL_PROMOTION) /* Use physical promotion */                            \
         STRESS_MODE(PHYSICAL_PROMOTION_COST)                                                    \
         STRESS_MODE(UNWIND) /* stress unwind info; e.g., create function fragments */           \
@@ -11627,8 +11517,6 @@ public:
     {
         return compStressCompile(STRESS_RANDOM_INLINE, 50);
     }
-
-    bool compPromoteFewerStructs(unsigned lclNum);
 
 #endif // DEBUG
 

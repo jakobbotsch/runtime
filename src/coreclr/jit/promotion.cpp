@@ -1219,25 +1219,14 @@ public:
                     assert(Promotion::IsCandidateForPhysicalPromotion(dstDsc) ||
                            Promotion::IsCandidateForPhysicalPromotion(srcDsc));
 
-                    if (dstDsc->lvPromoted)
+                    if (Promotion::IsCandidateForPhysicalPromotion(dstDsc))
                     {
-                        InduceAccessesFromRegularlyPromotedStruct(aggregates, src, store, candidateStore.Block);
+                        InduceAccessesInCandidate(aggregates, store, src, candidateStore.Block);
                     }
-                    else if (srcDsc->lvPromoted)
-                    {
-                        InduceAccessesFromRegularlyPromotedStruct(aggregates, store, src, candidateStore.Block);
-                    }
-                    else
-                    {
-                        if (Promotion::IsCandidateForPhysicalPromotion(dstDsc))
-                        {
-                            InduceAccessesInCandidate(aggregates, store, src, candidateStore.Block);
-                        }
 
-                        if (Promotion::IsCandidateForPhysicalPromotion(srcDsc))
-                        {
-                            InduceAccessesInCandidate(aggregates, src, store, candidateStore.Block);
-                        }
+                    if (Promotion::IsCandidateForPhysicalPromotion(srcDsc))
+                    {
+                        InduceAccessesInCandidate(aggregates, src, store, candidateStore.Block);
                     }
                 }
 
@@ -1370,42 +1359,6 @@ private:
         }
 
         return m_uses[lclNum];
-    }
-
-    //------------------------------------------------------------------------
-    // InduceAccessesFromRegularlyPromotedStruct:
-    //   Create induced accesses based on the fact that there is a store
-    //   between a physical promotion candidate and regularly promoted struct.
-    //
-    // Parameters:
-    //   aggregates   - Aggregate information with current set of replacements
-    //                  for each struct local.
-    //   candidateLcl - The local node for a physical promotion candidate.
-    //   regPromLcl   - The local node for the regularly promoted struct that
-    //                  may induce new LCL_FLD nodes in the candidate.
-    //   block        - The block that the store appears in.
-    //
-    void InduceAccessesFromRegularlyPromotedStruct(AggregateInfoMap&    aggregates,
-                                                   GenTreeLclVarCommon* candidateLcl,
-                                                   GenTreeLclVarCommon* regPromLcl,
-                                                   BasicBlock*          block)
-    {
-        unsigned regPromOffs   = regPromLcl->GetLclOffs();
-        unsigned candidateOffs = candidateLcl->GetLclOffs();
-        unsigned size          = regPromLcl->GetLayout(m_compiler)->GetSize();
-
-        LclVarDsc* regPromDsc = m_compiler->lvaGetDesc(regPromLcl);
-        for (unsigned fieldLcl = regPromDsc->lvFieldLclStart, i = 0; i < regPromDsc->lvFieldCnt; fieldLcl++, i++)
-        {
-            LclVarDsc* fieldDsc = m_compiler->lvaGetDesc(fieldLcl);
-            if ((fieldDsc->lvFldOffset >= regPromOffs) &&
-                (fieldDsc->lvFldOffset + genTypeSize(fieldDsc->lvType) <= (regPromOffs + size)))
-            {
-                InduceAccess(aggregates, candidateLcl->GetLclNum(),
-                             candidateLcl->GetLclOffs() + (fieldDsc->lvFldOffset - regPromOffs), fieldDsc->lvType,
-                             block);
-            }
-        }
     }
 
     //------------------------------------------------------------------------
@@ -2992,7 +2945,7 @@ bool Promotion::HaveCandidateLocals()
 //
 bool Promotion::IsCandidateForPhysicalPromotion(LclVarDsc* dsc)
 {
-    return dsc->TypeIs(TYP_STRUCT) && !dsc->lvPromoted && !dsc->IsAddressExposed();
+    return dsc->TypeIs(TYP_STRUCT) && !dsc->IsAddressExposed();
 }
 
 //------------------------------------------------------------------------

@@ -557,8 +557,6 @@ Scev* ScalarEvolutionContext::AnalyzeNew(BasicBlock* block, GenTree* tree, int d
 
             if (ssaDsc->GetDefNode()->GetLclNum() != tree->AsLclVarCommon()->GetLclNum())
             {
-                // Should be a def of the parent
-                assert(dsc->lvIsStructField && (ssaDsc->GetDefNode()->GetLclNum() == dsc->lvParentLcl));
                 return nullptr;
             }
 
@@ -609,7 +607,6 @@ Scev* ScalarEvolutionContext::AnalyzeNew(BasicBlock* block, GenTree* tree, int d
 
             if (ssaDsc->GetDefNode()->GetLclNum() != enterSsa->GetLclNum())
             {
-                assert(dsc->lvIsStructField && ssaDsc->GetDefNode()->GetLclNum() == dsc->lvParentLcl);
                 return nullptr;
             }
 

@@ -307,10 +307,7 @@ void Compiler::raMarkStkVars()
 
         if (varDsc->lvIsParam && lvaIsArgAccessedViaVarArgsCookie(lclNum))
         {
-            if (!varDsc->lvPromoted && !varDsc->lvIsStructField)
-            {
-                noway_assert(varDsc->lvRefCnt() == 0 && !varDsc->lvRegister && !varDsc->lvOnFrame);
-            }
+            noway_assert(varDsc->lvRefCnt() == 0 && !varDsc->lvRegister && !varDsc->lvOnFrame);
         }
 #endif
     }
@@ -398,7 +395,7 @@ bool RegAllocImpl::isRegCandidate(LclVarDsc* varDsc)
         case TYP_MASK:
 #endif // FEATURE_MASKED_HW_INTRINSICS
         {
-            return !varDsc->lvPromoted;
+            return true;
         }
 #endif // FEATURE_SIMD
 
@@ -439,7 +436,7 @@ void RegAllocImpl::checkForDNER(unsigned lclNum, LclVarDsc* varDsc)
         return;
     }
 
-    if (varTypeIsStruct(varDsc) && !varDsc->lvPromoted)
+    if (varTypeIsStruct(varDsc))
     {
         if (!varDsc->IsEnregisterableType())
         {

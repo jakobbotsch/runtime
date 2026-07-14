@@ -319,18 +319,6 @@ void AliasSet::AddNode(Compiler* compiler, GenTree* node)
     {
         m_lclVarWrites.Add(compiler, nodeInfo.LclNum());
 
-        LclVarDsc* dsc = compiler->lvaGetDesc(nodeInfo.LclNum());
-        if (dsc->lvIsStructField)
-        {
-            m_lclVarWrites.Add(compiler, dsc->lvParentLcl);
-        }
-        else if (dsc->lvPromoted)
-        {
-            for (unsigned i = 0; i < dsc->lvFieldCnt; i++)
-            {
-                m_lclVarWrites.Add(compiler, dsc->lvFieldLclStart + i);
-            }
-        }
     }
 }
 

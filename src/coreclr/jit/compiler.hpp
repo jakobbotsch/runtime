@@ -2537,31 +2537,6 @@ inline void LclVarDsc::incRefCnts(weight_t weight, Compiler* comp, RefCountState
         }
     }
 
-    if (varTypeIsPromotable(lvType) && propagate)
-    {
-        // For promoted struct locals, increment lvRefCnt on its field locals as well.
-        if (promotionType == Compiler::PROMOTION_TYPE_INDEPENDENT ||
-            promotionType == Compiler::PROMOTION_TYPE_DEPENDENT)
-        {
-            for (unsigned i = lvFieldLclStart; i < lvFieldLclStart + lvFieldCnt; ++i)
-            {
-                comp->lvaTable[i].incRefCnts(weight, comp, state, false); // Don't propagate
-            }
-        }
-    }
-
-    if (lvIsStructField && propagate)
-    {
-        // Depending on the promotion type, increment the ref count for the parent struct as well.
-        promotionType           = comp->lvaGetParentPromotionType(this);
-        LclVarDsc* parentvarDsc = comp->lvaGetDesc(lvParentLcl);
-        assert(!parentvarDsc->lvRegStruct);
-        if (promotionType == Compiler::PROMOTION_TYPE_DEPENDENT)
-        {
-            parentvarDsc->incRefCnts(weight, comp, state, false); // Don't propagate
-        }
-    }
-
 #ifdef DEBUG
     if (comp->verbose)
     {
@@ -4116,31 +4091,8 @@ inline bool Compiler::impIsPrimitive(CorInfoType jitType)
 
 inline Compiler::lvaPromotionType Compiler::lvaGetPromotionType(const LclVarDsc* varDsc)
 {
-    // TODO-Review: Sometimes we get called on ARM with HFA struct variables that have been promoted,
-    // where the struct itself is no longer used because all access is via its member fields.
-    // When that happens, the struct is marked as unused and its type has been changed to
-    // TYP_INT (to keep the GC tracking code from looking at it).
-    // See Compiler::raAssignVars() for details. For example:
-    //      N002 (  4,  3) [00EA067C] -------------               return    struct $346
-    //      N001 (  3,  2) [00EA0628] -------------                  lclVar    struct(U) V03 loc2
-    //                                                                        float  V03.f1 (offs=0x00) -> V12 tmp7
-    //                                                                        f8 (last use) (last use) $345
-    // Here, the "struct(U)" shows that the "V03 loc2" variable is unused. Not shown is that V03
-    // is now TYP_INT in the local variable table. It's not really unused, because it's in the tree.
-    assert(!varDsc->lvPromoted || varTypeIsPromotable(varDsc) || varDsc->lvUnusedStruct);
-
-    if (!varDsc->lvPromoted)
-    {
-        // no struct promotion for this LclVar
-        return PROMOTION_TYPE_NONE;
-    }
-    if (varDsc->lvDoNotEnregister)
-    {
-        // The struct is not enregistered
-        return PROMOTION_TYPE_DEPENDENT;
-    }
-
-    return PROMOTION_TYPE_INDEPENDENT;
+    // Old struct promotion has been removed, so locals are never promoted.
+    return PROMOTION_TYPE_NONE;
 }
 
 /*****************************************************************************
@@ -4160,11 +4112,8 @@ inline Compiler::lvaPromotionType Compiler::lvaGetPromotionType(unsigned varNum)
 
 inline Compiler::lvaPromotionType Compiler::lvaGetParentPromotionType(const LclVarDsc* varDsc)
 {
-    assert(varDsc->lvIsStructField);
-
-    lvaPromotionType promotionType = lvaGetPromotionType(varDsc->lvParentLcl);
-    assert(promotionType != PROMOTION_TYPE_NONE);
-    return promotionType;
+    // Old struct promotion has been removed, so there are no field locals.
+    return PROMOTION_TYPE_NONE;
 }
 
 /*****************************************************************************
@@ -4185,18 +4134,7 @@ inline Compiler::lvaPromotionType Compiler::lvaGetParentPromotionType(unsigned v
 
 inline bool Compiler::lvaIsFieldOfDependentlyPromotedStruct(const LclVarDsc* varDsc)
 {
-    if (!varDsc->lvIsStructField)
-    {
-        return false;
-    }
-
-    lvaPromotionType promotionType = lvaGetParentPromotionType(varDsc);
-    if (promotionType == PROMOTION_TYPE_DEPENDENT)
-    {
-        return true;
-    }
-
-    assert(promotionType == PROMOTION_TYPE_INDEPENDENT);
+    // Old struct promotion has been removed, so there are no field locals.
     return false;
 }
 
@@ -4315,13 +4253,6 @@ bool Compiler::fgVarIsNeverZeroInitializedInProlog(unsigned varNum)
 bool Compiler::fgVarNeedsExplicitZeroInit(unsigned varNum, bool bbInALoop, bool bbIsReturn)
 {
     LclVarDsc* varDsc = lvaGetDesc(varNum);
-
-    if (lvaIsFieldOfDependentlyPromotedStruct(varDsc))
-    {
-        // Fields of dependently promoted structs may only be initialized in the prolog when the whole
-        // struct is initialized in the prolog.
-        return fgVarNeedsExplicitZeroInit(varDsc->lvParentLcl, bbInALoop, bbIsReturn);
-    }
 
     if (bbInALoop && !bbIsReturn)
     {

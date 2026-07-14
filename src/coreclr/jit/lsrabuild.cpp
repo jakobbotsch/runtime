@@ -1206,21 +1206,8 @@ void LinearScan::updateIntervalPreferencesForKill(Interval* interval, regMaskTP 
 bool LinearScan::isCandidateMultiRegLclVar(GenTreeLclVar* lclNode)
 {
     assert(m_compiler->lvaEnregMultiRegVars && lclNode->IsMultiReg());
-    LclVarDsc* varDsc = m_compiler->lvaGetDesc(lclNode);
-    assert(varDsc->lvPromoted);
-    bool isMultiReg = (m_compiler->lvaGetPromotionType(varDsc) == Compiler::PROMOTION_TYPE_INDEPENDENT);
-    if (!isMultiReg)
-    {
-        lclNode->ClearMultiReg();
-    }
-#ifdef DEBUG
-    for (unsigned int i = 0; i < varDsc->lvFieldCnt; i++)
-    {
-        LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(varDsc->lvFieldLclStart + i);
-        assert(isCandidateVar(fieldVarDsc) == isMultiReg);
-    }
-#endif // DEBUG
-    return isMultiReg;
+    lclNode->ClearMultiReg();
+    return false;
 }
 
 //------------------------------------------------------------------------
@@ -2180,15 +2167,8 @@ void LinearScan::buildIntervals()
                 LclVarDsc* mappedLcl = m_compiler->lvaGetDesc(mapping->LclNum);
                 bool       isMappedLclLive =
                     !mappedLcl->lvTracked || m_compiler->compJmpOpUsed || (mappedLcl->lvRefCnt() != 0);
-                if (mappedLcl->lvIsStructField)
-                {
-                    // Struct fields are not saved into their parameter local
-                    isLive = isMappedLclLive;
-                }
-                else
-                {
-                    isLive = isParameterLive || isMappedLclLive;
-                }
+
+                isLive = isParameterLive || isMappedLclLive;
             }
             else
             {
@@ -2244,15 +2224,7 @@ void LinearScan::buildIntervals()
                 // Fall through with no preferred register since parameter are
                 // not passed in registers for OSR
             }
-            else if (lclDsc->lvIsStructField)
-            {
-                // All fields passed in registers should be assigned via the
-                // lvIsParamRegTarget mechanism, so this must be a stack
-                // argument.
-                assert(!m_compiler->lvaGetParameterABIInfo(lclDsc->lvParentLcl).HasAnyRegisterSegment());
 
-                // Fall through with paramReg == REG_NA
-            }
             else
             {
                 // Enregisterable parameter, may or may not be a stack arg.
@@ -3435,17 +3407,7 @@ RefPosition* LinearScan::BuildUse(GenTree* operand, SingleTypeRegSet candidates,
     }
     else if (operand->IsMultiRegLclVar())
     {
-        assert(m_compiler->lvaEnregMultiRegVars);
-        LclVarDsc* varDsc      = m_compiler->lvaGetDesc(operand->AsLclVar());
-        LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(varDsc->lvFieldLclStart + multiRegIdx);
-        interval               = getIntervalForLocalVar(fieldVarDsc->lvVarIndex);
-        if (operand->AsLclVar()->IsLastUse(multiRegIdx))
-        {
-            VarSetOps::RemoveElemD(m_compiler, currentLiveVars, fieldVarDsc->lvVarIndex);
-        }
-#if FEATURE_PARTIAL_SIMD_CALLEE_SAVE
-        buildUpperVectorRestoreRefPosition(interval, currentLoc, operand, true, (unsigned)multiRegIdx);
-#endif
+        unreached();
     }
     else
     {
@@ -4037,28 +3999,7 @@ int LinearScan::BuildMultiRegStoreLoc(GenTreeLclVar* storeLoc)
     //
     for (unsigned int i = 0; i < dstCount; ++i)
     {
-        LclVarDsc*   fieldVarDsc  = m_compiler->lvaGetDesc(varDsc->lvFieldLclStart + i);
-        RefPosition* singleUseRef = nullptr;
-
-        if (isMultiRegSrc)
-        {
-            SingleTypeRegSet srcCandidates = RBM_NONE;
-#ifdef TARGET_X86
-            var_types type = fieldVarDsc->TypeGet();
-            if (varTypeIsByte(type))
-            {
-                srcCandidates = allByteRegs();
-            }
-#endif // TARGET_X86
-            singleUseRef = BuildUse(op1, srcCandidates, i);
-        }
-        assert(isCandidateVar(fieldVarDsc));
-        BuildStoreLocDef(storeLoc, fieldVarDsc, singleUseRef, i);
-
-        if (isMultiRegSrc && (i < (dstCount - 1)))
-        {
-            currentLoc += 2;
-        }
+        unreached();
     }
     return srcCount;
 }

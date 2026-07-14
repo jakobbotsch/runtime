@@ -2917,20 +2917,7 @@ void CodeGen::genCodeForStoreLclVar(GenTreeLclVar* lclNode)
     LclVarDsc* varDsc = m_compiler->lvaGetDesc(lclNode);
     if (lclNode->IsMultiReg())
     {
-        // This is the case of storing to a multi-reg HFA local from a fixed-size SIMD type.
-        assert(varTypeIsSIMD(data));
-        regNumber    operandReg = genConsumeReg(data);
-        unsigned int regCount   = varDsc->lvFieldCnt;
-        for (unsigned i = 0; i < regCount; ++i)
-        {
-            regNumber varReg = lclNode->GetRegByIndex(i);
-            assert(varReg != REG_NA);
-            unsigned   fieldLclNum = varDsc->lvFieldLclStart + i;
-            LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(fieldLclNum);
-            assert(fieldVarDsc->TypeIs(TYP_FLOAT));
-            GetEmitter()->emitIns_R_R_I(INS_dup, emitTypeSize(TYP_FLOAT), varReg, operandReg, i);
-        }
-        genProduceReg(lclNode);
+        unreached();
     }
     else
     {

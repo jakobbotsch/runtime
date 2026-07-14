@@ -55,10 +55,7 @@ GenTree* Lowering::LowerStoreLoc(GenTreeLclVarCommon* storeLoc)
     //
     if (storeLoc->OperIs(GT_STORE_LCL_VAR) && (genTypeSize(storeLoc) == 2) && storeLoc->Data()->IsCnsIntOrI())
     {
-        if (!m_compiler->lvaGetDesc(storeLoc)->lvIsStructField)
-        {
-            storeLoc->gtType = TYP_INT;
-        }
+        storeLoc->gtType = TYP_INT;
     }
     if (storeLoc->OperIs(GT_STORE_LCL_FLD))
     {

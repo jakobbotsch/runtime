@@ -422,11 +422,6 @@ public:
         : GenTreeVisitor(compiler)
         , m_lclNum(lclNum)
     {
-        LclVarDsc* dsc = compiler->lvaGetDesc(m_lclNum);
-        if (dsc->lvIsStructField)
-        {
-            m_parentLclNum = dsc->lvParentLcl;
-        }
     }
 
     Compiler::fgWalkResult PostOrderVisit(GenTree** use, GenTree* user)
@@ -571,8 +566,7 @@ public:
             return true;
         }
 
-        LclVarDsc* dsc = m_compiler->lvaGetDesc(lclNum);
-        return dsc->lvIsStructField && (dsc->lvParentLcl == m_lclNum);
+        return false;
     }
 
     //------------------------------------------------------------------------
@@ -1031,19 +1025,6 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
         dstVarDsc->SetIsMultiRegDest();
     }
 
-    // Avoid forward substituting promoted locals if they are not DNER.
-    // This would require DNER'ing for many cases where the consumer
-    // does not support whole-local uses, such as GT_FIELD_LIST.
-    if (fwdSubNode->OperIs(GT_LCL_VAR) && varTypeIsSIMD(fwdSubNode))
-    {
-        LclVarDsc* const fwdSubVarDsc = lvaGetDesc(fwdSubNode->AsLclVar());
-        if (fwdSubVarDsc->lvPromoted && !fwdSubVarDsc->lvDoNotEnregister)
-        {
-            JITDUMP(" promoted SIMD lcl var\n");
-            return false;
-        }
-    }
-
     // If a method returns a multi-reg type, only forward sub locals,
     // and ensure the local and operand have the required markup.
     // (see eg impFixupStructReturnType).
@@ -1184,13 +1165,8 @@ bool Compiler::fgForwardSubHasStoreInterference(Statement* defStmt, Statement* n
             break;
         }
 
-        unsigned   defStmtLclNum       = defStmtLcl->GetLclNum();
-        LclVarDsc* defStmtLclDsc       = lvaGetDesc(defStmtLclNum);
-        unsigned   defStmtParentLclNum = BAD_VAR_NUM;
-        if (defStmtLclDsc->lvIsStructField)
-        {
-            defStmtParentLclNum = defStmtLclDsc->lvParentLcl;
-        }
+        unsigned defStmtLclNum       = defStmtLcl->GetLclNum();
+        unsigned defStmtParentLclNum = BAD_VAR_NUM;
 
         for (GenTreeLclVarCommon* useStmtLcl : nextStmt->LocalsTreeList())
         {
@@ -1249,41 +1225,17 @@ void Compiler::fgForwardSubUpdateLiveness(GenTree* newSubListFirst, GenTree* new
         unsigned   lclNum = node->AsLclVarCommon()->GetLclNum();
         LclVarDsc* dsc    = lvaGetDesc(lclNum);
 
-        unsigned parentLclNum = dsc->lvIsStructField ? dsc->lvParentLcl : BAD_VAR_NUM;
+        unsigned parentLclNum = BAD_VAR_NUM;
 
         GenTree* candidate = newSubListFirst;
         while (true)
         {
             unsigned newUseLclNum = candidate->AsLclVarCommon()->GetLclNum();
-            if (dsc->lvPromoted)
+            // See if a new instance of this local or its parent appeared.
+            if ((newUseLclNum == lclNum) || (newUseLclNum == parentLclNum))
             {
-                // Is the parent struct being used?
-                if (newUseLclNum == lclNum)
-                {
-                    // Then all fields are not dying.
-                    node->gtFlags &= ~GTF_VAR_DEATH_MASK;
-                    break;
-                }
-
-                // Otherwise, is one single field being used?
-                if ((newUseLclNum >= dsc->lvFieldLclStart) && (newUseLclNum < dsc->lvFieldLclStart + dsc->lvFieldCnt))
-                {
-                    node->ClearLastUse(newUseLclNum - dsc->lvFieldLclStart);
-
-                    if ((node->gtFlags & GTF_VAR_DEATH_MASK) == 0)
-                    {
-                        break;
-                    }
-                }
-            }
-            else
-            {
-                // See if a new instance of this local or its parent appeared.
-                if ((newUseLclNum == lclNum) || (newUseLclNum == parentLclNum))
-                {
-                    node->gtFlags &= ~GTF_VAR_DEATH;
-                    break;
-                }
+                node->gtFlags &= ~GTF_VAR_DEATH;
+                break;
             }
 
             if (candidate == newSubListLast)

@@ -1270,19 +1270,7 @@ void CodeGen::genCodeForStoreLclVar(GenTreeLclVar* lclNode)
     LclVarDsc* varDsc = m_compiler->lvaGetDesc(lclNode);
     if (lclNode->IsMultiReg())
     {
-        NYI_LOONGARCH64("genCodeForStoreLclVar : unimplemented on LoongArch64 yet");
-        regNumber    operandReg = genConsumeReg(data);
-        unsigned int regCount   = varDsc->lvFieldCnt;
-        for (unsigned i = 0; i < regCount; ++i)
-        {
-            regNumber varReg = lclNode->GetRegByIndex(i);
-            assert(varReg != REG_NA);
-            unsigned   fieldLclNum = varDsc->lvFieldLclStart + i;
-            LclVarDsc* fieldVarDsc = m_compiler->lvaGetDesc(fieldLclNum);
-            assert(fieldVarDsc->TypeIs(TYP_FLOAT));
-            GetEmitter()->emitIns_R_R_I(INS_st_d, emitTypeSize(TYP_FLOAT), varReg, operandReg, i);
-        }
-        genProduceReg(lclNode);
+        unreached();
     }
     else
     {

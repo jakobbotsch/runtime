@@ -1264,12 +1264,7 @@ void CodeGen::genUnspillRegIfNeeded(GenTree* tree, unsigned multiRegIndex)
     }
     if (tree->IsMultiRegLclVar())
     {
-        GenTreeLclVar* lclNode     = tree->AsLclVar();
-        unsigned       fieldVarNum = m_compiler->lvaGetDesc(lclNode)->lvFieldLclStart + multiRegIndex;
-        bool           reSpill     = ((spillFlags & GTF_SPILL) != 0);
-        bool           isLastUse   = lclNode->IsLastUse(multiRegIndex);
-        genUnspillLocal(fieldVarNum, m_compiler->lvaGetDesc(fieldVarNum)->TypeGet(), lclNode, dstReg, reSpill,
-                        isLastUse);
+        unreached();
     }
     else
     {
@@ -1359,26 +1354,7 @@ void CodeGen::genUnspillRegIfNeeded(GenTree* tree)
         }
         else if (unspillTree->IsMultiRegLclVar())
         {
-            // We never have a GT_RELOAD for this case.
-            assert(tree == unspillTree);
-
-            GenTreeLclVar* lclNode  = unspillTree->AsLclVar();
-            LclVarDsc*     varDsc   = m_compiler->lvaGetDesc(lclNode);
-            unsigned       regCount = varDsc->lvFieldCnt;
-
-            for (unsigned i = 0; i < regCount; ++i)
-            {
-                GenTreeFlags spillFlags = lclNode->GetRegSpillFlagByIdx(i);
-                if ((spillFlags & GTF_SPILLED) != 0)
-                {
-                    regNumber reg         = lclNode->GetRegNumByIdx(i);
-                    unsigned  fieldVarNum = varDsc->lvFieldLclStart + i;
-                    bool      reSpill     = ((spillFlags & GTF_SPILL) != 0);
-                    bool      isLastUse   = lclNode->IsLastUse(i);
-                    genUnspillLocal(fieldVarNum, m_compiler->lvaGetDesc(fieldVarNum)->TypeGet(), lclNode, reg, reSpill,
-                                    isLastUse);
-                }
-            }
+            unreached();
         }
         else if (unspillTree->IsMultiRegNode())
         {
@@ -1531,27 +1507,7 @@ regNumber CodeGen::genConsumeReg(GenTree* tree, unsigned multiRegIndex)
 
     if (tree->gtSkipReloadOrCopy()->OperIs(GT_LCL_VAR))
     {
-        assert(m_compiler->lvaEnregMultiRegVars);
-
-        GenTreeLclVar* lcl = tree->gtSkipReloadOrCopy()->AsLclVar();
-        assert(lcl->IsMultiReg());
-
-        LclVarDsc* varDsc = m_compiler->lvaGetDesc(lcl);
-        assert(varDsc->lvPromoted);
-        assert(multiRegIndex < varDsc->lvFieldCnt);
-        unsigned   fieldVarNum = varDsc->lvFieldLclStart + multiRegIndex;
-        LclVarDsc* fldVarDsc   = m_compiler->lvaGetDesc(fieldVarNum);
-        assert(fldVarDsc->lvLRACandidate);
-
-        if (fldVarDsc->GetRegNum() == REG_STK)
-        {
-            // We have loaded this into a register only temporarily
-            gcInfo.gcMarkRegSetNpt(genRegMask(reg));
-        }
-        else if (lcl->IsLastUse(multiRegIndex))
-        {
-            gcInfo.gcMarkRegSetNpt(genRegMask(fldVarDsc->GetRegNum()));
-        }
+        unreached();
     }
     else
     {
@@ -1637,34 +1593,7 @@ regNumber CodeGen::genConsumeReg(GenTree* tree)
     }
     else if (tree->gtSkipReloadOrCopy()->IsMultiRegLclVar())
     {
-        assert(m_compiler->lvaEnregMultiRegVars);
-        GenTreeLclVar* lcl              = tree->gtSkipReloadOrCopy()->AsLclVar();
-        LclVarDsc*     varDsc           = m_compiler->lvaGetDesc(lcl);
-        unsigned       firstFieldVarNum = varDsc->lvFieldLclStart;
-        for (unsigned i = 0; i < varDsc->lvFieldCnt; ++i)
-        {
-            LclVarDsc* fldVarDsc = m_compiler->lvaGetDesc(firstFieldVarNum + i);
-            assert(fldVarDsc->lvLRACandidate);
-            regNumber reg;
-            if (tree->OperIs(GT_COPY, GT_RELOAD) && (tree->AsCopyOrReload()->GetRegByIndex(i) != REG_NA))
-            {
-                reg = tree->AsCopyOrReload()->GetRegByIndex(i);
-            }
-            else
-            {
-                reg = lcl->AsLclVar()->GetRegNumByIdx(i);
-            }
-
-            if (fldVarDsc->GetRegNum() == REG_STK)
-            {
-                // We have loaded this into a register only temporarily
-                gcInfo.gcMarkRegSetNpt(genRegMask(reg));
-            }
-            else if (lcl->IsLastUse(i))
-            {
-                gcInfo.gcMarkRegSetNpt(genRegMask(fldVarDsc->GetRegNum()));
-            }
-        }
+        unreached();
     }
     else
     {
@@ -2193,23 +2122,7 @@ void CodeGen::genProduceReg(GenTree* tree)
         }
         else if (tree->IsMultiRegLclVar())
         {
-            assert(m_compiler->lvaEnregMultiRegVars);
-
-            GenTreeLclVar*   lclNode  = tree->AsLclVar();
-            const LclVarDsc* varDsc   = m_compiler->lvaGetDesc(lclNode);
-            const unsigned   regCount = lclNode->GetFieldCount(m_compiler);
-
-            for (unsigned i = 0; i < regCount; ++i)
-            {
-                GenTreeFlags flags = lclNode->GetRegSpillFlagByIdx(i);
-                if ((flags & GTF_SPILL) != 0)
-                {
-                    const regNumber reg         = lclNode->GetRegNumByIdx(i);
-                    const unsigned  fieldVarNum = varDsc->lvFieldLclStart + i;
-                    const var_types spillType   = m_compiler->lvaGetDesc(fieldVarNum)->GetRegisterType();
-                    genSpillLocal(fieldVarNum, spillType, lclNode, reg);
-                }
-            }
+            unreached();
         }
         else
         {
@@ -2301,22 +2214,7 @@ void CodeGen::genProduceReg(GenTree* tree)
             }
             else if (tree->IsMultiRegLclVar())
             {
-                assert(m_compiler->lvaEnregMultiRegVars);
-                const GenTreeLclVar* lclNode  = tree->AsLclVar();
-                LclVarDsc*           varDsc   = m_compiler->lvaGetDesc(lclNode);
-                unsigned             regCount = varDsc->lvFieldCnt;
-                for (unsigned i = 0; i < regCount; i++)
-                {
-                    if (!lclNode->IsLastUse(i))
-                    {
-                        regNumber reg = lclNode->GetRegNumByIdx(i);
-                        if (reg != REG_NA)
-                        {
-                            var_types type = m_compiler->lvaGetDesc(varDsc->lvFieldLclStart + i)->TypeGet();
-                            gcInfo.gcMarkRegPtrVal(reg, type);
-                        }
-                    }
-                }
+                unreached();
             }
             else
             {
@@ -2619,7 +2517,6 @@ void CodeGen::genStoreLongLclVar(GenTree* treeNode)
     unsigned             lclNum  = lclNode->GetLclNum();
     LclVarDsc*           varDsc  = m_compiler->lvaGetDesc(lclNum);
     assert(varDsc->TypeIs(TYP_LONG));
-    assert(!varDsc->lvPromoted);
     GenTree* op1 = treeNode->AsOp()->gtOp1;
 
     // A GT_LONG is always contained so it cannot have RELOAD or COPY inserted between it and its consumer.
