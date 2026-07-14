@@ -453,13 +453,6 @@ void GCInfo::gcCountForHeader(UNALIGNED unsigned int* pUntrackedCount,
 
     for (varNum = 0, varDsc = m_compiler->lvaTable; varNum < m_compiler->lvaCount; varNum++, varDsc++)
     {
-        if (m_compiler->lvaIsFieldOfDependentlyPromotedStruct(varDsc))
-        {
-            // Field local of a PROMOTION_TYPE_DEPENDENT struct must have been
-            // reported through its parent local
-            continue;
-        }
-
         if (varTypeIsGC(varDsc->TypeGet()))
         {
             if (!gcIsUntrackedLocalOrNonEnregisteredArg(varNum))
@@ -598,7 +591,6 @@ bool GCInfo::gcIsUntrackedLocalOrNonEnregisteredArg(unsigned varNum)
 {
     LclVarDsc* varDsc = m_compiler->lvaGetDesc(varNum);
 
-    assert(!m_compiler->lvaIsFieldOfDependentlyPromotedStruct(varDsc));
     assert(varTypeIsGC(varDsc->TypeGet()));
 
     // Do we have an argument or local variable?

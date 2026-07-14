@@ -2232,13 +2232,6 @@ size_t GCInfo::gcMakeRegPtrTable(BYTE* dest, int mask, const InfoHdr& header, un
 
         for (varNum = 0, varDsc = m_compiler->lvaTable; varNum < m_compiler->lvaCount; varNum++, varDsc++)
         {
-            if (m_compiler->lvaIsFieldOfDependentlyPromotedStruct(varDsc))
-            {
-                // Field local of a PROMOTION_TYPE_DEPENDENT struct must have been
-                // reported through its parent local
-                continue;
-            }
-
             if (varTypeIsGC(varDsc->TypeGet()))
             {
                 if (!gcIsUntrackedLocalOrNonEnregisteredArg(varNum))
@@ -4119,13 +4112,6 @@ void GCInfo::gcMakeRegPtrTable(
     LclVarDsc* varDsc;
     for (varNum = 0, varDsc = m_compiler->lvaTable; varNum < m_compiler->lvaCount; varNum++, varDsc++)
     {
-        if (m_compiler->lvaIsFieldOfDependentlyPromotedStruct(varDsc))
-        {
-            // Field local of a PROMOTION_TYPE_DEPENDENT struct must have been
-            // reported through its parent local.
-            continue;
-        }
-
         if (varTypeIsGC(varDsc->TypeGet()))
         {
             // Do we have an argument or local variable?

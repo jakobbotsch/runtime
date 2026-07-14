@@ -794,14 +794,6 @@ bool AsyncAnalysis::IsLive(unsigned lclNum)
         return false;
     }
 
-    Compiler::lvaPromotionType promoType = m_compiler->lvaGetPromotionType(dsc);
-    if (promoType == Compiler::PROMOTION_TYPE_INDEPENDENT)
-    {
-        // Independently promoted structs are handled only through their
-        // fields.
-        return false;
-    }
-
     if (!dsc->lvTracked)
     {
         return true;

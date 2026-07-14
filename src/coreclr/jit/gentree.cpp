@@ -20629,33 +20629,6 @@ bool GenTree::IsFieldAddr(Compiler* comp, GenTree** pBaseAddr, FieldSeq** pFldSe
 }
 
 //------------------------------------------------------------------------
-// gtStoreMayDefineField: Does the given parent store modify the given field?
-//
-// Arguments:
-//    fieldVarDsc          - The field local
-//    offset               - Offset of the store, relative to the parent
-//    storeSize            - Size of the store in bytes
-//    pFieldRelativeOffset - [out] parameter for the store's offset relative
-//                           to the field local itself
-//    pFieldAffectedBytes  - [out] parameter for the amount of the field's
-//                           local's bytes affected by the store
-//
-// Return Value:
-//    If the given store may affect the given field local, "true", "false"
-//    otherwise.
-//    If it is uncertain whether the store affects the field, the return value is
-//    "true" and "pFieldAffectedBytes" contains a ValueSize of type "Unknown".
-//
-bool Compiler::gtStoreMayDefineField(LclVarDsc* fieldVarDsc,
-                                     ssize_t    offset,
-                                     ValueSize  storeSize,
-                                     ssize_t*   pFieldRelativeOffset,
-                                     ValueSize* pFieldAffectedBytes)
-{
-    unreached();
-}
-
-//------------------------------------------------------------------------
 // gtGetClassHandle: find class handle for a ref type
 //
 // Arguments:

@@ -1732,8 +1732,7 @@ void LinearScan::identifyCandidates()
             {
                 refCntStk += varDsc->lvRefCnt();
                 if ((varDsc->lvType == TYP_DOUBLE) ||
-                    ((varTypeIsStruct(varDsc) && varDsc->lvStructDoubleAlign &&
-                      (m_compiler->lvaGetPromotionType(varDsc) != Compiler::PROMOTION_TYPE_INDEPENDENT))))
+                    (varTypeIsStruct(varDsc) && varDsc->lvStructDoubleAlign))
                 {
                     refCntWtdStkDbl += varDsc->lvRefCntWtd();
                 }
@@ -8261,10 +8260,6 @@ void LinearScan::resolveRegisters()
                         varDsc->SetArgInitReg(initialReg);
                         JITDUMP("  Set V%02u argument initial register to %s\n", lclNum, getRegName(initialReg));
                     }
-
-                    // Stack args that are part of dependently-promoted structs should never be register candidates (see
-                    // LinearScan::isRegCandidate).
-                    assert(varDsc->lvIsRegArg || !m_compiler->lvaIsFieldOfDependentlyPromotedStruct(varDsc));
                 }
 
                 // If lvRegNum is REG_STK, that means that either no register

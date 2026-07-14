@@ -1471,18 +1471,10 @@ void Compiler::lvaSetVarDoNotEnregister(unsigned varNum DEBUGARG(DoNotEnregister
                 JITDUMP("it is reinterpreted as a struct arg\n");
             }
             break;
-        case DoNotEnregisterReason::DepField:
-            JITDUMP("field of a dependently promoted struct\n");
-            break;
         case DoNotEnregisterReason::NoRegVars:
             JITDUMP("opts.compFlags & CLFLG_REGVAR is not set\n");
             assert(!compEnregLocals());
             break;
-#if !defined(TARGET_64BIT)
-        case DoNotEnregisterReason::LongParamField:
-            JITDUMP("it is a decomposed field of a long parameter\n");
-            break;
-#endif
         case DoNotEnregisterReason::PinningRef:
             JITDUMP("pinning ref\n");
             assert(varDsc->lvPinned);
@@ -2167,24 +2159,6 @@ var_types LclVarDsc::GetStackSlotHomeType() const
     }
 
     return genActualType(GetRegisterType());
-}
-
-//----------------------------------------------------------------------------------------------
-// CanBeReplacedWithItsField: check if a whole struct reference could be replaced by a field.
-//
-// Arguments:
-//    comp - the compiler instance;
-//
-// Return Value:
-//    true if that can be replaced, false otherwise.
-//
-// Notes:
-//    The replacement can be made only for independently promoted structs
-//    with 1 field without holes.
-//
-bool LclVarDsc::CanBeReplacedWithItsField(Compiler* comp) const
-{
-    return false;
 }
 
 //------------------------------------------------------------------------
@@ -4206,15 +4180,6 @@ void Compiler::lvaAssignVirtualFrameOffsetsToLocals()
 
         for (lclNum = 0, varDsc = lvaTable; lclNum < lvaCount; lclNum++, varDsc++)
         {
-            /* Ignore field locals of the promotion type PROMOTION_TYPE_FIELD_DEPENDENT.
-               In other words, we will not calculate the "base" address of the struct local if
-               the promotion type is PROMOTION_TYPE_FIELD_DEPENDENT.
-            */
-            if (lvaIsFieldOfDependentlyPromotedStruct(varDsc))
-            {
-                continue;
-            }
-
 #if FEATURE_FIXED_OUT_ARGS
             // The scratch mem is used for the outgoing arguments, and it must be absolutely last
             if (lclNum == lvaOutgoingArgSpaceVar)

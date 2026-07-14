@@ -9446,12 +9446,10 @@ void Lowering::CheckNode(Compiler* compiler, GenTree* node)
         case GT_LCL_VAR:
         case GT_STORE_LCL_VAR:
         {
-            const LclVarDsc* varDsc = compiler->lvaGetDesc(node->AsLclVar());
 #if defined(FEATURE_SIMD) && defined(TARGET_64BIT)
             if (node->TypeIs(TYP_SIMD12))
             {
-                assert(compiler->lvaIsFieldOfDependentlyPromotedStruct(varDsc) ||
-                       (compiler->lvaLclStackHomeSize(node->AsLclVar()->GetLclNum()) == 12));
+                assert(compiler->lvaLclStackHomeSize(node->AsLclVar()->GetLclNum()) == 12);
             }
 #endif // FEATURE_SIMD && TARGET_64BIT
         }

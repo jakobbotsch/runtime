@@ -28,7 +28,6 @@ protected:
     }
 
 private:
-    void     TryInitFieldByField();
     void     TryPrimitiveInit();
     GenTree* EliminateCommas(GenTree** commaPool);
 
@@ -39,22 +38,19 @@ protected:
     GenTree* m_store = nullptr;
     GenTree* m_src   = nullptr;
 
-    unsigned             m_blockSize            = 0;
-    ClassLayout*         m_blockLayout          = nullptr;
-    unsigned             m_dstLclNum            = BAD_VAR_NUM;
-    GenTreeLclVarCommon* m_dstLclNode           = nullptr;
-    LclVarDsc*           m_dstVarDsc            = nullptr;
-    unsigned             m_dstLclOffset         = 0;
-    bool                 m_dstSingleStoreLclVar = false;
+    unsigned             m_blockSize    = 0;
+    ClassLayout*         m_blockLayout  = nullptr;
+    unsigned             m_dstLclNum    = BAD_VAR_NUM;
+    GenTreeLclVarCommon* m_dstLclNode   = nullptr;
+    LclVarDsc*           m_dstVarDsc    = nullptr;
+    unsigned             m_dstLclOffset = 0;
 
     enum class BlockTransformation
     {
         Undefined,
-        FieldByField,
         OneStoreBlock,
         StructBlock,
         SkipMultiRegSrc,
-        SkipSingleRegCallSrc,
         Nop
     };
 
@@ -267,8 +263,9 @@ void MorphInitBlockHelper::TrySpecialCases()
 }
 
 //------------------------------------------------------------------------
-// MorphStructCases: transforms the store as field by field init or keeps it as a block init
-//    but sets appropriate flags for the involved lclVars.
+// MorphStructCases: transform the store to a primitive store if possible,
+//    otherwise keep it as a block init but set appropriate flags for the
+//    involved lclVars.
 //
 // Assumptions:
 //    we have already checked that it is not a special case.
@@ -293,41 +290,6 @@ void MorphInitBlockHelper::MorphStructCases()
             }
         }
     }
-}
-
-//------------------------------------------------------------------------
-// InitFieldByField: Attempts to promote a local block init tree to a tree
-// of promoted field initialization stores.
-//
-// If successful, will set "m_transformationDecision" to "FieldByField" and
-// "m_result" to the final tree.
-//
-// Notes:
-//    This transforms a single block initialization store like:
-//
-//    *  STORE_BLK struct<12> (init)
-//    +--*  LCL_ADDR  byref V02 loc0
-//    |  \--  int    V02.a (offs=0x00) -> V06 tmp3
-//    |  \--  ubyte  V02.c (offs=0x04) -> V07 tmp4
-//    |  \--  float  V02.d (offs=0x08) -> V08 tmp5
-//    \--*  INIT_VAL  int
-//       \--*  CNS_INT   int    42
-//
-//    into a COMMA tree of stores that initialize each promoted struct
-//    field:
-//
-//    *  COMMA     void
-//    +--*  COMMA     void
-//    |  +--*  STORE_LCL_VAR int    V06 tmp3
-//    |  |  \--*  CNS_INT   int    0x2A2A2A2A
-//    |  \--*  STORE_LCL_VAR ubyte  V07 tmp4
-//    |     \--*  CNS_INT   int    42
-//    \--*  STORE_LCL_VAR float  V08 tmp5
-//       \--*  CNS_DBL   float  1.5113661732714390e-13
-//
-void MorphInitBlockHelper::TryInitFieldByField()
-{
-    unreached();
 }
 
 //------------------------------------------------------------------------
@@ -485,7 +447,6 @@ protected:
 
     void     MorphStructCases() override;
     void     TryPrimitiveCopy();
-    GenTree* CopyFieldByField();
 
     const char* GetHelperName() const override
     {
@@ -493,17 +454,10 @@ protected:
     }
 
 protected:
-    unsigned             m_srcLclNum            = BAD_VAR_NUM;
-    LclVarDsc*           m_srcVarDsc            = nullptr;
-    GenTreeLclVarCommon* m_srcLclNode           = nullptr;
-    unsigned             m_srcLclOffset         = 0;
-    bool                 m_srcSingleStoreLclVar = false;
-
-    bool m_dstDoFldStore = false;
-    bool m_srcDoFldStore = false;
-
-private:
-    bool CanReuseAddressForDecomposedStore(GenTree* addr);
+    unsigned             m_srcLclNum    = BAD_VAR_NUM;
+    LclVarDsc*           m_srcVarDsc    = nullptr;
+    GenTreeLclVarCommon* m_srcLclNode   = nullptr;
+    unsigned             m_srcLclOffset = 0;
 };
 
 //------------------------------------------------------------------------
@@ -577,17 +531,12 @@ void MorphCopyBlockHelper::TrySpecialCases()
         m_transformationDecision = BlockTransformation::SkipMultiRegSrc;
         m_result                 = m_store;
     }
-    else if (m_src->IsCall() && m_store->OperIs(GT_STORE_LCL_VAR) && m_dstVarDsc->CanBeReplacedWithItsField(m_compiler))
-    {
-        JITDUMP("Not morphing a single reg call return\n");
-        m_transformationDecision = BlockTransformation::SkipSingleRegCallSrc;
-        m_result                 = m_store;
-    }
 }
 
 //------------------------------------------------------------------------
-// MorphStructCases: transforms the store as field by field copy or keeps it as a block init
-//    but sets appropriate flags for the involved lclVars.
+// MorphStructCases: transform the store to a primitive store if possible,
+//    otherwise keep it as a block copy but set appropriate flags for the
+//    involved lclVars.
 //
 // Assumptions:
 //    We have already checked that it is not a special case.
@@ -706,74 +655,6 @@ void MorphCopyBlockHelper::TryPrimitiveCopy()
 }
 
 //------------------------------------------------------------------------
-// CopyFieldByField: transform the copy block to a field by field store.
-//
-// Notes:
-//    We do it for promoted lclVars which fields can be enregistered.
-//
-GenTree* MorphCopyBlockHelper::CopyFieldByField()
-{
-    unreached();
-}
-
-//------------------------------------------------------------------------
-// CanReuseAddressForDecomposedStore: Check if it is safe to reuse the
-// specified address node for each decomposed store of a block copy.
-//
-// Arguments:
-//   addrNode - The address node
-//
-// Return Value:
-//   True if the caller can reuse the address by cloning.
-//
-bool MorphCopyBlockHelper::CanReuseAddressForDecomposedStore(GenTree* addrNode)
-{
-    if (addrNode->OperIsLocalRead())
-    {
-        GenTreeLclVarCommon* lcl    = addrNode->AsLclVarCommon();
-        unsigned             lclNum = lcl->GetLclNum();
-        LclVarDsc*           lclDsc = m_compiler->lvaGetDesc(lclNum);
-        if (lclDsc->IsAddressExposed())
-        {
-            // Address could be pointing to itself
-            return false;
-        }
-
-        // The store can also directly write to the address. For example:
-        //
-        //  ▌  STORE_LCL_VAR struct<Program+ListElement, 16>(P) V00 loc0
-        //  ▌    long   V00.Program+ListElement:Next (offs=0x00) -> V03 tmp1
-        //  ▌    int    V00.Program+ListElement:Value (offs=0x08) -> V04 tmp2
-        //  └──▌  BLK       struct<Program+ListElement, 16>
-        //     └──▌  LCL_VAR   long   V03 tmp1          (last use)
-        //
-        // If we reused the address we would produce
-        //
-        //  ▌  COMMA     void
-        //  ├──▌  STORE_LCL_VAR long   V03 tmp1
-        //  │  └──▌  IND       long
-        //  │     └──▌  LCL_VAR   long   V03 tmp1          (last use)
-        //  └──▌  STORE_LCL_VAR int    V04 tmp2
-        //     └──▌  IND       int
-        //        └──▌  ADD       byref
-        //           ├──▌  LCL_VAR   long   V03 tmp1          (last use)
-        //           └──▌  CNS_INT   long   8
-        //
-        // which is also obviously incorrect.
-        //
-
-        if (m_dstLclNum == BAD_VAR_NUM)
-        {
-            return true;
-        }
-
-        return lclNum != m_dstLclNum;
-    }
-
-    return addrNode->IsInvariant();
-}
-
-//------------------------------------------------------------------------
 // fgMorphCopyBlock: Perform the morphing of a block copy.
 //
 // Arguments:
@@ -782,8 +663,6 @@ bool MorphCopyBlockHelper::CanReuseAddressForDecomposedStore(GenTree* addrNode)
 // Return Value:
 //    We can return the original block copy unmodified (least desirable, but always correct)
 //    We can return a single store, when TryPrimitiveCopy transforms it (most desirable).
-//    If we have performed struct promotion of the Source() or the Dest() then we will try to
-//    perform a field by field store for each of the promoted struct fields.
 //
 // Assumptions:
 //    The child nodes for tree have already been Morphed.
@@ -791,10 +670,6 @@ bool MorphCopyBlockHelper::CanReuseAddressForDecomposedStore(GenTree* addrNode)
 // Notes:
 //    If we leave it as a block copy we will call lvaSetVarDoNotEnregister() on Source() or Dest()
 //    if they cannot be enregistered.
-//    When performing a field by field store we can have one of Source() or Dest treated as a blob of bytes
-//    and in such cases we will call lvaSetVarDoNotEnregister() on the one treated as a blob of bytes.
-//    If the Source() or Dest() is a struct that has a "CustomLayout" and "ContainsHoles" then we
-//    can not use a field by field store and must leave the original block copy unmodified.
 //
 GenTree* Compiler::fgMorphCopyBlock(GenTree* tree)
 {
@@ -808,12 +683,9 @@ GenTree* Compiler::fgMorphCopyBlock(GenTree* tree)
 //    tree - A store tree that performs block initialization.
 //
 // Return Value:
-//    If the destination is a promoted struct local variable then we will try to
-//    perform a field by field store for each of the promoted struct fields.
-//    This is not always possible (e.g. if the struct is address exposed).
-//
-//    Otherwise the original store tree is returned unmodified, note that the
-//    nodes can still be changed.
+//    If the block init can be replaced with a single primitive store then we
+//    return that store. Otherwise the original store tree is returned unmodified,
+//    note that the nodes can still be changed.
 //
 // Assumptions:
 //    store's children have already been morphed.

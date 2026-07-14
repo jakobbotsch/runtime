@@ -361,10 +361,6 @@ Compiler::Compiler(ArenaAllocator*       arena,
         {
             fgNoStructPromotion = true;
         }
-        if (noStructPromotionValue == 2)
-        {
-            fgNoStructParamPromotion = true;
-        }
     }
 #endif // DEBUG
 
@@ -10717,17 +10713,9 @@ void Compiler::EnregisterStats::RecordLocal(const LclVarDsc* varDsc)
             case DoNotEnregisterReason::IsStructArg:
                 m_structArg++;
                 break;
-            case DoNotEnregisterReason::DepField:
-                m_depField++;
-                break;
             case DoNotEnregisterReason::NoRegVars:
                 m_noRegVars++;
                 break;
-#if !defined(TARGET_64BIT)
-            case DoNotEnregisterReason::LongParamField:
-                m_longParamField++;
-                break;
-#endif
             case DoNotEnregisterReason::PinningRef:
                 m_PinningRef++;
                 break;
@@ -10881,11 +10869,7 @@ void Compiler::EnregisterStats::Dump(FILE* fout) const
     PRINT_STATS(m_liveInOutHndlr, notEnreg);
     PRINT_STATS(m_blockOp, notEnreg);
     PRINT_STATS(m_structArg, notEnreg);
-    PRINT_STATS(m_depField, notEnreg);
     PRINT_STATS(m_noRegVars, notEnreg);
-#if !defined(TARGET_64BIT)
-    PRINT_STATS(m_longParamField, notEnreg);
-#endif // !TARGET_64BIT
     PRINT_STATS(m_PinningRef, notEnreg);
     PRINT_STATS(m_lclAddrNode, notEnreg);
     PRINT_STATS(m_castTakesAddr, notEnreg);

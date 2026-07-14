@@ -211,12 +211,6 @@ void Compiler::raMarkStkVars()
     {
         // lvOnFrame is set by LSRA, except in the case of zero-ref, which is set below.
 
-        if (lvaIsFieldOfDependentlyPromotedStruct(varDsc))
-        {
-            noway_assert(!varDsc->lvRegister);
-            goto ON_STK;
-        }
-
         // Fully enregistered variables don't need any frame space
 
         if (varDsc->lvRegister)
@@ -252,7 +246,6 @@ void Compiler::raMarkStkVars()
             goto NOT_STK;
         }
 
-    ON_STK:
         // The variable (or part of it) lives on the stack frame
 
         noway_assert((varDsc->lvType != TYP_UNDEF) && (varDsc->lvType != TYP_VOID) && (varDsc->lvType != TYP_UNKNOWN));
@@ -349,12 +342,6 @@ bool RegAllocImpl::isRegCandidate(LclVarDsc* varDsc)
     // If we have JMP, reg args must be put on the stack
 
     if (compiler->compJmpOpUsed && varDsc->lvIsRegArg)
-    {
-        return false;
-    }
-
-    // Don't allocate registers for dependently promoted struct fields
-    if (compiler->lvaIsFieldOfDependentlyPromotedStruct(varDsc))
     {
         return false;
     }

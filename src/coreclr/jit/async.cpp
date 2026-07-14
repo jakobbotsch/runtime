@@ -3009,26 +3009,23 @@ void AsyncTransformation::CopyReturnValueOnResumption(GenTreeCall*              
     // TODO-TP: We can use liveness to avoid generating a lot of this IR.
     if (call->gtReturnType == TYP_STRUCT)
     {
-        if (m_compiler->lvaGetPromotionType(resultLcl) != Compiler::PROMOTION_TYPE_INDEPENDENT)
+        GenTree* resultOffsetNode = m_compiler->gtNewIconNode((ssize_t)resultOffset, TYP_I_IMPL);
+        GenTree* resultAddr       = m_compiler->gtNewOperNode(GT_ADD, TYP_BYREF, resultBase, resultOffsetNode);
+        GenTree* resultData       = m_compiler->gtNewLoadValueNode(retInfo->Type.ReturnLayout, resultAddr, indirFlags);
+        GenTree* storeResult;
+        if ((callDefInfo.DefinitionNode->GetLclOffs() == 0) &&
+            ClassLayout::AreCompatible(resultLcl->GetLayout(), retInfo->Type.ReturnLayout))
         {
-            GenTree* resultOffsetNode = m_compiler->gtNewIconNode((ssize_t)resultOffset, TYP_I_IMPL);
-            GenTree* resultAddr       = m_compiler->gtNewOperNode(GT_ADD, TYP_BYREF, resultBase, resultOffsetNode);
-            GenTree* resultData = m_compiler->gtNewLoadValueNode(retInfo->Type.ReturnLayout, resultAddr, indirFlags);
-            GenTree* storeResult;
-            if ((callDefInfo.DefinitionNode->GetLclOffs() == 0) &&
-                ClassLayout::AreCompatible(resultLcl->GetLayout(), retInfo->Type.ReturnLayout))
-            {
-                storeResult = m_compiler->gtNewStoreLclVarNode(callDefInfo.DefinitionNode->GetLclNum(), resultData);
-            }
-            else
-            {
-                storeResult = m_compiler->gtNewStoreLclFldNode(callDefInfo.DefinitionNode->GetLclNum(), TYP_STRUCT,
-                                                               retInfo->Type.ReturnLayout,
-                                                               callDefInfo.DefinitionNode->GetLclOffs(), resultData);
-            }
-
-            LIR::AsRange(storeResultBB).InsertAtEnd(LIR::SeqTree(m_compiler, storeResult));
+            storeResult = m_compiler->gtNewStoreLclVarNode(callDefInfo.DefinitionNode->GetLclNum(), resultData);
         }
+        else
+        {
+            storeResult = m_compiler->gtNewStoreLclFldNode(callDefInfo.DefinitionNode->GetLclNum(), TYP_STRUCT,
+                                                           retInfo->Type.ReturnLayout,
+                                                           callDefInfo.DefinitionNode->GetLclOffs(), resultData);
+        }
+
+        LIR::AsRange(storeResultBB).InsertAtEnd(LIR::SeqTree(m_compiler, storeResult));
     }
     else
     {

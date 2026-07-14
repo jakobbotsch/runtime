@@ -20,27 +20,6 @@ TreeLifeUpdater<ForCodeGen>::TreeLifeUpdater(Compiler* m_compiler)
 }
 
 //------------------------------------------------------------------------
-// UpdateLifeFieldVar: Update live sets for only the given field of a multi-reg LclVar node.
-//
-// Arguments:
-//    lclNode - the GT_LCL_VAR node.
-//    multiRegIndex - the index of the field being updated.
-//
-// Return Value:
-//    Returns true iff the variable needs to be spilled.
-//
-// Notes:
-//    This method need only be used when the fields are dying or going live at different times,
-//    e.g. when I ready the 0th field/reg of one node and define the 0th field/reg of another
-//    before reading the subsequent fields/regs.
-//
-template <bool ForCodeGen>
-bool TreeLifeUpdater<ForCodeGen>::UpdateLifeFieldVar(GenTreeLclVar* lclNode, unsigned multiRegIndex)
-{
-    unreached();
-}
-
-//------------------------------------------------------------------------
 // UpdateLifeVar: Update live sets for a given tree.
 //
 // Arguments:

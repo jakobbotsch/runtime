@@ -2105,36 +2105,14 @@ bool Compiler::fgTryMorphStructArg(CallArg* arg)
     GenTree*  argNode = *use;
     assert(varTypeIsStruct(argNode));
 
-    bool isSplit = arg->AbiInfo.IsSplitAcrossRegistersAndStack();
 #ifdef TARGET_ARM
+    bool isSplit = arg->AbiInfo.IsSplitAcrossRegistersAndStack();
     if ((isSplit && (arg->AbiInfo.CountRegsAndStackSlots() > 4)) || (!isSplit && arg->AbiInfo.HasAnyStackSegment()))
 #else
     if (!arg->AbiInfo.HasAnyRegisterSegment())
 #endif
     {
-        if (argNode->OperIs(GT_LCL_VAR) &&
-            (lvaGetPromotionType(argNode->AsLclVar()->GetLclNum()) == PROMOTION_TYPE_INDEPENDENT))
-        {
-            // TODO-Arm-CQ: support decomposing "large" promoted structs into field lists.
-            if (!isSplit)
-            {
-                GenTreeFieldList* fieldList = fgMorphLclToFieldList(argNode->AsLclVar());
-                // TODO-Cleanup: The containment/reg optionality for x86 is
-                // conservative in the "no field list" case.
-#ifdef TARGET_X86
-                *use = fieldList;
-#else
-                *use = fieldList->SoleFieldOrThis();
-#endif
-                *use = fgMorphTree(*use);
-            }
-            else
-            {
-                // Set DNER to block independent promotion.
-                lvaSetVarDoNotEnregister(argNode->AsLclVar()->GetLclNum() DEBUGARG(DoNotEnregisterReason::IsStructArg));
-            }
-        }
-        else if (argNode->OperIs(GT_LCL_FLD))
+        if (argNode->OperIs(GT_LCL_FLD))
         {
             lvaSetVarDoNotEnregister(argNode->AsLclFld()->GetLclNum() DEBUGARG(DoNotEnregisterReason::LocalField));
         }
@@ -2366,38 +2344,6 @@ bool Compiler::fgTryMorphStructArg(CallArg* arg)
     // Potentially update commas
     arg->GetNode()->ChangeType((*use)->TypeGet());
     return true;
-}
-
-//-----------------------------------------------------------------------------
-// FieldsMatchAbi:
-//   Check if the fields of a local map cleanly (in terms of offsets) to the
-//   specified ABI info.
-//
-// Arguments:
-//   varDsc  - promoted local
-//   abiInfo - ABI information
-//
-// Returns:
-//   True if it does. In that case FIELD_LIST usage is allowed for split args
-//   by the backend.
-//
-bool Compiler::FieldsMatchAbi(LclVarDsc* varDsc, const ABIPassingInformation& abiInfo)
-{
-    return false;
-}
-
-//------------------------------------------------------------------------
-// fgMorphLclToFieldList: Morph a GT_LCL_VAR node to a GT_FIELD_LIST of its promoted fields
-//
-// Arguments:
-//    lcl  - The GT_LCL_VAR node we will transform
-//
-// Return value:
-//    The new GT_FIELD_LIST that we have created.
-//
-GenTreeFieldList* Compiler::fgMorphLclToFieldList(GenTreeLclVar* lcl)
-{
-    unreached();
 }
 
 //------------------------------------------------------------------------
@@ -7188,8 +7134,6 @@ GenTree* Compiler::fgMorphSmpOp(GenTree* tree, bool* optAssertionPropDone)
                 {
                     retVal = fgMorphRetInd(tree->AsOp());
                 }
-
-                fgTryReplaceStructLocalWithFields(&retVal);
             }
 
             // normalize small integer return values
@@ -8131,24 +8075,6 @@ DONE_MORPHING_CHILDREN:
             }
             break;
 
-        case GT_RETURN:
-        case GT_SWIFT_ERROR_RET:
-        {
-            // Retry updating return operand to a field -- assertion
-            // prop done when morphing this operand changed the local.
-            // Skip this for merged returns that will be changed to a store and
-            // jump to the return BB.
-            GenTree*& retVal = tree->AsOp()->ReturnValueRef();
-            if ((retVal != nullptr) && ((genReturnBB == nullptr) || (compCurBB == genReturnBB)))
-            {
-                if (fgTryReplaceStructLocalWithFields(&retVal))
-                {
-                    retVal = fgMorphTree(retVal);
-                }
-            }
-            break;
-        }
-
         default:
             break;
     }
@@ -8190,31 +8116,6 @@ DONE_MORPHING_CHILDREN:
     tree = fgMorphSmpOpOptional(tree->AsOp(), optAssertionPropDone);
 
     return tree;
-}
-
-//------------------------------------------------------------------------
-// fgTryReplaceStructLocalWithField: see if a struct use can be replaced
-//   with an equivalent field use
-//
-// Arguments:
-//    tree - tree to examine and possibly modify
-//
-// Notes:
-//    Currently only called when the tree parent is a GT_RETURN/GT_SWIFT_ERROR_RET.
-//
-bool Compiler::fgTryReplaceStructLocalWithFields(GenTree** use)
-{
-    if (!(*use)->OperIs(GT_LCL_VAR))
-    {
-        return false;
-    }
-
-    LclVarDsc* varDsc = lvaGetDesc((*use)->AsLclVar());
-
-    return false;
-
-    *use = fgMorphLclToFieldList((*use)->AsLclVar());
-    return true;
 }
 
 //------------------------------------------------------------------------

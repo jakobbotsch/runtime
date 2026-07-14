@@ -3812,15 +3812,6 @@ void CodeGen::genCheckUseBlockInit()
             continue;
         }
 
-        if (m_compiler->lvaIsFieldOfDependentlyPromotedStruct(varDsc))
-        {
-            // For Compiler::PROMOTION_TYPE_DEPENDENT type of promotion, the whole struct should have been
-            // initialized by the parent struct. No need to set the lvMustInit bit in the
-            // field locals.
-            varDsc->lvMustInit = 0;
-            continue;
-        }
-
         if (varDsc->lvHasExplicitInit)
         {
             varDsc->lvMustInit = 0;
@@ -5280,20 +5271,15 @@ void CodeGen::genFnProlog()
 
         if (varDsc->HasGCPtr() && varDsc->lvTrackedNonStruct() && varDsc->lvOnFrame)
         {
-            // For fields of PROMOTION_TYPE_DEPENDENT type of promotion, they should have been
-            // taken care of by the parent struct.
-            if (!m_compiler->lvaIsFieldOfDependentlyPromotedStruct(varDsc))
-            {
-                hasGCRef = true;
+            hasGCRef = true;
 
-                if (loOffs < GCrefLo)
-                {
-                    GCrefLo = loOffs;
-                }
-                if (hiOffs > GCrefHi)
-                {
-                    GCrefHi = hiOffs;
-                }
+            if (loOffs < GCrefLo)
+            {
+                GCrefLo = loOffs;
+            }
+            if (hiOffs > GCrefHi)
+            {
+                GCrefHi = hiOffs;
             }
         }
 

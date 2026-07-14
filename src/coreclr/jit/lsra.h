@@ -2301,7 +2301,7 @@ public:
     bool isInternal : 1;
     // true if this is a LocalVar for a struct field
     bool isStructField : 1;
-    // true iff this is a GT_LDOBJ for a fully promoted (PROMOTION_TYPE_INDEPENDENT) struct
+    // true iff this is a GT_LDOBJ for a fully (independently) promoted struct
     bool isPromotedStruct : 1;
     // true if this is an SDSU interval for which the def and use have conflicting register
     // requirements

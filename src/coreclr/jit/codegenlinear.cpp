@@ -1497,14 +1497,6 @@ regNumber CodeGen::genConsumeReg(GenTree* tree, unsigned multiRegIndex)
     }
     genUnspillRegIfNeeded(tree, multiRegIndex);
 
-    // UpdateLifeFieldVar() will return true if local var should be spilled.
-    if (tree->IsMultiRegLclVar() && treeLifeUpdater->UpdateLifeFieldVar(tree->AsLclVar(), multiRegIndex))
-    {
-        GenTreeLclVar* lcl = tree->AsLclVar();
-        genSpillLocal(lcl->GetLclNum(), lcl->GetFieldTypeByIndex(m_compiler, multiRegIndex), lcl,
-                      lcl->GetRegByIndex(multiRegIndex));
-    }
-
     if (tree->gtSkipReloadOrCopy()->OperIs(GT_LCL_VAR))
     {
         unreached();

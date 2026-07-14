@@ -1321,19 +1321,13 @@ void Liveness<TLiveness>::MarkMustInitAndEHVars(VARSET_VALARG_TP finallyVars, VA
             continue;
         }
 
-        // Fields of dependently promoted structs may be tracked. We shouldn't set lvMustInit on them since
-        // the whole parent struct will be initialized; however, lvLiveInOutOfHandler should be set on them
-        // as appropriate.
-
-        bool fieldOfDependentlyPromotedStruct = m_compiler->lvaIsFieldOfDependentlyPromotedStruct(varDsc);
-
         // Un-init locals may need auto-initialization. Note that the
         // liveness of such locals will bubble to the top (fgFirstBB)
         // in fgInterBlockLocalVarLiveness()
 
         if (!varDsc->lvIsParam && !varDsc->lvIsParamRegTarget &&
             VarSetOps::IsMember(m_compiler, m_compiler->fgFirstBB->bbLiveIn, varDsc->lvVarIndex) &&
-            (m_compiler->info.compInitMem || varTypeIsGC(varDsc->TypeGet())) && !fieldOfDependentlyPromotedStruct)
+            (m_compiler->info.compInitMem || varTypeIsGC(varDsc->TypeGet())))
         {
             varDsc->lvMustInit = true;
         }
@@ -1894,17 +1888,7 @@ bool Liveness<TLiveness>::ComputeLifeUntrackedLocal(VARSET_TP&           life,
 
     if (TLiveness::EliminateDeadCode && TLiveness::IsLIR && isDef && (varDsc.lvRefCnt() == 1) && !varDsc.lvPinned)
     {
-        if (varTypeIsPromotable(varDsc.lvType))
-        {
-            if (m_compiler->lvaGetPromotionType(&varDsc) != Compiler::PROMOTION_TYPE_INDEPENDENT)
-            {
-                return true;
-            }
-        }
-        else
-        {
-            return true;
-        }
+        return true;
     }
 
     return false;

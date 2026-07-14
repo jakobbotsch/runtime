@@ -2489,20 +2489,10 @@ inline void LclVarDsc::incRefCnts(weight_t weight, Compiler* comp, RefCountState
         return;
     }
 
-    Compiler::lvaPromotionType promotionType = DUMMY_INIT(Compiler::PROMOTION_TYPE_NONE);
-    if (varTypeIsPromotable(lvType))
-    {
-        promotionType = comp->lvaGetPromotionType(this);
-    }
-
     //
     // Increment counts on the local itself.
     //
-    if ((lvType != TYP_STRUCT) || (promotionType != Compiler::PROMOTION_TYPE_INDEPENDENT))
     {
-        // We increment ref counts of this local for primitive types, including structs that have been retyped as their
-        // only field, as well as for structs whose fields are not independently promoted.
-
         //
         // Increment lvRefCnt
         //
@@ -4084,60 +4074,6 @@ inline bool Compiler::impIsPrimitive(CorInfoType jitType)
     return ((CORINFO_TYPE_BOOL <= jitType && jitType <= CORINFO_TYPE_DOUBLE) || jitType == CORINFO_TYPE_PTR);
 }
 
-/*****************************************************************************
- *
- *  Get the promotion type of a struct local.
- */
-
-inline Compiler::lvaPromotionType Compiler::lvaGetPromotionType(const LclVarDsc* varDsc)
-{
-    // Old struct promotion has been removed, so locals are never promoted.
-    return PROMOTION_TYPE_NONE;
-}
-
-/*****************************************************************************
- *
- *  Get the promotion type of a struct local.
- */
-
-inline Compiler::lvaPromotionType Compiler::lvaGetPromotionType(unsigned varNum)
-{
-    return lvaGetPromotionType(lvaGetDesc(varNum));
-}
-
-/*****************************************************************************
- *
- *  Given a field local, get the promotion type of its parent struct local.
- */
-
-inline Compiler::lvaPromotionType Compiler::lvaGetParentPromotionType(const LclVarDsc* varDsc)
-{
-    // Old struct promotion has been removed, so there are no field locals.
-    return PROMOTION_TYPE_NONE;
-}
-
-/*****************************************************************************
- *
- *  Given a field local, get the promotion type of its parent struct local.
- */
-
-inline Compiler::lvaPromotionType Compiler::lvaGetParentPromotionType(unsigned varNum)
-{
-    return lvaGetParentPromotionType(lvaGetDesc(varNum));
-}
-
-/*****************************************************************************
- *
- *  Return true if the local is a field local of a promoted struct of type PROMOTION_TYPE_DEPENDENT.
- *  Return false otherwise.
- */
-
-inline bool Compiler::lvaIsFieldOfDependentlyPromotedStruct(const LclVarDsc* varDsc)
-{
-    // Old struct promotion has been removed, so there are no field locals.
-    return false;
-}
-
 //------------------------------------------------------------------------
 // lvaIsGCTracked: Determine whether this var should be reported
 //    as tracked for GC purposes.
@@ -4154,16 +4090,13 @@ inline bool Compiler::lvaIsFieldOfDependentlyPromotedStruct(const LclVarDsc* var
 //    It is up to the caller to ensure that the fields of struct variables are
 //    correctly tracked.
 //
-//    We never GC-track fields of dependently promoted structs, even
-//    though they may be tracked for optimization purposes.
-//
 inline bool Compiler::lvaIsGCTracked(const LclVarDsc* varDsc)
 {
     if (varDsc->lvTracked && (varDsc->lvType == TYP_REF || varDsc->lvType == TYP_BYREF))
     {
         // Stack parameters are always untracked w.r.t. GC reportings
         const bool isStackParam = varDsc->lvIsParam && !varDsc->lvIsRegArg;
-        return !isStackParam && !lvaIsFieldOfDependentlyPromotedStruct(varDsc);
+        return !isStackParam;
     }
     else
     {

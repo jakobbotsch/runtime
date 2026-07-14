@@ -471,11 +471,7 @@ enum class DoNotEnregisterReason
     LiveInOutOfHandler, // the local is alive in and out of exception handler and not single def.
     BlockOp,            // Is read or written via a block operation.
     IsStructArg,        // Is a struct passed as an argument in a way that requires a stack location.
-    DepField,           // It is a field of a dependently promoted struct
     NoRegVars,          // opts.compFlags & CLFLG_REGVAR is not set
-#if !defined(TARGET_64BIT)
-    LongParamField, // It is a decomposed field of a long parameter.
-#endif
     PinningRef,
     LclAddrNode, // the local is accessed with LCL_ADDR_VAR/FLD.
     CastTakesAddr,
@@ -1121,8 +1117,6 @@ public:
     {
         return IsLiveInOutOfHandler() || lvSpillAtSingleDef;
     }
-
-    bool CanBeReplacedWithItsField(Compiler* comp) const;
 
 #ifdef DEBUG
 public:
@@ -3935,9 +3929,6 @@ public:
     bool gtSplitTree(
         BasicBlock* block, Statement* stmt, GenTree* splitPoint, Statement** firstNewStmt, GenTree*** splitPointUse, bool early = false);
 
-    bool gtStoreMayDefineField(
-        LclVarDsc* fieldVarDsc, ssize_t offset, ValueSize size, ssize_t* pFieldRelativeOffset, ValueSize* pFieldAffectedBytes);
-
     void gtPeelOffsets(GenTree** addr, target_ssize_t* offset, FieldSeq** fldSeq = nullptr) const;
 
     GenTree*       gtPeelFieldAddrs(GenTree* addr) const;
@@ -4145,23 +4136,6 @@ public:
     XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     */
-
-    //
-    // For both PROMOTION_TYPE_NONE and PROMOTION_TYPE_DEPENDENT the struct will
-    // be placed in the stack frame and it's fields must be laid out sequentially.
-    //
-    // For PROMOTION_TYPE_INDEPENDENT each of the struct's fields is replaced by
-    //  a local variable that can be enregistered or placed in the stack frame.
-    //  The fields do not need to be laid out sequentially
-    //
-    enum lvaPromotionType
-    {
-        PROMOTION_TYPE_NONE,        // The struct local is not promoted
-        PROMOTION_TYPE_INDEPENDENT, // The struct local is promoted,
-                                    //   and its field locals are independent of its parent struct local.
-        PROMOTION_TYPE_DEPENDENT    // The struct local is promoted,
-                                    //   but its field locals depend on its parent struct local.
-    };
 
     /*****************************************************************************/
 
@@ -4765,11 +4739,6 @@ public:
     void lvaUpdateClass(unsigned varNum, CORINFO_CLASS_HANDLE clsHnd, bool isExact = false, bool singleDefOnly = true);
     void lvaUpdateClass(unsigned varNum, GenTree* tree, CORINFO_CLASS_HANDLE stackHandle = nullptr);
 
-    lvaPromotionType lvaGetPromotionType(const LclVarDsc* varDsc);
-    lvaPromotionType lvaGetPromotionType(unsigned varNum);
-    lvaPromotionType lvaGetParentPromotionType(const LclVarDsc* varDsc);
-    lvaPromotionType lvaGetParentPromotionType(unsigned varNum);
-    bool lvaIsFieldOfDependentlyPromotedStruct(const LclVarDsc* varDsc);
     bool lvaIsGCTracked(const LclVarDsc* varDsc);
 
 #if defined(FEATURE_SIMD)
@@ -4816,8 +4785,7 @@ public:
     }
 #endif // defined(DEBUG)
 
-    bool fgNoStructPromotion = false;      // Set to TRUE to turn off struct promotion for this method.
-    bool fgNoStructParamPromotion = false; // Set to TRUE to turn off struct promotion for parameters this method.
+    bool fgNoStructPromotion = false; // Set to TRUE to turn off struct promotion for this method.
 
     //=========================================================================
     //                          PROTECTED
@@ -7061,7 +7029,6 @@ private:
 
     GenTree* fgMorphIndexAddr(GenTreeIndexAddr* tree);
     GenTree* fgMorphExpandCast(GenTreeCast* tree);
-    GenTreeFieldList* fgMorphLclToFieldList(GenTreeLclVar* lcl);
     GenTreeCall* fgMorphArgs(GenTreeCall* call);
 
     void fgMakeOutgoingStructArgCopy(GenTreeCall* call, CallArg* arg);
@@ -7134,7 +7101,6 @@ public:
     GenTree* fgMorphCopyBlock(GenTree* tree);
 private:
     GenTree* fgMorphSmpOp(GenTree* tree, bool* optAssertionPropDone = nullptr);
-    bool fgTryReplaceStructLocalWithFields(GenTree** use);
     GenTree* fgMorphFinalizeIndir(GenTreeIndir* indir);
     GenTree* fgOptimizeCast(GenTreeCast* cast);
     GenTree* fgOptimizeCastOnStore(GenTree* store);
@@ -12002,13 +11968,9 @@ public:
         unsigned m_callSpCheck;
         unsigned m_simdUserForcesDep;
         unsigned m_liveInOutHndlr;
-        unsigned m_depField;
         unsigned m_noRegVars;
         unsigned m_wasmGcVisibility;
         unsigned m_PinningRef;
-#if !defined(TARGET_64BIT)
-        unsigned m_longParamField;
-#endif // !TARGET_64BIT
         unsigned m_parentExposed;
         unsigned m_tooConservative;
         unsigned m_escapeAddress;
@@ -12489,7 +12451,6 @@ public:
 #endif // defined(UNIX_AMD64_ABI)
 
     bool fgTryMorphStructArg(CallArg* arg);
-    bool FieldsMatchAbi(LclVarDsc* varDsc, const ABIPassingInformation& abiInfo);
 
     bool killGCRefs(GenTree* tree);
 
