@@ -314,20 +314,23 @@ namespace System.IO
             }
 
             byte[] sharedBuffer = ArrayPool<byte>.Shared.Rent(buffer.Length);
-            return FinishReadAsync(ReadAsync(sharedBuffer, 0, buffer.Length, cancellationToken), sharedBuffer, buffer);
+            return FinishReadAsync(sharedBuffer, buffer, cancellationToken);
+        }
 
-            static async ValueTask<int> FinishReadAsync(Task<int> readTask, byte[] localBuffer, Memory<byte> localDestination)
+        private async ValueTask<int> FinishReadAsync(byte[] localBuffer, Memory<byte> localDestination, CancellationToken cancellationToken)
+        {
+            try
             {
-                try
-                {
-                    int result = await readTask.ConfigureAwait(false);
-                    new ReadOnlySpan<byte>(localBuffer, 0, result).CopyTo(localDestination.Span);
-                    return result;
-                }
-                finally
-                {
-                    ArrayPool<byte>.Shared.Return(localBuffer);
-                }
+                // Intentionally call the array-based overload here to avoid recursion.
+#pragma warning disable CA1835 // Prefer the memory-based overloads of ReadAsync/WriteAsync
+                int result = await ReadAsync(localBuffer, 0, localDestination.Length, cancellationToken).ConfigureAwait(false);
+#pragma warning restore CA1835
+                new ReadOnlySpan<byte>(localBuffer, 0, result).CopyTo(localDestination.Span);
+                return result;
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(localBuffer);
             }
         }
 
@@ -739,14 +742,17 @@ namespace System.IO
 
             byte[] sharedBuffer = ArrayPool<byte>.Shared.Rent(buffer.Length);
             buffer.Span.CopyTo(sharedBuffer);
-            return new ValueTask(FinishWriteAsync(WriteAsync(sharedBuffer, 0, buffer.Length, cancellationToken), sharedBuffer));
+            return new ValueTask(FinishWriteAsync(sharedBuffer, buffer.Length, cancellationToken));
         }
 
-        private static async Task FinishWriteAsync(Task writeTask, byte[] localBuffer)
+        private async Task FinishWriteAsync(byte[] localBuffer, int count, CancellationToken cancellationToken)
         {
             try
             {
-                await writeTask.ConfigureAwait(false);
+                // Intentionally call the array-based overload here to avoid recursion
+#pragma warning disable CA1835 // Prefer the memory-based overloads of ReadAsync/WriteAsync
+                await WriteAsync(localBuffer, 0, count, cancellationToken).ConfigureAwait(false);
+#pragma warning restore CA1835
             }
             finally
             {

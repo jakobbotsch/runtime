@@ -282,6 +282,11 @@ namespace System.IO.Strategies
         {
             AssertBufferArguments(buffer, offset, count);
 
+            if (RuntimeHelpers.IsRuntimeAsync())
+            {
+                return ReadAsync(new Memory<byte>(buffer, offset, count), cancellationToken).AsTask();
+            }
+
             ValueTask<int> readResult = ReadAsync(new Memory<byte>(buffer, offset, count), cancellationToken);
 
             return readResult.IsCompletedSuccessfully
