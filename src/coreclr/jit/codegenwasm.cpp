@@ -1078,6 +1078,10 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
             genRecordAsyncResume(treeNode->AsVal());
             break;
 
+        case GT_RECORD_ASYNC_RETURN_VALUE:
+            genRecordAsyncReturnValue(treeNode->AsRecordAsyncReturnValue());
+            break;
+
         default:
 #ifdef DEBUG
             if (JitConfig.JitWasmNyiToR2RUnsupported())
