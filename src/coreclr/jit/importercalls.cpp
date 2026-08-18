@@ -7972,6 +7972,10 @@ void Compiler::impSetupAsyncCall(GenTreeCall*          call,
 //   inlining call's: a suspension in it then runs exactly the handling that the frame it
 //   ended up in would have run.
 //
+//   The inlining call may carry several sets of context args, describing the frames
+//   enclosing it, and all of them are inherited: this call ends up in the same frame, so a
+//   suspension in it has to run the same chain of frame transitions.
+//
 //   Awaits that may suspend in a frame of their own instead get their own contexts, from
 //   that frame's SaveAsyncContexts, and are skipped here.
 //
@@ -7982,65 +7986,36 @@ void Compiler::impInheritAsyncContextsFromInliner(GenTreeCall* call)
         return;
     }
 
-    GenTreeCall* inlCall       = impInlineInfo->iciCall;
-    CallArg*     resumedUseArg = inlCall->gtArgs.FindWellKnownArg(WellKnownArg::AsyncResumedUse);
-    CallArg*     resumedDefArg = inlCall->gtArgs.FindWellKnownArg(WellKnownArg::AsyncResumedDef);
-    CallArg*     execArg       = inlCall->gtArgs.FindWellKnownArg(WellKnownArg::AsyncExecutionContext);
-    CallArg*     syncArg       = inlCall->gtArgs.FindWellKnownArg(WellKnownArg::AsyncSynchronizationContext);
-    assert((resumedUseArg == nullptr) == (resumedDefArg == nullptr));
-    assert((resumedDefArg == nullptr) == (execArg == nullptr));
-    assert((execArg == nullptr) == (syncArg == nullptr));
-    if (resumedUseArg == nullptr)
+    // Take the values as they appear in the inlining call, so a suspension restores and
+    // captures exactly what the frame this await ended up in would have.
+    GenTreeCall* const inlCall     = impInlineInfo->iciCall;
+    CallArg*           insertAfter = nullptr;
+
+    for (CallArg& arg : inlCall->gtArgs.Args())
+    {
+        switch (arg.GetWellKnownArg())
+        {
+            case WellKnownArg::AsyncResumedDef:
+            case WellKnownArg::AsyncResumedUse:
+            case WellKnownArg::AsyncExecutionContext:
+            case WellKnownArg::AsyncSynchronizationContext:
+                break;
+            default:
+                continue;
+        }
+
+        JITDUMP("Inheriting %s [%06u] from inlining call [%06u]\n", getWellKnownArgName(arg.GetWellKnownArg()),
+                dspTreeID(arg.GetNode()), dspTreeID(inlCall));
+
+        NewCallArg newArg = NewCallArg::Primitive(gtCloneExpr(arg.GetNode())).WellKnown(arg.GetWellKnownArg());
+        insertAfter       = insertAfter == nullptr ? call->gtArgs.PushFront(this, newArg)
+                                                   : call->gtArgs.InsertAfter(this, insertAfter, newArg);
+    }
+
+    if (insertAfter == nullptr)
     {
         // Caller also has no async contexts handling
         return;
-    }
-
-    // Take the values as they appear in the inlining call, so a suspension restores and
-    // captures exactly what the frame this await ended up in would have.
-    assert(resumedUseArg->GetNode()->OperIs(GT_LCL_VAR) && resumedDefArg->GetNode()->OperIs(GT_LCL_ADDR) &&
-           execArg->GetNode()->OperIs(GT_LCL_VAR) && syncArg->GetNode()->OperIs(GT_LCL_VAR));
-    JITDUMP("Inheriting resumed use [%06u], resumed def [%06u], and contexts [%06u] and [%06u] from caller node\n",
-            dspTreeID(resumedUseArg->GetNode()), dspTreeID(resumedDefArg->GetNode()), dspTreeID(execArg->GetNode()),
-            dspTreeID(syncArg->GetNode()));
-
-    GenTree* resumedUseNode = gtCloneExpr(resumedUseArg->GetNode());
-    GenTree* resumedDefNode = gtCloneExpr(resumedDefArg->GetNode());
-    GenTree* execNode       = gtCloneExpr(execArg->GetNode());
-    GenTree* syncNode       = gtCloneExpr(syncArg->GetNode());
-    call->gtArgs.PushFront(this, NewCallArg::Primitive(syncNode).WellKnown(WellKnownArg::AsyncSynchronizationContext));
-    call->gtArgs.PushFront(this, NewCallArg::Primitive(execNode).WellKnown(WellKnownArg::AsyncExecutionContext));
-    call->gtArgs.PushFront(this, NewCallArg::Primitive(resumedUseNode).WellKnown(WellKnownArg::AsyncResumedUse));
-    call->gtArgs.PushFront(this, NewCallArg::Primitive(resumedDefNode).WellKnown(WellKnownArg::AsyncResumedDef));
-
-    // The inlining call may carry further sets describing the frames enclosing it, which
-    // this call inherits as well: it ends up in the same frame, so a suspension in it has
-    // to run the same chain of frame transitions. Dropping them would silently lose the
-    // handling for every frame outside the immediate one.
-    bool skippedFirst = false;
-    for (CallArg& arg : inlCall->gtArgs.Args())
-    {
-        WellKnownArg wka = arg.GetWellKnownArg();
-        if ((wka != WellKnownArg::AsyncResumedUse) && (wka != WellKnownArg::AsyncExecutionContext) &&
-            (wka != WellKnownArg::AsyncSynchronizationContext))
-        {
-            continue;
-        }
-
-        if ((wka == WellKnownArg::AsyncResumedUse) && !skippedFirst)
-        {
-            // Already inherited above, along with the resumed def that only the innermost
-            // frame has.
-            skippedFirst = true;
-            continue;
-        }
-
-        if (&arg == execArg || &arg == syncArg)
-        {
-            continue;
-        }
-
-        call->gtArgs.PushBack(this, NewCallArg::Primitive(gtCloneExpr(arg.GetNode())).WellKnown(wka));
     }
 
     // This call ends up in the same frame as the inlining call, so it hands off through

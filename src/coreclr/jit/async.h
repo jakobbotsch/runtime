@@ -411,9 +411,13 @@ class AsyncTransformation
     unsigned                   m_gcDataArrayVar          = BAD_VAR_NUM;
     unsigned                   m_resultBaseVar           = BAD_VAR_NUM;
     unsigned                   m_exceptionVar            = BAD_VAR_NUM;
-    BasicBlock*                m_lastSuspensionBB        = nullptr;
-    BasicBlock*                m_lastResumptionBB        = nullptr;
-    BasicBlock*                m_sharedReturnBB          = nullptr;
+    // Scratch locals handed to helpers in place of continuation members that no longer
+    // have any read left in the method.
+    unsigned    m_discardedIntMemberVar = BAD_VAR_NUM;
+    unsigned    m_discardedRefMemberVar = BAD_VAR_NUM;
+    BasicBlock* m_lastSuspensionBB      = nullptr;
+    BasicBlock* m_lastResumptionBB      = nullptr;
+    BasicBlock* m_sharedReturnBB        = nullptr;
 
     // Shared basic blocks used by suspensions that handle required context
     // saves/restores and then suspend.
@@ -572,6 +576,7 @@ class AsyncTransformation
                                                  const ContinuationLayout& layout,
                                                  GenTree*                  frameResumed);
     GenTree*    ContinuationMemberAddress(const ContinuationLayout& layout, const ContinuationMember& member);
+    GenTree*    ContinuationMemberStoreAddress(const ContinuationLayout& layout, const ContinuationMember& member);
 
 public:
     AsyncTransformation(Compiler* comp)

@@ -2736,9 +2736,14 @@ void Compiler::fgInlineAppendAsyncFrameStatements(InlineInfo* inlineInfo, BasicB
         GenTree* const flags = gtNewContinuationMemberIndir(ContinuationMember::InlineFrameFlags(inlineDepth), TYP_INT);
 
         GenTreeCall* const restoreCall = gtNewUserCallNode(asyncInfo->restoreInlinedFrameContextsMethHnd, TYP_VOID);
-        restoreCall->gtArgs.PushFront(this, NewCallArg::Primitive(flags));
-        restoreCall->gtArgs.PushFront(this, NewCallArg::Primitive(contContext));
-        restoreCall->gtArgs.PushFront(this, NewCallArg::Primitive(execCtx));
+
+        NewCallArg flagsArg       = NewCallArg::Primitive(flags);
+        NewCallArg contContextArg = NewCallArg::Primitive(contContext);
+        NewCallArg execCtxArg     = NewCallArg::Primitive(execCtx);
+
+        restoreCall->gtArgs.PushFront(this, flagsArg);
+        restoreCall->gtArgs.PushFront(this, contContextArg);
+        restoreCall->gtArgs.PushFront(this, execCtxArg);
         fgSetupAsyncFrameTransitionCall(restoreCall, di);
 
         // The helper is small on the path that does not suspend, which is the one we care

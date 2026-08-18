@@ -1935,8 +1935,6 @@ ContinuationLayout* ContinuationLayoutBuilder::Create(ArrayStack<GenTree*>& cont
 {
     ContinuationLayout* layout = new (m_compiler, CMK_Async) ContinuationLayout(m_compiler);
     layout->Locals.reserve(m_locals.size());
-    size_t continuationMemberCount = m_compiler->GetContinuationMemberCount();
-    layout->ContinuationMemberOffsets.resize(continuationMemberCount, UINT_MAX);
 
     for (unsigned lclNum : m_locals)
     {
@@ -2041,83 +2039,60 @@ ContinuationLayout* ContinuationLayoutBuilder::Create(ArrayStack<GenTree*>& cont
         ret.Offset   = allocLayout(ret.HeapAlignment(), ret.Size);
     }
 
-    for (GenTree* memberOffsetNode : continuationMemberOffsets.BottomUpOrder())
-    {
-        size_t memberIndex = memberOffsetNode->AsVal()->gtVal1;
-        assert(memberIndex < continuationMemberCount);
-        if (layout->ContinuationMemberOffsets[memberIndex] != UINT_MAX)
-        {
-            continue;
-        }
-
-        const ContinuationMember& member = m_compiler->GetContinuationMember(memberIndex);
-
-        ClassLayout*    memberLayout;
-        var_types const storageType = member.GetStorageType(&memberLayout);
-
-        unsigned alignment;
-        unsigned size;
-        if (memberLayout != nullptr)
-        {
-            alignment = memberLayout->GetAlignmentRequirement(m_compiler);
-            size      = memberLayout->GetSize();
-        }
-        else
-        {
-            alignment = genTypeAlignments[storageType];
-            size      = genTypeSize(storageType);
-        }
-
-        layout->ContinuationMemberOffsets[memberIndex] =
-            allocLayout(std::min(alignment, (unsigned)TARGET_POINTER_SIZE), size);
-    }
-
-    // The suspension tail hands all three members of an inlined frame to
-    // CaptureInlinedFrameTransition together, so if any of them still has a read then the
-    // other two need storage as well. When none of them does the members are dead: the
-    // post-inline transition IR that reads them was optimized away (for example because a
-    // no-return call in the inlinee made it unreachable), and the tail skips the capture
-    // instead of storing values nothing can observe.
-    for (size_t i = 0; i < continuationMemberCount; i++)
-    {
-        if (layout->ContinuationMemberOffsets[i] == UINT_MAX)
-        {
-            continue;
-        }
-
-        const ContinuationMember& liveMember = m_compiler->GetContinuationMember(i);
-        if (!liveMember.IsInlineFrameMember())
-        {
-            continue;
-        }
-
-        unsigned const depth = liveMember.GetInlineDepth();
-        for (size_t j = 0; j < continuationMemberCount; j++)
-        {
-            if (layout->ContinuationMemberOffsets[j] != UINT_MAX)
-            {
-                continue;
-            }
-
-            const ContinuationMember& member = m_compiler->GetContinuationMember(j);
-            if (!member.IsInlineFrameMember() || (member.GetInlineDepth() != depth))
-            {
-                continue;
-            }
-
-            ClassLayout*    memberLayout;
-            var_types const storageType = member.GetStorageType(&memberLayout);
-            assert(memberLayout == nullptr);
-            unsigned const alignment = genTypeAlignments[storageType];
-            layout->ContinuationMemberOffsets[j] =
-                allocLayout(std::min(alignment, (unsigned)TARGET_POINTER_SIZE), genTypeSize(storageType));
-        }
-    }
-
     if (m_needsKeepAlive)
     {
         layout->KeepAliveOffset = allocLayout(TARGET_POINTER_SIZE, TARGET_POINTER_SIZE);
     }
+
+    size_t const continuationMemberCount = m_compiler->GetContinuationMemberCount();
+    layout->ContinuationMemberOffsets.resize(continuationMemberCount, UINT_MAX);
+
+    // Allocate the members that still have a read left in the method. A member without
+    // one gets no storage: the IR that read it was optimized away (for example because a
+    // no-return call in an inlinee made it unreachable), and the code that would have
+    // stored it hands the helper a scratch local instead.
+    //
+    // Object refs come first so that all TYP_REF data stays together at the beginning of
+    // the layout, which keeps the GC info of the continuation small.
+    auto allocMembers = [&](bool objRefMembers) {
+        for (GenTree* memberOffsetNode : continuationMemberOffsets.BottomUpOrder())
+        {
+            size_t const memberIndex = memberOffsetNode->AsVal()->gtVal1;
+            assert(memberIndex < continuationMemberCount);
+            if (layout->ContinuationMemberOffsets[memberIndex] != UINT_MAX)
+            {
+                continue;
+            }
+
+            const ContinuationMember& member = m_compiler->GetContinuationMember(memberIndex);
+
+            ClassLayout*    memberLayout;
+            var_types const storageType = member.GetStorageType(&memberLayout);
+            if ((storageType == TYP_REF) != objRefMembers)
+            {
+                continue;
+            }
+
+            unsigned alignment;
+            unsigned size;
+            if (memberLayout != nullptr)
+            {
+                alignment = memberLayout->GetAlignmentRequirement(m_compiler);
+                size      = memberLayout->GetSize();
+            }
+            else
+            {
+                alignment = genTypeAlignments[storageType];
+                size      = genTypeSize(storageType);
+            }
+
+            layout->ContinuationMemberOffsets[memberIndex] =
+                allocLayout(std::min(alignment, (unsigned)TARGET_POINTER_SIZE), size);
+        }
+    };
+
+    allocMembers(true);
+    allocMembers(false);
 
     // Then all locals
     for (LiveLocalInfo& inf : layout->Locals)
@@ -2583,20 +2558,27 @@ bool AsyncTransformation::IsReusableSuspension(const AsyncState*          state,
 //
 void AsyncTransformation::HandleReusedSuspension(BasicBlock* callBlock, GenTreeCall* call)
 {
-    static const WellKnownArg argsToRemove[] = {WellKnownArg::AsyncAwaiter, WellKnownArg::AsyncResumedUse,
-                                                WellKnownArg::AsyncResumedDef, WellKnownArg::AsyncExecutionContext,
-                                                WellKnownArg::AsyncSynchronizationContext};
-    for (WellKnownArg wka : argsToRemove)
+    // The context args can be duplicated: general async inlining adds one set per
+    // enclosing inlined frame. All of them must go.
+    for (CallArg& arg : call->gtArgs.Args())
     {
-        // These can be duplicated: general async inlining adds one set of context args
-        // per enclosing inlined frame. All of them must go.
-        for (CallArg* arg = call->gtArgs.FindWellKnownArg(wka); arg != nullptr;
-             arg          = call->gtArgs.FindWellKnownArg(wka))
+        switch (arg.GetWellKnownArg())
         {
-            assert(arg->GetNode()->OperIsAnyLocal() || arg->GetNode()->IsInvariant());
-            LIR::AsRange(callBlock).Remove(arg->GetNode());
-            call->gtArgs.RemoveUnsafe(arg);
+            case WellKnownArg::AsyncAwaiter:
+            case WellKnownArg::AsyncResumedUse:
+            case WellKnownArg::AsyncResumedDef:
+            case WellKnownArg::AsyncExecutionContext:
+            case WellKnownArg::AsyncSynchronizationContext:
+                break;
+            default:
+                continue;
         }
+
+        assert(arg.GetNode()->OperIsAnyLocal() || arg.GetNode()->IsInvariant());
+        LIR::AsRange(callBlock).Remove(arg.GetNode());
+        // Removing the arg leaves its own link to the next one intact, so the iteration
+        // can continue from it.
+        call->gtArgs.RemoveUnsafe(&arg);
     }
 }
 
@@ -3401,29 +3383,20 @@ BasicBlock* AsyncTransformation::CreateInlinedFrameSuspensionTail(BasicBlock*   
 {
     // The frames enclosing the one this call sits in. The frame's own set was consumed by
     // the handling of the suspension itself, so what is left on the call is one set per
-    // enclosing frame.
-    unsigned numEnclosing = 0;
-    for (CallArg& arg : call->gtArgs.Args())
-    {
-        if (arg.GetWellKnownArg() == WellKnownArg::AsyncResumedUse)
-        {
-            numEnclosing++;
-        }
-    }
+    // enclosing frame, which is exactly what the context handling chain describes.
+    jitstd::vector<ContinuationContextHandling>* const handling = call->GetAsyncInfo().InlineFrameContextHandling;
 
-    if (numEnclosing == 0)
+    if (handling == nullptr)
     {
         // Not inside an inlined async frame, so there are no logical frame transitions to
         // run and no context args beyond the ones the suspension itself consumed.
         return nullptr;
     }
 
-    unsigned const numFrames = numEnclosing + 1;
+    unsigned const numEnclosing = (unsigned)handling->size();
+    unsigned const numFrames    = numEnclosing + 1;
 
     assert(frameResumed != nullptr);
-
-    jitstd::vector<ContinuationContextHandling>* const handling = call->GetAsyncInfo().InlineFrameContextHandling;
-    assert((handling != nullptr) && (handling->size() == numEnclosing));
 
     JITDUMP("    Call [%06u] is inside an inlined async frame; %u frames in chain\n", Compiler::dspTreeID(call),
             numFrames);
@@ -3489,7 +3462,6 @@ BasicBlock* AsyncTransformation::CreateInlinedFrameSuspensionTail(BasicBlock*   
     unsigned const   anyResumedLcl = m_compiler->lvaGrabTemp(false DEBUGARG("Async any inlined frame resumed"));
     LclVarDsc* const anyResumedDsc = m_compiler->lvaGetDesc(anyResumedLcl);
     anyResumedDsc->lvType          = TYP_INT;
-    anyResumedDsc->lvOnlyUsedOnSynchronousPath = true;
 
     GenTree* const initAnyResumed =
         m_compiler->gtNewStoreLclVarNode(anyResumedLcl, m_compiler->gtCloneExpr(frameResumed));
@@ -3502,70 +3474,53 @@ BasicBlock* AsyncTransformation::CreateInlinedFrameSuspensionTail(BasicBlock*   
         GenTree* const outerSync    = values.Bottom((int)(i * 3 + 2));
         unsigned const depth        = numFrames - 1 - i;
 
-        // Capture what this frame hands to its caller. The members are only ever read by
-        // the post-inline frame transition IR, so if that IR was optimized away -- for
-        // example because a no-return call in the inlinee made it unreachable -- the
-        // members have no storage and there is nothing to capture. The layout gives all
-        // three members of a frame storage if any of them is read, so testing one is
-        // enough.
-        size_t flagsIndex = 0;
-        bool   membersAreLive =
-            m_compiler->TryGetContinuationMemberIndex(ContinuationMember::InlineFrameFlags(depth), &flagsIndex);
-        assert(membersAreLive && "suspension tail needs a frame whose members were never registered");
-        membersAreLive = membersAreLive && (layout.ContinuationMemberOffsets[flagsIndex] != UINT_MAX);
-
-        if (membersAreLive)
+        // Capture what this frame hands to its caller. The caller's await decides whether
+        // this frame has to come back to the context it was on when it suspended.
+        ContinuationContextHandling const frameHandling = (*handling)[i];
+        CORINFO_METHOD_HANDLE             captureMethHnd;
+        bool                              captureContinuationContext = false;
+        switch (frameHandling)
         {
-            // The caller's await decides whether this frame has to come back to the
-            // context it was on when it suspended.
-            ContinuationContextHandling const frameHandling = (*handling)[i];
-            CORINFO_METHOD_HANDLE             captureMethHnd;
-            bool                              captureContinuationContext = false;
-            switch (frameHandling)
-            {
-                case ContinuationContextHandling::ContinueOnCapturedContext:
-                    captureMethHnd = m_asyncInfo->captureInlinedFrameTransitionWithContinuationContextMethHnd;
-                    captureContinuationContext = true;
-                    break;
+            case ContinuationContextHandling::ContinueOnCapturedContext:
+                captureMethHnd             = m_asyncInfo->captureInlinedFrameTransitionWithContinuationContextMethHnd;
+                captureContinuationContext = true;
+                break;
 
-                case ContinuationContextHandling::ContinueOnThreadPool:
-                    captureMethHnd = m_asyncInfo->captureInlinedFrameTransitionContinueOnThreadPoolMethHnd;
-                    break;
+            case ContinuationContextHandling::ContinueOnThreadPool:
+                captureMethHnd = m_asyncInfo->captureInlinedFrameTransitionContinueOnThreadPoolMethHnd;
+                break;
 
-                case ContinuationContextHandling::None:
-                    captureMethHnd = m_asyncInfo->captureInlinedFrameTransitionNoContinuationContextMethHnd;
-                    break;
+            case ContinuationContextHandling::None:
+                captureMethHnd = m_asyncInfo->captureInlinedFrameTransitionNoContinuationContextMethHnd;
+                break;
 
-                default:
-                    unreached();
-            }
-
-            GenTreeCall* captureCall = m_compiler->gtNewUserCallNode(captureMethHnd, TYP_VOID);
-
-            NewCallArg execCtxArg = NewCallArg::Primitive(
-                ContinuationMemberAddress(layout, ContinuationMember::InlineFrameExecutionContext(depth)));
-            NewCallArg flagsArg =
-                NewCallArg::Primitive(ContinuationMemberAddress(layout, ContinuationMember::InlineFrameFlags(depth)));
-            NewCallArg anyResumedArg = NewCallArg::Primitive(m_compiler->gtNewLclvNode(anyResumedLcl, TYP_INT));
-
-            captureCall->gtArgs.PushFront(m_compiler, execCtxArg);
-            captureCall->gtArgs.PushFront(m_compiler, flagsArg);
-            if (captureContinuationContext)
-            {
-                NewCallArg contContextArg = NewCallArg::Primitive(
-                    ContinuationMemberAddress(layout, ContinuationMember::InlineFrameContinuationContext(depth)));
-                captureCall->gtArgs.PushFront(m_compiler, contContextArg);
-            }
-            captureCall->gtArgs.PushFront(m_compiler, anyResumedArg);
-
-            m_compiler->compCurBB = tailBB;
-            m_compiler->fgMorphTree(captureCall);
-            LIR::AsRange(tailBB).InsertAtEnd(LIR::SeqTree(m_compiler, captureCall));
+            default:
+                unreached();
         }
-        else
+
+        GenTreeCall* captureCall = m_compiler->gtNewUserCallNode(captureMethHnd, TYP_VOID);
+
+        NewCallArg execCtxArg = NewCallArg::Primitive(
+            ContinuationMemberStoreAddress(layout, ContinuationMember::InlineFrameExecutionContext(depth)));
+        NewCallArg flagsArg =
+            NewCallArg::Primitive(ContinuationMemberStoreAddress(layout, ContinuationMember::InlineFrameFlags(depth)));
+        NewCallArg captureAnyResumedArg = NewCallArg::Primitive(m_compiler->gtNewLclvNode(anyResumedLcl, TYP_INT));
+
+        captureCall->gtArgs.PushFront(m_compiler, execCtxArg);
+        captureCall->gtArgs.PushFront(m_compiler, flagsArg);
+
+        if (captureContinuationContext)
         {
-            JITDUMP("    No reads of inline frame depth %u members survived; skipping its capture\n", depth);
+            NewCallArg contContextArg = NewCallArg::Primitive(
+                ContinuationMemberStoreAddress(layout, ContinuationMember::InlineFrameContinuationContext(depth)));
+            captureCall->gtArgs.PushFront(m_compiler, contContextArg);
         }
+
+        captureCall->gtArgs.PushFront(m_compiler, captureAnyResumedArg);
+
+        m_compiler->compCurBB = tailBB;
+        m_compiler->fgMorphTree(captureCall);
+        LIR::AsRange(tailBB).InsertAtEnd(LIR::SeqTree(m_compiler, captureCall));
 
         // Fold in the frame we are about to hand off to: from here on out its handling,
         // and that of every frame outside it, is likewise only needed the first time.
@@ -3578,18 +3533,22 @@ BasicBlock* AsyncTransformation::CreateInlinedFrameSuspensionTail(BasicBlock*   
         // Then restore the caller's contexts, as its physical frame's return would have.
         GenTreeCall* restoreCall =
             m_compiler->gtNewUserCallNode(m_asyncInfo->restoreContextsOnSuspensionMethHnd, TYP_VOID);
-        NewCallArg outerSyncArg  = NewCallArg::Primitive(m_compiler->gtCloneExpr(outerSync));
-        NewCallArg outerExecArg  = NewCallArg::Primitive(m_compiler->gtCloneExpr(outerExec));
-        NewCallArg anyResumedArg = NewCallArg::Primitive(m_compiler->gtNewLclvNode(anyResumedLcl, TYP_INT));
+        NewCallArg outerSyncArg         = NewCallArg::Primitive(m_compiler->gtCloneExpr(outerSync));
+        NewCallArg outerExecArg         = NewCallArg::Primitive(m_compiler->gtCloneExpr(outerExec));
+        NewCallArg restoreAnyResumedArg = NewCallArg::Primitive(m_compiler->gtNewLclvNode(anyResumedLcl, TYP_INT));
 
         restoreCall->gtArgs.PushFront(m_compiler, outerSyncArg);
         restoreCall->gtArgs.PushFront(m_compiler, outerExecArg);
-        restoreCall->gtArgs.PushFront(m_compiler, anyResumedArg);
+        restoreCall->gtArgs.PushFront(m_compiler, restoreAnyResumedArg);
 
         m_compiler->compCurBB = tailBB;
         m_compiler->fgMorphTree(restoreCall);
         LIR::AsRange(tailBB).InsertAtEnd(LIR::SeqTree(m_compiler, restoreCall));
     }
+
+    assert((call->gtArgs.FindWellKnownArg(WellKnownArg::AsyncResumedUse) == nullptr) &&
+           (call->gtArgs.FindWellKnownArg(WellKnownArg::AsyncExecutionContext) == nullptr) &&
+           (call->gtArgs.FindWellKnownArg(WellKnownArg::AsyncSynchronizationContext) == nullptr));
 
     DISPRANGE(LIR::AsRange(tailBB));
 
@@ -3621,6 +3580,52 @@ GenTree* AsyncTransformation::ContinuationMemberAddress(const ContinuationLayout
     GenTree* const continuation = m_compiler->gtNewLclvNode(GetNewContinuationVar(), TYP_REF);
     return m_compiler->gtNewOperNode(GT_ADD, TYP_BYREF, continuation,
                                      m_compiler->gtNewIconNode((ssize_t)offset, TYP_I_IMPL));
+}
+
+//------------------------------------------------------------------------
+// AsyncTransformation::ContinuationMemberStoreAddress:
+//   Create the address that a helper should store a continuation member to.
+//
+// Parameters:
+//   layout - Information about the continuation layout
+//   member - The member
+//
+// Returns:
+//   IR node computing the address.
+//
+// Remarks:
+//   A member that no longer has any read left in the method has no storage in the
+//   continuation. The helpers store all of their members unconditionally, so for those we
+//   hand out the address of a scratch local to write into instead.
+//
+GenTree* AsyncTransformation::ContinuationMemberStoreAddress(const ContinuationLayout& layout,
+                                                             const ContinuationMember& member)
+{
+    size_t memberIndex = 0;
+    if (m_compiler->TryGetContinuationMemberIndex(member, &memberIndex) &&
+        (layout.ContinuationMemberOffsets[memberIndex] != UINT_MAX))
+    {
+        return ContinuationMemberAddress(layout, member);
+    }
+
+    ClassLayout*    memberLayout;
+    var_types const storageType = member.GetStorageType(&memberLayout);
+    assert(memberLayout == nullptr);
+
+    unsigned* const scratchVar = storageType == TYP_REF ? &m_discardedRefMemberVar : &m_discardedIntMemberVar;
+
+    if (*scratchVar == BAD_VAR_NUM)
+    {
+        *scratchVar                 = m_compiler->lvaGrabTemp(false DEBUGARG("Async discarded continuation member"));
+        LclVarDsc* const scratchDsc = m_compiler->lvaGetDesc(*scratchVar);
+        scratchDsc->lvType          = storageType;
+        scratchDsc->lvHasLdAddrOp   = true;
+    }
+
+    assert(m_compiler->lvaGetDesc(*scratchVar)->TypeIs(storageType));
+
+    JITDUMP("    No reads of continuation member survived; storing it to V%02u instead\n", *scratchVar);
+    return m_compiler->gtNewLclAddrNode(*scratchVar, 0);
 }
 
 //------------------------------------------------------------------------
