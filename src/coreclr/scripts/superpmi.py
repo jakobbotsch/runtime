@@ -2789,8 +2789,12 @@ class SuperPMIReplayAsmDiffs:
 
             # Prefer to show small diffs over large percentage wise diffs; sort by this additionally.
             # sorted is stable, so for multiple small diffs this will keep them in order of percentage wise improvement/regression.
+            # Diffs that do not change the size are not considered small here. They
+            # would otherwise be preferred over every diff that does change the
+            # size, which are usually the more interesting ones to show.
             def is_small_diff(row):
-                if abs(int(row['Diff ActualCodeBytes']) - int(row['Base ActualCodeBytes'])) < 50:
+                size_delta = abs(int(row['Diff ActualCodeBytes']) - int(row['Base ActualCodeBytes']))
+                if 0 < size_delta < 50:
                     return 0
 
                 return 1
