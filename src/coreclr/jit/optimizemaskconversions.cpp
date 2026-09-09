@@ -510,8 +510,13 @@ PhaseStatus Compiler::fgOptimizeMaskConversions()
         for (Statement* const stmt : block->Statements())
         {
             // Only check statements where there is a local of type TYP_SIMD/TYP_MASK.
-            for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
+            for (GenTree* node : stmt->LocalsTreeList())
             {
+                if (node->OperIs(GT_STORE_LCL_VARS))
+                {
+                    continue;
+                }
+                GenTreeLclVarCommon* lcl = node->AsLclVarCommon();
                 if (varTypeIsSIMDOrMask(lvaGetDesc(lcl)))
                 {
                     // Parse the entire statement.
@@ -538,7 +543,7 @@ PhaseStatus Compiler::fgOptimizeMaskConversions()
         for (Statement* const stmt : block->Statements())
         {
             // Only check statements where there is a local of type TYP_SIMD/TYP_MASK.
-            for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
+            for (GenTree* lcl : stmt->LocalsTreeList())
             {
                 if (varTypeIsSIMDOrMask(lcl))
                 {

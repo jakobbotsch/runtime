@@ -5559,7 +5559,8 @@ GenTreeLclVarCommon* FlowGraphNaturalLoop::FindDef(unsigned lclNum)
     VisitDefs([&result, lclNum](const auto& def) {
         if (def.GetLclNum() == lclNum)
         {
-            result = def.GetDefNode();
+            GenTree* node = def.GetDefNode();
+            result        = node->OperIs(GT_STORE_LCL_VARS) ? nullptr : node->AsLclVarCommon();
             return false;
         }
 

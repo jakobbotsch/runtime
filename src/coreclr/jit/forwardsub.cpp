@@ -301,9 +301,14 @@ bool Compiler::fgForwardSubMultiUse(Statement* nextStmt, unsigned lclNum, GenTre
 
     fgSequenceLocals(nextStmt);
 
-    for (GenTreeLclVarCommon* lcl : nextStmt->LocalsTreeList())
+    for (GenTree* node : nextStmt->LocalsTreeList())
     {
-        unsigned const ln = lcl->GetLclNum();
+        if (node->OperIs(GT_STORE_LCL_VARS))
+        {
+            continue;
+        }
+        GenTreeLclVarCommon* lcl = node->AsLclVarCommon();
+        unsigned const       ln  = lcl->GetLclNum();
         for (int i = 0; i < cnv.m_lclNums.Height(); i++)
         {
             if (cnv.m_lclNums.Bottom(i) == ln)
@@ -770,8 +775,20 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     // Do a quick scan through the linked locals list to see if there is a last use.
     bool found    = false;
     bool multiUse = false;
-    for (GenTreeLclVarCommon* lcl : nextStmt->LocalsTreeList())
+    for (GenTree* node : nextStmt->LocalsTreeList())
     {
+        if (node->OperIs(GT_STORE_LCL_VARS))
+        {
+            bool redefined = node->VisitLocalDefs(this, [=](const auto& def) {
+                return def.GetLclNum() == lclNum ? GenTree::VisitResult::Abort : GenTree::VisitResult::Continue;
+            }) == GenTree::VisitResult::Abort;
+            if (redefined)
+            {
+                return false;
+            }
+            continue;
+        }
+        GenTreeLclVarCommon* lcl = node->AsLclVarCommon();
         if (lcl->OperIs(GT_LCL_VAR) && (lcl->GetLclNum() == lclNum))
         {
             if (fsv.IsLastUse(lcl->AsLclVar()))
@@ -1130,7 +1147,7 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     // replace the use of it with the rest from the statement.
     assert(defNode->gtNext == nullptr);
 
-    GenTreeLclVarCommon* firstLcl = *stmt->LocalsTreeList().begin();
+    GenTree* firstLcl = *stmt->LocalsTreeList().begin();
 
     if (firstLcl == defNode)
     {
@@ -1138,7 +1155,7 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     }
     else
     {
-        nextStmt->LocalsTreeList().Replace(useLcl, useLcl, firstLcl, defNode->gtPrev->AsLclVarCommon());
+        nextStmt->LocalsTreeList().Replace(useLcl, useLcl, firstLcl, defNode->gtPrev);
 
         fgForwardSubUpdateLiveness(firstLcl, defNode->gtPrev);
     }
@@ -1177,8 +1194,13 @@ bool Compiler::fgForwardSubHasStoreInterference(Statement* defStmt, Statement* n
 
     GenTreeLclVarCommon* defNode = defStmt->GetRootNode()->AsLclVarCommon();
 
-    for (GenTreeLclVarCommon* defStmtLcl : defStmt->LocalsTreeList())
+    for (GenTree* defStmtNode : defStmt->LocalsTreeList())
     {
+        if (defStmtNode->OperIs(GT_STORE_LCL_VARS))
+        {
+            return true;
+        }
+        GenTreeLclVarCommon* defStmtLcl = defStmtNode->AsLclVarCommon();
         if (defStmtLcl == defNode)
         {
             break;
@@ -1192,12 +1214,25 @@ bool Compiler::fgForwardSubHasStoreInterference(Statement* defStmt, Statement* n
             defStmtParentLclNum = defStmtLclDsc->lvParentLcl;
         }
 
-        for (GenTreeLclVarCommon* useStmtLcl : nextStmt->LocalsTreeList())
+        for (GenTree* useStmtNode : nextStmt->LocalsTreeList())
         {
-            if (useStmtLcl == nextStmtUse)
+            if (useStmtNode == nextStmtUse)
             {
                 break;
             }
+            if (useStmtNode->OperIs(GT_STORE_LCL_VARS))
+            {
+                if (useStmtNode->VisitLocalDefs(this, [=](const auto& def) {
+                    return def.GetLclNum() == defStmtLclNum || def.GetLclNum() == defStmtParentLclNum
+                               ? GenTree::VisitResult::Abort
+                               : GenTree::VisitResult::Continue;
+                }) == GenTree::VisitResult::Abort)
+                {
+                    return true;
+                }
+                continue;
+            }
+            GenTreeLclVarCommon* useStmtLcl = useStmtNode->AsLclVarCommon();
 
             if (!useStmtLcl->OperIsLocalStore())
             {
@@ -1254,7 +1289,8 @@ void Compiler::fgForwardSubUpdateLiveness(GenTree* newSubListFirst, GenTree* new
         GenTree* candidate = newSubListFirst;
         while (true)
         {
-            unsigned newUseLclNum = candidate->AsLclVarCommon()->GetLclNum();
+            unsigned newUseLclNum =
+                candidate->OperIs(GT_STORE_LCL_VARS) ? BAD_VAR_NUM : candidate->AsLclVarCommon()->GetLclNum();
             if (dsc->lvPromoted)
             {
                 // Is the parent struct being used?

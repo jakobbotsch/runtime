@@ -84,6 +84,10 @@ public:
         {
             SequenceCall(node->AsCall());
         }
+        else if (node->OperIs(GT_STORE_LCL_VARS))
+        {
+            SequenceLocal(node);
+        }
 
         return fgWalkResult::WALK_CONTINUE;
     }
@@ -94,7 +98,7 @@ public:
     // Arguments:
     //     lcl - the local
     //
-    void SequenceLocal(GenTreeLclVarCommon* lcl)
+    void SequenceLocal(GenTree* lcl)
     {
         lcl->gtPrev        = m_prevNode;
         m_prevNode->gtNext = lcl;
@@ -999,6 +1003,18 @@ public:
 
         switch (node->OperGet())
         {
+            case GT_STORE_LCL_VARS:
+                node->VisitLocalDefs(m_compiler, [=](const auto& def) {
+                    UpdateEarlyRefCount(def.GetLclNum(), node, user);
+                    LclVarDsc* dsc = m_compiler->lvaGetDesc(def.GetLclNum());
+                    if (dsc->lvIsStructField)
+                    {
+                        UpdateEarlyRefCount(dsc->lvParentLcl, node, user);
+                    }
+                    return GenTree::VisitResult::Continue;
+                });
+                break;
+
             case GT_IND:
             case GT_BLK:
             case GT_STOREIND:
@@ -1073,6 +1089,19 @@ public:
 
         switch (node->OperGet())
         {
+            case GT_STORE_LCL_VARS:
+                EscapeValue(TopValue(0), node);
+                PopValue();
+                node->VisitLocalDefs(m_compiler, [=](const auto& def) {
+                    if (m_lclAddrAssertions != nullptr)
+                    {
+                        m_lclAddrAssertions->Clear(def.GetLclNum());
+                    }
+                    return GenTree::VisitResult::Continue;
+                });
+                SequenceLocal(node);
+                break;
+
             case GT_STORE_LCL_FLD:
                 if (node->IsPartialLclFld(m_compiler))
                 {
@@ -2347,7 +2376,7 @@ private:
         return (user == nullptr) || (user->OperIs(GT_COMMA) && (user->AsOp()->gtGetOp1() == node));
     }
 
-    void SequenceLocal(GenTreeLclVarCommon* lcl)
+    void SequenceLocal(GenTree* lcl)
     {
         if (m_sequencer != nullptr)
         {
@@ -2484,8 +2513,21 @@ PhaseStatus Compiler::fgUnpinNonMovableLocals()
         {
             for (Statement* const stmt : block->Statements())
             {
-                for (GenTreeLclVarCommon* const lcl : stmt->LocalsTreeList())
+                for (GenTree* const node : stmt->LocalsTreeList())
                 {
+                    if (node->OperIs(GT_STORE_LCL_VARS))
+                    {
+                        node->VisitLocalDefs(this, [&](const auto& def) {
+                            if (BitVecOps::IsMember(&traits, hasNoGcValue, def.GetLclNum()))
+                            {
+                                BitVecOps::RemoveElemD(&traits, hasNoGcValue, def.GetLclNum());
+                                changed = true;
+                            }
+                            return GenTree::VisitResult::Continue;
+                        });
+                        continue;
+                    }
+                    GenTreeLclVarCommon* lcl = node->AsLclVarCommon();
                     if (lcl->OperIs(GT_STORE_LCL_VAR))
                     {
                         unsigned const   dstLclNum = lcl->GetLclNum();
@@ -2664,8 +2706,13 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
 
         for (Statement* stmt : block->Statements())
         {
-            for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
+            for (GenTree* node : stmt->LocalsTreeList())
             {
+                if (node->OperIs(GT_STORE_LCL_VARS))
+                {
+                    continue;
+                }
+                GenTreeLclVarCommon* lcl = node->AsLclVarCommon();
                 if (!BitVecOps::IsMember(&localsTraits, unreadLocals, lcl->GetLclNum()))
                 {
                     continue;
@@ -2724,12 +2771,13 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
 
             for (Statement* stmt : block->Statements())
             {
-                for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
+                for (GenTree* node : stmt->LocalsTreeList())
                 {
-                    if (!lcl->OperIs(GT_LCL_ADDR))
+                    if (!node->OperIs(GT_LCL_ADDR))
                     {
                         continue;
                     }
+                    GenTreeLclVarCommon* lcl = node->AsLclVarCommon();
 
                     LclVarDsc* lclDsc        = lvaGetDesc(lcl);
                     unsigned   exposedLclNum = lclDsc->lvIsStructField ? lclDsc->lvParentLcl : lcl->GetLclNum();

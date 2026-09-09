@@ -13201,7 +13201,17 @@ void Compiler::fgMorphTreeDone(GenTree* tree, bool optAssertionPropDone DEBUGARG
             return GenTree::VisitResult::Continue;
         };
 
-        tree->VisitLocalDefNodes(this, visitDef);
+        if (tree->OperIs(GT_STORE_LCL_VARS))
+        {
+            tree->VisitLocalDefs(this, [=](const auto& def) {
+                fgKillDependentAssertions(def.GetLclNum() DEBUGARG(tree));
+                return GenTree::VisitResult::Continue;
+            });
+        }
+        else
+        {
+            tree->VisitLocalDefNodes(this, visitDef);
+        }
     }
 
     // Generate assertions
@@ -15433,7 +15443,7 @@ PhaseStatus Compiler::fgMarkImplicitByRefCopyOmissionCandidates()
 
             // If so, check for any struct last use and only do the expensive
             // tree walk if one exists.
-            for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
+            for (GenTree* lcl : stmt->LocalsTreeList())
             {
                 if (!varTypeIsStruct(lcl) || !lcl->OperIsLocalRead())
                 {

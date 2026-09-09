@@ -6687,10 +6687,10 @@ void Compiler::fgValueNumberLocalStore(GenTree* storeNode, const TDef& def, Valu
     // Should not have been recorded as updating the GC heap.
     assert(!GetMemorySsaMap(GcHeap)->Lookup(storeNode));
 
-    GenTreeLclVarCommon* defNode   = def.GetDefNode();
-    unsigned             defLclNum = def.GetLclNum();
-    LclVarDsc*           defVarDsc = lvaGetDesc(defLclNum);
-    ValueNumPair         defValue  = value;
+    GenTree*     defNode   = def.GetDefNode();
+    unsigned     defLclNum = def.GetLclNum();
+    LclVarDsc*   defVarDsc = lvaGetDesc(defLclNum);
+    ValueNumPair defValue  = value;
     if (def.HasMultiDefIndex())
     {
         var_types defValueType = TYP_STRUCT;
@@ -11524,7 +11524,7 @@ const uint8_t ValueNumStore::s_vnfOpAttribs[VNF_COUNT] = {
 static genTreeOps genTreeOpsIllegalAsVNFunc[] = {GT_IND, // When we do heap memory.
                                                  GT_NULLCHECK, GT_QMARK, GT_COLON, GT_LOCKADD, GT_XADD, GT_XCHG,
                                                  GT_CMPXCHG, GT_LCLHEAP, GT_BOX, GT_XORR, GT_XAND, GT_STORE_LCL_VAR,
-                                                 GT_STORE_LCL_FLD, GT_STOREIND, GT_STORE_BLK,
+                                                 GT_STORE_LCL_FLD, GT_STORE_LCL_VARS, GT_STOREIND, GT_STORE_BLK,
                                                  // These need special semantics:
                                                  GT_COMMA, // == second argument (but with exception(s) from first).
                                                  GT_ARR_ADDR, GT_BOUNDS_CHECK,
@@ -13728,6 +13728,20 @@ void Compiler::fgValueNumberTree(GenTree* tree)
                         fgValueNumberStore(tree);
                         break;
 
+                    case GT_STORE_LCL_VARS:
+                    {
+                        GenTree*     value  = tree->Data();
+                        ValueNumPair normal = vnStore->VNPNormalPair(value->gtVNPair);
+                        tree->VisitLocalDefs(this, [=](const auto& def) {
+                            fgValueNumberLocalStore(tree, def, normal, true);
+                            return GenTree::VisitResult::Continue;
+                        });
+                        tree->gtVNPair =
+                            vnStore->VNPWithExc(ValueNumPair(ValueNumStore::VNForVoid(), ValueNumStore::VNForVoid()),
+                                                vnStore->VNPExceptionSet(value->gtVNPair));
+                        break;
+                    }
+
                     case GT_COMMA:
                     {
                         ValueNumPair op1Xvnp = vnStore->VNPExceptionSet(tree->AsOp()->gtOp1->gtVNPair);
@@ -14956,7 +14970,7 @@ void Compiler::fgValueNumberCall(GenTreeCall* call)
     // as well.
     auto visitDef = [=](const auto& def) {
         ValueNumPair storeValue;
-        storeValue.SetBoth(vnStore->VNForExpr(compCurBB, lvaGetDesc(def.GetDefNode())->TypeGet()));
+        storeValue.SetBoth(vnStore->VNForExpr(compCurBB, lvaGetDesc(def.GetLclNum())->TypeGet()));
 
         fgValueNumberLocalStore(call, def, storeValue);
         return GenTree::VisitResult::Continue;

@@ -16,6 +16,7 @@ public:
     template <bool GeneralLclAddrHandling>
     void UpdateLife(GenTree* tree);
     bool UpdateLifeFieldVar(GenTreeLclVar* lclNode, unsigned multiRegIndex);
+    void UpdateLifeScalar(GenTree* tree, unsigned lclNum, GenTreeFlags flags, unsigned regIndex = 0);
 
 private:
     void UpdateLifeVar(GenTree* tree, GenTreeLclVarCommon* lclVarTree);

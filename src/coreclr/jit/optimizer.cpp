@@ -5352,6 +5352,11 @@ void Compiler::optComputeLoopSideEffectsOfBlock(BasicBlock* blk, FlowGraphNatura
             // that the compiler creates.
             switch (oper)
             {
+                case GT_STORE_LCL_VARS:
+                    // These definitions cannot alias memory, and a source VN
+                    // cannot be propagated without selecting the individual slice.
+                    break;
+
                 case GT_STORE_LCL_VAR:
                 case GT_STORE_LCL_FLD:
                 {

@@ -3194,6 +3194,19 @@ void Compiler::lvaMarkLclRefs(GenTree* tree, BasicBlock* block, Statement* stmt)
 {
     const weight_t weight = block->getBBWeight(this);
 
+    if (tree->OperIs(GT_STORE_LCL_VARS))
+    {
+        tree->VisitLocalDefs(this, [=](const auto& def) {
+            LclVarDsc* dsc = lvaGetDesc(def.GetLclNum());
+            dsc->incRefCnts(weight, this);
+            dsc->lvAllDefsAreNoGc                  = false;
+            dsc->lvSingleDefRegCandidate           = false;
+            dsc->lvDisqualifySingleDefRegCandidate = true;
+            return GenTree::VisitResult::Continue;
+        });
+        return;
+    }
+
     /* Is this a call to unmanaged code ? */
     if (tree->IsCall() && compMethodRequiresPInvokeFrame())
     {
@@ -3653,6 +3666,16 @@ void Compiler::lvaComputePreciseRefCounts(bool isRecompute, bool setSlotNumbers)
             const weight_t weight = block->getBBWeight(this);
             for (GenTree* node : LIR::AsRange(block))
             {
+                if (node->OperIs(GT_STORE_LCL_VARS))
+                {
+                    node->VisitLocalDefs(this, [=](const auto& def) {
+                        LclVarDsc* dsc = lvaGetDesc(def.GetLclNum());
+                        weight_t   defWeight =
+                            dsc->lvTracked && dsc->IsLiveInOutOfHandler() && !dsc->lvDoNotEnregister ? 0 : weight;
+                        dsc->incRefCnts(defWeight, this);
+                        return GenTree::VisitResult::Continue;
+                    });
+                }
                 if (node->OperIsAnyLocal())
                 {
                     LclVarDsc* varDsc = lvaGetDesc(node->AsLclVarCommon());

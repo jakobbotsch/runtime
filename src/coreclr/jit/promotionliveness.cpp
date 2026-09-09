@@ -119,14 +119,14 @@ void PromotionLiveness::ComputeUseDefSets()
                 GenTree* qmark = m_compiler->fgGetTopLevelQmark(stmt->GetRootNode(), &dst);
                 if (qmark == nullptr)
                 {
-                    for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
+                    for (GenTree* lcl : stmt->LocalsTreeList())
                     {
                         MarkUseDef(stmt, lcl, bb.VarUse, bb.VarDef);
                     }
                 }
                 else
                 {
-                    for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
+                    for (GenTree* lcl : stmt->LocalsTreeList())
                     {
                         // Skip liveness updates/marking for defs; they may be conditionally executed.
                         if ((lcl->gtFlags & GTF_VAR_DEF) == 0)
@@ -141,7 +141,7 @@ void PromotionLiveness::ComputeUseDefSets()
         {
             for (Statement* stmt : block->Statements())
             {
-                for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
+                for (GenTree* lcl : stmt->LocalsTreeList())
                 {
                     MarkUseDef(stmt, lcl, bb.VarUse, bb.VarDef);
                 }
@@ -172,9 +172,14 @@ void PromotionLiveness::ComputeUseDefSets()
 //   useSet - The use set to mark in.
 //   defSet - The def set to mark in.
 //
-void PromotionLiveness::MarkUseDef(Statement* stmt, GenTreeLclVarCommon* lcl, BitVec& useSet, BitVec& defSet)
+void PromotionLiveness::MarkUseDef(Statement* stmt, GenTree* node, BitVec& useSet, BitVec& defSet)
 {
-    AggregateInfo* agg = m_aggregates.Lookup(lcl->GetLclNum());
+    if (node->OperIs(GT_STORE_LCL_VARS))
+    {
+        return;
+    }
+    GenTreeLclVarCommon* lcl = node->AsLclVarCommon();
+    AggregateInfo*       agg = m_aggregates.Lookup(lcl->GetLclNum());
     if (agg == nullptr)
     {
         return;

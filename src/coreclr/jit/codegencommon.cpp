@@ -795,9 +795,9 @@ void CodeGenInterface::genUpdateLife(VARSET_VALARG_TP newLife)
 // inline
 void CodeGenInterface::genUpdateVarReg(LclVarDsc* varDsc, GenTree* tree, int regIndex)
 {
-    // This should only be called for multireg lclVars.
-    assert(m_compiler->lvaEnregMultiRegVars);
-    assert(tree->IsMultiRegLclVar() || tree->OperIs(GT_COPY));
+    // The index identifies either a promoted field or an explicit destination.
+    assert(tree->OperIs(GT_STORE_LCL_VARS) || m_compiler->lvaEnregMultiRegVars);
+    assert(tree->IsMultiRegLclVar() || tree->OperIs(GT_COPY, GT_STORE_LCL_VARS));
     varDsc->SetRegNum(tree->GetRegByIndex(regIndex));
 }
 
@@ -8060,16 +8060,47 @@ void CodeGen::genJmpPlaceArgs(GenTree* jmp)
 }
 
 //----------------------------------------------------------------------------------
-// genMultiRegStoreToLocal: store multi-reg value to a local
+// genStoreLclVars: Store each source register into its explicit scalar destination.
 //
 // Arguments:
-//    lclNode  -  GenTree of GT_STORE_LCL_VAR
+//    store - The lowered multiple-definition node
 //
 // Return Value:
 //    None
 //
-// Assumption:
-//    The child of store is a multi-reg node.
+// Notes:
+//    Keep consume/copy/definition interleaved, matching the LSRA locations.
+//    In particular, do not consume all COPY/RELOAD registers up front.
+//
+void CodeGen::genStoreLclVars(GenTreeStoreLclVars* store)
+{
+    GenTree* source = store->gtOp1;
+    for (unsigned i = 0; i < store->gtCount; i++)
+    {
+        regNumber sourceReg = source->IsMultiRegNode() ? genConsumeReg(source, i) : genConsumeReg(source);
+        GenTreeStoreLclVars::Destination& def       = store->GetDestination(i);
+        LclVarDsc*                        dsc       = m_compiler->lvaGetDesc(def.LclNum);
+        regNumber                         targetReg = static_cast<regNumber>(def.RegNum);
+        if (targetReg != REG_NA)
+        {
+            inst_Mov(dsc->TypeGet(), targetReg, sourceReg, /* canSkip */ true);
+        }
+        bool writeThrough = dsc->lvTracked && dsc->IsAlwaysAliveInMemory();
+        bool spill        = (def.Flags & GTF_SPILL) != 0;
+        // A last-use definition may still require a write-through spill for EH.
+        if (spill || writeThrough || ((targetReg == REG_NA) && ((def.Flags & GTF_VAR_DEATH) == 0)))
+        {
+            var_types storeType = dsc->lvNormalizeOnStore() ? genActualType(dsc->TypeGet()) : dsc->TypeGet();
+            GetEmitter()->emitIns_S_R(ins_StoreFromSrc(sourceReg, storeType), emitTypeSize(storeType), sourceReg,
+                                      def.LclNum, 0);
+        }
+        dsc->SetRegNum(targetReg == REG_NA ? REG_STK : targetReg);
+        treeLifeUpdater->UpdateLifeScalar(store, def.LclNum, def.Flags, i);
+    }
+}
+
+//------------------------------------------------------------------------
+// genMultiRegStoreToLocal: Store a multi-register source to a struct local.
 //
 void CodeGen::genMultiRegStoreToLocal(GenTreeLclVar* lclNode)
 {

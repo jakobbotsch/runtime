@@ -3394,6 +3394,8 @@ public:
     GenTree* gtNewConWithPattern(var_types type, uint8_t pattern);
 
     GenTreeLclVar* gtNewStoreLclVarNode(unsigned lclNum, GenTree* value);
+    GenTreeStoreLclVars* gtNewStoreLclVarsNode(GenTree* source, unsigned count, unsigned sourceSize);
+    void gtSetStoreLclVarsDestination(GenTreeStoreLclVars* store, unsigned index, unsigned lclNum, unsigned offset);
 
     GenTreeLclFld* gtNewStoreLclFldNode(
         unsigned lclNum, var_types type, ClassLayout* layout, unsigned offset, GenTree* value);
@@ -8059,7 +8061,7 @@ public:
                      LclNumToLiveDefsMap* curSsaName);
     void optBlockCopyPropPopStacks(BasicBlock* block, LclNumToLiveDefsMap* curSsaName);
     bool optBlockCopyProp(BasicBlock* block, LclNumToLiveDefsMap* curSsaName);
-    void optCopyPropPushDef(GenTreeLclVarCommon* lclNode,
+    void optCopyPropPushDef(GenTree* lclNode,
                             unsigned             lclNum,
                             unsigned             ssaNum,
                             LclNumToLiveDefsMap* curSsaName);

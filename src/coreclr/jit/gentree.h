@@ -1817,7 +1817,7 @@ public:
 
     bool OperIsSsaDef() const
     {
-        return OperIsLocalStore() || OperIs(GT_CALL);
+        return OperIsLocalStore() || OperIs(GT_CALL, GT_STORE_LCL_VARS);
     }
 
     static bool OperIsHWIntrinsic(genTreeOps gtOper)
@@ -4087,6 +4087,48 @@ public:
 #endif
 };
 
+// The source is the sole evaluated operand. Destinations are plain records,
+// not nodes, operands, or independently executable stores.
+// Before lowering offsets select source bytes; afterwards entry i receives
+// exactly source register i. Destinations need not have a promoted parent.
+struct GenTreeStoreLclVars : public GenTreeUnOp
+{
+    struct Destination
+    {
+        unsigned       LclNum;
+        unsigned       Offset;
+        unsigned       SsaNum = SsaConfig::RESERVED_SSA_NUM;
+        GenTreeFlags   Flags  = GTF_VAR_DEF;
+        regNumberSmall RegNum = REG_NA;
+    };
+
+    Destination* gtDestinations;
+    unsigned     gtCount;
+    unsigned     gtSourceSize;
+
+    GenTreeStoreLclVars(GenTree* source, Destination* destinations, unsigned count, unsigned sourceSize)
+        : GenTreeUnOp(GT_STORE_LCL_VARS, TYP_VOID, source)
+        , gtDestinations(destinations)
+        , gtCount(count)
+        , gtSourceSize(sourceSize)
+    {
+        assert(count > 0);
+        gtFlags |= GTF_ASG;
+    }
+
+    Destination& GetDestination(unsigned index) const
+    {
+        assert(index < gtCount);
+        return gtDestinations[index];
+    }
+#if DEBUGGABLE_GENTREE
+    GenTreeStoreLclVars()
+        : GenTreeUnOp()
+    {
+    }
+#endif
+};
+
 // gtLclFld -- load/store/addr of local variable field
 
 struct GenTreeLclFld : public GenTreeLclVarCommon
@@ -4610,6 +4652,7 @@ public:
 
     // Initialize the Return Type Descriptor for a method that returns a struct type
     void InitializeStructReturnType(Compiler* comp, CORINFO_CLASS_HANDLE retClsHnd, CorInfoCallConvExtension callConv);
+    void InitializeStructCallReturnType(Compiler* comp, const GenTreeCall* call);
 
     // Initialize the Return Type Descriptor for a method that returns a TYP_LONG
     // Only needed for X86 and arm32.
@@ -8568,6 +8611,8 @@ public:
     }
 };
 
+// Local references and local-definition owners in execution order. A
+// STORE_LCL_VARS occupies one position, after all references in its source.
 class LocalsGenTreeList
 {
     Statement* m_stmt;
@@ -8575,30 +8620,32 @@ class LocalsGenTreeList
 public:
     class iterator
     {
-        GenTreeLclVarCommon* m_tree;
+        GenTree* m_tree;
 
     public:
-        explicit iterator(GenTreeLclVarCommon* tree)
+        explicit iterator(GenTree* tree)
             : m_tree(tree)
         {
         }
 
-        GenTreeLclVarCommon* operator*() const
+        GenTree* operator*() const
         {
             return m_tree;
         }
 
         iterator& operator++()
         {
-            assert((m_tree->gtNext == nullptr) || m_tree->gtNext->OperIsLocal() || m_tree->gtNext->OperIs(GT_LCL_ADDR));
-            m_tree = static_cast<GenTreeLclVarCommon*>(m_tree->gtNext);
+            assert((m_tree->gtNext == nullptr) || m_tree->gtNext->OperIsAnyLocal() ||
+                   m_tree->gtNext->OperIs(GT_STORE_LCL_VARS));
+            m_tree = m_tree->gtNext;
             return *this;
         }
 
         iterator& operator--()
         {
-            assert((m_tree->gtPrev == nullptr) || m_tree->gtPrev->OperIsLocal() || m_tree->gtPrev->OperIs(GT_LCL_ADDR));
-            m_tree = static_cast<GenTreeLclVarCommon*>(m_tree->gtPrev);
+            assert((m_tree->gtPrev == nullptr) || m_tree->gtPrev->OperIsAnyLocal() ||
+                   m_tree->gtPrev->OperIs(GT_STORE_LCL_VARS));
+            m_tree = m_tree->gtPrev;
             return *this;
         }
 
@@ -8620,15 +8667,12 @@ public:
         return iterator(nullptr);
     }
 
-    void Remove(GenTreeLclVarCommon* node);
-    void Replace(GenTreeLclVarCommon* firstNode,
-                 GenTreeLclVarCommon* lastNode,
-                 GenTreeLclVarCommon* newFirstNode,
-                 GenTreeLclVarCommon* newLastNode);
+    void Remove(GenTree* node);
+    void Replace(GenTree* firstNode, GenTree* lastNode, GenTree* newFirstNode, GenTree* newLastNode);
 
 private:
-    GenTree** GetForwardEdge(GenTreeLclVarCommon* node);
-    GenTree** GetBackwardEdge(GenTreeLclVarCommon* node);
+    GenTree** GetForwardEdge(GenTree* node);
+    GenTree** GetBackwardEdge(GenTree* node);
 };
 
 // We use the following format when printing the Statement number: Statement->GetID()
@@ -10137,6 +10181,10 @@ inline GenTree* GenTree::gtGetOp2IfPresent() const
 inline GenTree*& GenTree::Data()
 {
     assert(OperIsStore());
+    if (OperIs(GT_STORE_LCL_VARS))
+    {
+        return AsUnOp()->gtOp1;
+    }
     return OperIsLocalStore() ? AsLclVarCommon()->Data() : AsIndir()->Data();
 }
 
@@ -10248,6 +10296,10 @@ inline bool GenTree::IsMultiRegLclVar() const
 //
 inline regNumber GenTree::GetRegByIndex(int regIndex) const
 {
+    if (OperIs(GT_STORE_LCL_VARS))
+    {
+        return static_cast<regNumber>(AsStoreLclVars()->GetDestination(regIndex).RegNum);
+    }
     if (regIndex == 0)
     {
         return GetRegNum();
@@ -10492,6 +10544,10 @@ inline GenTreeFlags GenTree::GetLastUseBit(int fieldIndex) const
 //
 inline bool GenTree::IsLastUse(int fieldIndex) const
 {
+    if (OperIs(GT_STORE_LCL_VARS))
+    {
+        return (AsStoreLclVars()->GetDestination(fieldIndex).Flags & GTF_VAR_DEATH) != 0;
+    }
     assert(OperIs(GT_LCL_VAR, GT_STORE_LCL_VAR, GT_LCL_FLD, GT_STORE_LCL_FLD, GT_LCL_ADDR, GT_COPY, GT_RELOAD));
     return (gtFlags & GetLastUseBit(fieldIndex)) != 0;
 }
@@ -10507,6 +10563,17 @@ inline bool GenTree::IsLastUse(int fieldIndex) const
 //
 inline bool GenTree::HasLastUse() const
 {
+    if (OperIs(GT_STORE_LCL_VARS))
+    {
+        for (unsigned i = 0; i < AsStoreLclVars()->gtCount; i++)
+        {
+            if (IsLastUse(i))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
     assert(OperIs(GT_LCL_VAR, GT_STORE_LCL_VAR, GT_LCL_FLD, GT_STORE_LCL_FLD, GT_LCL_ADDR, GT_COPY, GT_RELOAD));
     return (gtFlags & (GTF_VAR_DEATH_MASK)) != 0;
 }
@@ -10522,6 +10589,11 @@ inline bool GenTree::HasLastUse() const
 //
 inline void GenTree::SetLastUse(int fieldIndex)
 {
+    if (OperIs(GT_STORE_LCL_VARS))
+    {
+        AsStoreLclVars()->GetDestination(fieldIndex).Flags |= GTF_VAR_DEATH;
+        return;
+    }
     gtFlags |= GetLastUseBit(fieldIndex);
 }
 
@@ -10536,6 +10608,11 @@ inline void GenTree::SetLastUse(int fieldIndex)
 //
 inline void GenTree::ClearLastUse(int fieldIndex)
 {
+    if (OperIs(GT_STORE_LCL_VARS))
+    {
+        AsStoreLclVars()->GetDestination(fieldIndex).Flags &= ~GTF_VAR_DEATH;
+        return;
+    }
     gtFlags &= ~GetLastUseBit(fieldIndex);
 }
 

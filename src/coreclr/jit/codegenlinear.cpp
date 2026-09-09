@@ -548,7 +548,16 @@ void CodeGen::genCodeForBlock(BasicBlock* block)
 #endif // DEBUG
         }
 
-        genCodeForTreeNode(node);
+#if HAS_FIXED_REGISTER_SET
+        if (node->OperIs(GT_STORE_LCL_VARS))
+        {
+            genStoreLclVars(node->AsStoreLclVars());
+        }
+        else
+#endif
+        {
+            genCodeForTreeNode(node);
+        }
         if (node->gtHasReg(m_compiler) && node->IsUnusedValue())
         {
             genConsumeReg(node);
