@@ -642,6 +642,32 @@ int LinearScan::BuildNode(GenTree* tree)
             BuildDef(tree, RBM_ASYNC_CONTINUATION_RET.GetIntRegSet());
             break;
 
+        case GT_ASYNC_RESUME_ARG:
+#ifdef TARGET_AMD64
+            assert(m_compiler->compAsyncResumeEntries);
+            srcCount = 0;
+            BuildDef(tree, (tree->TypeIs(TYP_REF) ? RBM_ARG_0 : RBM_ARG_1).GetIntRegSet());
+            break;
+#else
+            unreached();
+#endif
+
+        case GT_RESUME_BODY_ARG:
+        {
+            const ABIPassingInformation& abi =
+                m_compiler->lvaGetParameterABIInfo(static_cast<unsigned>(tree->AsVal()->gtVal1));
+            assert(abi.HasExactlyOneRegisterSegment());
+            srcCount = 0;
+            BuildDef(tree, genSingleTypeRegMask(abi.Segment(0).GetRegister()));
+            break;
+        }
+
+        case GT_RESUME_ENTRY_ADDR:
+            assert(tree->isContained());
+            srcCount = 0;
+            dstCount = 0;
+            break;
+
         case GT_INDEX_ADDR:
         {
             assert(dstCount == 1);
@@ -1296,7 +1322,7 @@ int LinearScan::BuildCall(GenTreeCall* call)
 
     // set reg requirements on call target represented as control sequence.
     GenTree* ctrlExpr = call->gtControlExpr;
-    if (ctrlExpr != nullptr)
+    if ((ctrlExpr != nullptr) && !call->IsAsyncResumeCall())
     {
         SingleTypeRegSet ctrlExprCandidates = RBM_NONE;
 

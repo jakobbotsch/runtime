@@ -1309,6 +1309,18 @@ void WrapICorJitInfo::getWasmWellKnownGlobals(
     API_LEAVE(getWasmWellKnownGlobals);
 }
 
+void WrapICorJitInfo::reportCodeEntry(
+          uint32_t startOffset,
+          uint32_t endOffset,
+          CorInfoCodeEntryKind kind,
+          CorInfoCodeEntrySignature signature,
+          uint32_t gcInfoOffset)
+{
+    API_ENTER(reportCodeEntry);
+    wrapHnd->reportCodeEntry(startOffset, endOffset, kind, signature, gcInfoOffset);
+    API_LEAVE(reportCodeEntry);
+}
+
 uint32_t WrapICorJitInfo::getThreadTLSIndex(
           void** ppIndirection)
 {

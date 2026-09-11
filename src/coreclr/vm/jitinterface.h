@@ -581,14 +581,13 @@ protected:
     void*                   m_CodeHeader;   // descriptor for JITTED code - read/execute address
     void*                   m_CodeHeaderRW; // descriptor for JITTED code - code write scratch buffer address
     size_t                  m_codeWriteBufferSize;
+    size_t                  m_gcInfoSize;
     BYTE*                   m_pRealCodeHeader;
     HeapList*               m_pCodeHeap;
     COR_ILMETHOD_DECODER*   m_ILHeader;     // the code header to use. This may have been generated due to dynamic IL generation.
     CORINFO_METHOD_INFO     m_MethodInfo;
 
-#if defined(_DEBUG)
     ULONG                   m_codeSize;     // Code size requested via allocMem
-#endif
 
     ULONG32                 m_iOffsetMapping;
     ICorDebugInfo::OffsetMapping * m_pOffsetMapping;
@@ -634,6 +633,8 @@ public:
     // ICorJitInfo stuff
 
     void allocMem (AllocMemArgs *pArgs) override;
+    void reportCodeEntry(uint32_t startOffset, uint32_t endOffset,
+                         CorInfoCodeEntryKind kind, CorInfoCodeEntrySignature signature, uint32_t gcInfoOffset) override;
     void * allocGCInfo(size_t  size) override;
     void setEHcount (unsigned cEH) override;
     void setEHinfo (

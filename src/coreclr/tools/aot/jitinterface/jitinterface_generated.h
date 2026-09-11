@@ -144,6 +144,7 @@ struct JitInterfaceCallbacks
     CorInfoWasmType (* getWasmLowering)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_CLASS_HANDLE structHnd);
     uint32_t (* getAddressAlignment)(void * thisHandle, CorInfoExceptionClass** ppException, void* address);
     void (* getWasmWellKnownGlobals)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_WASM_WELLKNOWN_GLOBALS* pWellKnownGlobalsOut);
+    void (* reportCodeEntry)(void * thisHandle, CorInfoExceptionClass** ppException, uint32_t startOffset, uint32_t endOffset, CorInfoCodeEntryKind kind, CorInfoCodeEntrySignature signature, uint32_t gcInfoOffset);
     uint32_t (* getThreadTLSIndex)(void * thisHandle, CorInfoExceptionClass** ppException, void** ppIndirection);
     int32_t* (* getAddrOfCaptureThreadGlobal)(void * thisHandle, CorInfoExceptionClass** ppException, void** ppIndirection);
     void (* getHelperFtn)(void * thisHandle, CorInfoExceptionClass** ppException, CorInfoHelpFunc ftnNum, CORINFO_CONST_LOOKUP* pNativeEntrypoint, CORINFO_METHOD_HANDLE* pMethod);
@@ -1491,6 +1492,18 @@ public:
 {
     CorInfoExceptionClass* pException = nullptr;
     _callbacks->getWasmWellKnownGlobals(_thisHandle, &pException, pWellKnownGlobalsOut);
+    if (pException != nullptr) throw pException;
+}
+
+    virtual void reportCodeEntry(
+          uint32_t startOffset,
+          uint32_t endOffset,
+          CorInfoCodeEntryKind kind,
+          CorInfoCodeEntrySignature signature,
+          uint32_t gcInfoOffset)
+{
+    CorInfoExceptionClass* pException = nullptr;
+    _callbacks->reportCodeEntry(_thisHandle, &pException, startOffset, endOffset, kind, signature, gcInfoOffset);
     if (pException != nullptr) throw pException;
 }
 

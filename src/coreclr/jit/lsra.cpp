@@ -2335,6 +2335,15 @@ BasicBlock* LinearScan::findPredBlockForLiveIn(BasicBlock*           block,
         return nullptr;
     }
 
+    if (block->bbIsAsyncResumeEntry || block->bbIsAsyncWrapperEntry)
+    {
+        // Unlike the ordinary resume-to-body edge, the lifetime dependency
+        // represents another invocation, with no incoming local locations.
+        assert(block->bbPreds == nullptr);
+        JITDUMP("\n\nAsync resumption entry; ");
+        return nullptr;
+    }
+
     if (block->bbPreds == nullptr)
     {
         assert((block != m_compiler->fgFirstBB) || (prevBlock != nullptr));

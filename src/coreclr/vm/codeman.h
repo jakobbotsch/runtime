@@ -211,6 +211,24 @@ inline void ReportStubBlock(void* start, size_t size, StubCodeBlockKind kind)
 typedef DPTR(struct RealCodeHeader) PTR_RealCodeHeader;
 typedef DPTR(struct CodeHeader) PTR_CodeHeader;
 
+struct CodeEntryInfo
+{
+    DWORD startOffset;
+    DWORD endOffset;
+    CorInfoCodeEntryKind kind;
+    CorInfoCodeEntrySignature signature;
+    DWORD gcInfoOffset;
+};
+typedef DPTR(CodeEntryInfo) PTR_CodeEntryInfo;
+
+struct CodeEntryTable
+{
+    DWORD gcInfoSize;
+    DWORD count;
+    CodeEntryInfo entries[0];
+};
+typedef DPTR(CodeEntryTable) PTR_CodeEntryTable;
+
 struct RealCodeHeader
 {
 public:
@@ -227,6 +245,7 @@ public:
 
     PTR_MethodDesc      phdrMDesc;
 
+    PTR_CodeEntryTable  pCodeEntries;
     DWORD               nUnwindInfos;
     T_RUNTIME_FUNCTION  unwindInfos[0];
 };
@@ -333,6 +352,48 @@ public:
     bool MayHaveFunclets()
     {
         return GetNumberOfUnwindInfos() != 1;
+    }
+    UINT GetNumberOfCodeEntries()
+    {
+        LIMITED_METHOD_CONTRACT;
+        return pRealCodeHeader->pCodeEntries == nullptr ? 0 : pRealCodeHeader->pCodeEntries->count;
+    }
+    void SetCodeEntries(PTR_CodeEntryTable entries)
+    {
+        LIMITED_METHOD_CONTRACT;
+        pRealCodeHeader->pCodeEntries = entries;
+    }
+    void SetNumberOfCodeEntries(UINT count)
+    {
+        LIMITED_METHOD_CONTRACT;
+        pRealCodeHeader->pCodeEntries->count = count;
+    }
+    PTR_CodeEntryInfo GetCodeEntry(UINT index)
+    {
+        LIMITED_METHOD_CONTRACT;
+        SUPPORTS_DAC;
+        // Every entry has at least one unwind record, except the x86 main entry.
+        _ASSERTE(index < max(1u, GetNumberOfUnwindInfos()));
+        return dac_cast<PTR_CodeEntryInfo>(
+            PTR_TO_MEMBER_TADDR(CodeEntryTable, pRealCodeHeader->pCodeEntries, entries) +
+            index * sizeof(CodeEntryInfo));
+    }
+    PTR_CodeEntryInfo FindCodeEntry(DWORD codeOffset)
+    {
+        LIMITED_METHOD_DAC_CONTRACT;
+        for (UINT i = 0; i < GetNumberOfCodeEntries(); i++)
+        {
+            PTR_CodeEntryInfo entry = GetCodeEntry(i);
+            if (entry->startOffset <= codeOffset && codeOffset < entry->endOffset)
+                return entry;
+        }
+        return nullptr;
+    }
+    DWORD GetGCInfoOffset(DWORD codeOffset)
+    {
+        LIMITED_METHOD_DAC_CONTRACT;
+        PTR_CodeEntryInfo entry = FindCodeEntry(codeOffset);
+        return entry == nullptr ? 0 : entry->gcInfoOffset;
     }
     void                    SetNumberOfUnwindInfos(UINT nUnwindInfos)
     {
@@ -1825,7 +1886,7 @@ public:
                                         CrawlFrame *pCf)=0;
 #endif // #ifndef DACCESS_COMPILE
 
-    virtual GCInfoToken GetGCInfoToken(const METHODTOKEN& MethodToken)=0;
+    virtual GCInfoToken GetGCInfoToken(const METHODTOKEN& MethodToken, DWORD codeOffset = 0)=0;
     PTR_VOID GetGCInfo(const METHODTOKEN& MethodToken)
     {
         return GetGCInfoToken(MethodToken).Info;
@@ -1842,6 +1903,7 @@ public:
     virtual DWORD GetFuncletStartOffsets(const METHODTOKEN& MethodToken, DWORD* pStartFuncletOffsets, DWORD dwLength) = 0;
 
     virtual BOOL LazyIsFunclet(EECodeInfo * pCodeInfo);
+    virtual BOOL IsAsyncWrapper(EECodeInfo* pCodeInfo);
     virtual BOOL IsFilterFunclet(EECodeInfo * pCodeInfo);
 
     virtual StubCodeBlockKind   GetStubCodeBlockKind(RangeSection * pRangeSection, PCODE currentPC) = 0;
@@ -2281,9 +2343,12 @@ public:
     virtual TADDR       JitTokenToStartAddress(const METHODTOKEN& MethodToken);
     virtual void        JitTokenToMethodRegionInfo(const METHODTOKEN& MethodToken, MethodRegionInfo *methodRegionInfo);
 
+    BOOL LazyIsFunclet(EECodeInfo* pCodeInfo) override;
+    BOOL IsAsyncWrapper(EECodeInfo* pCodeInfo) override;
+
     virtual unsigned    InitializeEHEnumeration(const METHODTOKEN& MethodToken, EH_CLAUSE_ENUMERATOR* pEnumState);
 
-    GCInfoToken         GetGCInfoToken(const METHODTOKEN& MethodToken);
+    GCInfoToken         GetGCInfoToken(const METHODTOKEN& MethodToken, DWORD codeOffset = 0);
 
 #ifdef DACCESS_COMPILE
     virtual void EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, EECodeInfo * pCodeInfo);
@@ -2974,7 +3039,7 @@ public:
                                         CrawlFrame *pCf);
 #endif // #ifndef DACCESS_COMPILE
 
-    virtual GCInfoToken  GetGCInfoToken(const METHODTOKEN& MethodToken);
+    virtual GCInfoToken  GetGCInfoToken(const METHODTOKEN& MethodToken, DWORD codeOffset = 0);
 
     virtual PTR_RUNTIME_FUNCTION    LazyGetFunctionEntry(EECodeInfo * pCodeInfo);
 
@@ -3031,7 +3096,7 @@ public:
         return (miManaged | miIL | miOPTIL);
     }
 
-    GCInfoToken GetGCInfoToken(const METHODTOKEN& MethodToken);
+    GCInfoToken GetGCInfoToken(const METHODTOKEN& MethodToken, DWORD codeOffset = 0);
     virtual unsigned InitializeEHEnumeration(const METHODTOKEN& MethodToken, EH_CLAUSE_ENUMERATOR* pEnumState);
     virtual PCODE GetCodeAddressForRelOffset(const METHODTOKEN& MethodToken, DWORD relOffset);
 
@@ -3238,7 +3303,13 @@ public:
     GCInfoToken  GetGCInfoToken()
     {
         WRAPPER_NO_CONTRACT;
-        return GetJitManager()->GetGCInfoToken(GetMethodToken());
+        return GetGCInfoToken(GetRelOffset());
+    }
+
+    GCInfoToken GetGCInfoToken(DWORD codeOffset)
+    {
+        WRAPPER_NO_CONTRACT;
+        return GetJitManager()->GetGCInfoToken(GetMethodToken(), codeOffset);
     }
 
     PTR_VOID GetGCInfo()

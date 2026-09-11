@@ -824,6 +824,15 @@ struct Agnostic_AllocUnwindInfo
     DWORD     funcKind;
 };
 
+struct Agnostic_ReportCodeEntry
+{
+    DWORD startOffset;
+    DWORD endOffset;
+    DWORD kind;
+    DWORD signature;
+    DWORD gcInfoOffset;
+};
+
 struct Agnostic_CompileMethodResults
 {
     DWORDLONG nativeEntry;

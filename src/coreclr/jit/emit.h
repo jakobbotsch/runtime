@@ -473,9 +473,10 @@ struct EmitCallParams
     // Used to report call sites to the EE
     CORINFO_SIG_INFO* sigInfo = nullptr;
 #endif
-    void*    addr    = nullptr;
-    ssize_t  argSize = 0;
-    emitAttr retSize = EA_PTRSIZE;
+    void*       addr      = nullptr;
+    BasicBlock* codeEntry = nullptr; // Same-method direct call, resolved after final layout.
+    ssize_t     argSize   = 0;
+    emitAttr    retSize   = EA_PTRSIZE;
     // For multi-reg args with GC returns in the second arg
     emitAttr  secondRetSize = EA_UNKNOWN;
     bool      hasAsyncRet   = false;
@@ -1747,6 +1748,13 @@ protected:
             _idBound = 1;
         }
 
+#ifdef TARGET_XARCH
+        bool idIsLocalCall() const
+        {
+            return idInsFmt() == IF_METHOD_LBL;
+        }
+#endif
+
 #ifndef TARGET_ARMARCH
         bool idIsCallRegPtr() const
         {
@@ -2895,6 +2903,16 @@ private:
 #endif // TARGET_XARCH
 
     void emitIns_Call(const EmitCallParams& params);
+
+#ifdef TARGET_XARCH
+    struct LocalCallFixup
+    {
+        LocalCallFixup* next;
+        BasicBlock*     target;
+        BYTE*           displacement;
+    };
+    LocalCallFixup* emitLocalCallFixups = nullptr;
+#endif
 
     /************************************************************************/
     /*      The logic that creates and keeps track of instruction groups    */

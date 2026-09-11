@@ -110,12 +110,14 @@ private:
 
     jitstd::vector<ReturnTypeInfo> m_returns;
     jitstd::vector<unsigned>       m_locals;
+    jitstd::vector<unsigned>       m_defaultLocals;
 
 public:
     ContinuationLayoutBuilder(Compiler* compiler)
         : m_compiler(compiler)
         , m_returns(compiler->getAllocator(CMK_Async))
         , m_locals(compiler->getAllocator(CMK_Async))
+        , m_defaultLocals(compiler->getAllocator(CMK_Async))
     {
     }
 
@@ -166,6 +168,19 @@ public:
     const jitstd::vector<unsigned>& Locals() const
     {
         return m_locals;
+    }
+
+    const jitstd::vector<unsigned>& DefaultLocals() const
+    {
+        return m_defaultLocals;
+    }
+
+    void AddDefaultLocal(unsigned lclNum)
+    {
+        if (std::find(m_defaultLocals.begin(), m_defaultLocals.end(), lclNum) == m_defaultLocals.end())
+        {
+            m_defaultLocals.push_back(lclNum);
+        }
     }
 
     static bool Equals(const ContinuationLayoutBuilder& a, const ContinuationLayoutBuilder& b);
@@ -349,7 +364,7 @@ public:
 
     void StartBlock(BasicBlock* block);
     void Update(GenTree* node);
-    bool IsLive(unsigned lclNum);
+    bool IsLive(unsigned lclNum, bool includeDefaults = false);
     bool IsResumeReachable() const
     {
         return m_resumeReachable;
@@ -365,9 +380,17 @@ public:
     {
         for (unsigned lclNum = 0; lclNum < m_numVars; lclNum++)
         {
-            if (includeLocal(lclNum) && IsLive(lclNum))
+            if (!includeLocal(lclNum))
+            {
+                continue;
+            }
+            if (IsLive(lclNum))
             {
                 layoutBuilder->AddLocal(lclNum);
+            }
+            else if (m_compiler->compAsyncResumeEntries && IsLive(lclNum, true))
+            {
+                layoutBuilder->AddDefaultLocal(lclNum);
             }
         }
     }
@@ -414,6 +437,8 @@ class AsyncTransformation
     BasicBlock*                m_lastSuspensionBB        = nullptr;
     BasicBlock*                m_lastResumptionBB        = nullptr;
     BasicBlock*                m_sharedReturnBB          = nullptr;
+    BasicBlock*                m_sharedWrapperResult     = nullptr;
+    BasicBlock*                m_sharedWrapperReturn     = nullptr;
 
     // Shared basic blocks used by suspensions that handle required context
     // saves/restores and then suspend.
@@ -568,6 +593,9 @@ class AsyncTransformation
     const ContinuationLayout* CreateResumptionsAndSuspensions(ArrayStack<GenTree*>& continuationMemberOffsets);
     BasicBlock*               CreateOSRJumpBB(GenTree* osrAddress);
     void                      CreateResumptionSwitch(GenTreeLclVarCommon* commonAsyncResumedDef);
+    bool                      CanUseResumeEntries();
+    void                      CreateResumeEntries(GenTreeLclVarCommon* commonAsyncResumedDef);
+    BasicBlock*               CreateResumeWrapper(BasicBlock* bodyEntry);
 
     BasicBlock* CreateInlinedFrameSuspensionTail(BasicBlock*               callBlock,
                                                  GenTreeCall*              call,

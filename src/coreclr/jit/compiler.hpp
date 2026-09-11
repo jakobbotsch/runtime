@@ -636,6 +636,12 @@ BasicBlockVisit BasicBlock::VisitEHSuccs(Compiler* comp, TFunc func)
 template <typename TFunc>
 BasicBlockVisit BasicBlock::VisitAllSuccs(Compiler* comp, TFunc func, const bool useProfile /* = false */)
 {
+    if (bbAsyncResume != nullptr)
+    {
+        assert(comp->compAsyncResumeEntries);
+        assert(bbAsyncResume->HasFlag(BBF_ASYNC_RESUMPTION));
+        RETURN_ON_ABORT(func(bbAsyncResume));
+    }
     switch (bbKind)
     {
         case BBJ_EHFINALLYRET:
@@ -851,6 +857,14 @@ inline FuncInfoDsc* Compiler::funGetFunc(unsigned funcIdx)
 inline unsigned Compiler::funGetFuncIdx(BasicBlock* block)
 {
     assert(bbIsFuncletBeg(block));
+
+    if (block->bbAsyncResumeFuncIdx != 0)
+    {
+        assert(compAsyncResumeEntries);
+        assert((funGetFunc(block->bbAsyncResumeFuncIdx)->funKind == FUNC_ASYNC_RESUME) ||
+               (funGetFunc(block->bbAsyncResumeFuncIdx)->funKind == FUNC_ASYNC_WRAPPER));
+        return block->bbAsyncResumeFuncIdx;
+    }
 
     EHblkDsc*    eh      = ehGetDsc(block->getHndIndex());
     unsigned int funcIdx = eh->ebdFuncIndex;
@@ -2392,9 +2406,10 @@ inline unsigned Compiler::lvaGrabTemp(bool shortLifetime DEBUGARG(const char* re
     lvaCount++;
 
     // Initialize lvType, lvIsTemp and lvOnFrame
-    lvaTable[tempNum].lvType    = TYP_UNDEF;
-    lvaTable[tempNum].lvIsTemp  = shortLifetime;
-    lvaTable[tempNum].lvOnFrame = true;
+    lvaTable[tempNum].lvType                = TYP_UNDEF;
+    lvaTable[tempNum].lvIsTemp              = shortLifetime;
+    lvaTable[tempNum].lvOnFrame             = true;
+    lvaTable[tempNum].lvIsAsyncWrapperLocal = (compCurBB != nullptr) && compCurBB->bbIsAsyncWrapper;
 
     // If we've started normal ref counting, bump the ref count of this
     // local, as we no longer do any incremental counting, and we presume
@@ -2486,9 +2501,10 @@ inline unsigned Compiler::lvaGrabTemps(unsigned cnt DEBUGARG(const char* reason)
 
     while (cnt--)
     {
-        lvaTable[lvaCount].lvType    = TYP_UNDEF; // Initialize lvType, lvIsTemp and lvOnFrame
-        lvaTable[lvaCount].lvIsTemp  = false;
-        lvaTable[lvaCount].lvOnFrame = true;
+        lvaTable[lvaCount].lvType                = TYP_UNDEF; // Initialize lvType, lvIsTemp and lvOnFrame
+        lvaTable[lvaCount].lvIsTemp              = false;
+        lvaTable[lvaCount].lvOnFrame             = true;
+        lvaTable[lvaCount].lvIsAsyncWrapperLocal = (compCurBB != nullptr) && compCurBB->bbIsAsyncWrapper;
         lvaCount++;
     }
 

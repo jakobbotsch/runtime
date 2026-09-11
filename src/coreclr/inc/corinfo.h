@@ -2121,6 +2121,25 @@ enum class TypeCompareState
     Must = 1,     // type are equal
 };
 
+enum CorInfoCodeEntryKind
+{
+    CORINFO_CODE_ENTRY_MAIN,
+    CORINFO_CODE_ENTRY_HANDLER,
+    CORINFO_CODE_ENTRY_FILTER,
+    CORINFO_CODE_ENTRY_ASYNC_RESUME,
+    CORINFO_CODE_ENTRY_ASYNC_WRAPPER
+};
+
+// Identifies an ABI signature without requiring the JIT to synthesize metadata signatures.
+enum CorInfoCodeEntrySignature
+{
+    CORINFO_CODE_ENTRY_SIG_METHOD,        // The compiled method's signature.
+    CORINFO_CODE_ENTRY_SIG_CATCH_FILTER,  // The target's catch handler / filter ABI.
+    CORINFO_CODE_ENTRY_SIG_FINALLY_FAULT, // The target's finally / fault ABI.
+    CORINFO_CODE_ENTRY_SIG_ASYNC_RESUME,  // The runtime's async resumption ABI.
+    CORINFO_CODE_ENTRY_SIG_BODY_RESUME    // Continuation/retbuf in the original ABI locations; original stack argument area reserved.
+};
+
 //
 // This interface is logically split into sections for each class of information
 // (ICorMethodInfo, ICorModuleInfo, etc.). This split used to exist physically as well
@@ -3270,6 +3289,22 @@ public:
     // async continuation) that JIT-generated wasm code references via WASM_GLOBAL_INDEX_LEB relocations.
     virtual void getWasmWellKnownGlobals(
         CORINFO_WASM_WELLKNOWN_GLOBALS* pWellKnownGlobalsOut
+    ) = 0;
+
+    // Reports a semantic entry, independently of its physical unwind records.
+    // Call after allocMem and allocGCInfo, before compilation completes; allocUnwindInfo
+    // may precede or follow this call. Ranges are nonempty, disjoint, half-open hot-code-relative offsets.
+    // Report each entry once, covering all of its unwind fragments. Cold code is excluded.
+    // ASYNC_RESUME establishes a main-compatible frame; ASYNC_WRAPPER has its own frame.
+    // Neither is an EH funclet. gcInfoOffset selects a blob in the single allocGCInfo allocation.
+    // The main/body/EH blob is at offset zero; wrappers select private blobs at nonzero offsets.
+    // All blobs use method-global native offsets and describe the full method code extent.
+    virtual void reportCodeEntry(
+        uint32_t startOffset,
+        uint32_t endOffset,
+        CorInfoCodeEntryKind kind,
+        CorInfoCodeEntrySignature signature,
+        uint32_t gcInfoOffset
     ) = 0;
 };
 

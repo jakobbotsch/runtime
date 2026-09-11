@@ -650,6 +650,11 @@ void CodeGen::genMarkLabelsForCodegen()
 
     for (BasicBlock* const block : m_compiler->Blocks())
     {
+        if (block->bbAsyncResumeFuncIdx != 0)
+        {
+            block->SetFlags(BBF_HAS_LABEL);
+        }
+
         switch (block->GetKind())
         {
             case BBJ_ALWAYS:
@@ -1956,7 +1961,11 @@ void CodeGen::genExitCode(BasicBlock* block)
     // For returnining epilogs do some validation that the GC info looks right.
     if (!block->HasFlag(BBF_HAS_JMP))
     {
-        if (m_compiler->compMethodReturnsRetBufAddr())
+        if (block->bbIsAsyncWrapper)
+        {
+            assert((gcInfo.gcRegGCrefSetCur & RBM_INTRET) != RBM_NONE);
+        }
+        else if (m_compiler->compMethodReturnsRetBufAddr())
         {
             assert((gcInfo.gcRegByrefSetCur & RBM_INTRET) != RBM_NONE);
         }
@@ -1976,7 +1985,7 @@ void CodeGen::genExitCode(BasicBlock* block)
     }
 #endif // EMIT_GENERATE_GCINFO && defined(DEBUG) && !defined(TARGET_WASM)
 
-    if (m_compiler->getNeedsGSSecurityCookie())
+    if (!block->bbIsAsyncWrapper && m_compiler->getNeedsGSSecurityCookie())
     {
         genEmitGSCookieCheck(block->HasFlag(BBF_HAS_JMP));
     }
@@ -2611,12 +2620,77 @@ void CodeGen::genEmitMachineCode()
 }
 
 //----------------------------------------------------------------------
-// genEmitUnwindDebugGCandEH: emit unwind, debug, gc, and EH info
+// genReportCodeEntries: Report semantic entries after their GC blobs are encoded.
+//
+void CodeGen::genReportCodeEntries()
+{
+#ifndef TARGET_WASM
+    if (m_compiler->compAsyncResumeEntries)
+    {
+        assert(!m_compiler->IsAot());
+        assert(m_compiler->fgFirstColdBlock == nullptr);
+        for (FuncInfoDsc* func : m_compiler->Funcs())
+        {
+            CorInfoCodeEntryKind      kind;
+            CorInfoCodeEntrySignature signature;
+            switch (func->funKind)
+            {
+                case FUNC_ROOT:
+                    kind      = CORINFO_CODE_ENTRY_MAIN;
+                    signature = CORINFO_CODE_ENTRY_SIG_METHOD;
+                    break;
+                case FUNC_HANDLER:
+                    kind      = CORINFO_CODE_ENTRY_HANDLER;
+                    signature = func->GetEHDesc(m_compiler)->HasCatchHandler() ? CORINFO_CODE_ENTRY_SIG_CATCH_FILTER
+                                                                               : CORINFO_CODE_ENTRY_SIG_FINALLY_FAULT;
+                    break;
+                case FUNC_FILTER:
+                    kind      = CORINFO_CODE_ENTRY_FILTER;
+                    signature = CORINFO_CODE_ENTRY_SIG_CATCH_FILTER;
+                    break;
+                case FUNC_ASYNC_RESUME:
+                    kind      = CORINFO_CODE_ENTRY_ASYNC_RESUME;
+                    signature = CORINFO_CODE_ENTRY_SIG_BODY_RESUME;
+                    break;
+                case FUNC_ASYNC_WRAPPER:
+                    kind      = CORINFO_CODE_ENTRY_ASYNC_WRAPPER;
+                    signature = CORINFO_CODE_ENTRY_SIG_ASYNC_RESUME;
+                    break;
+                default:
+                    unreached();
+            }
+            unsigned start = 0;
+            if (func->funKind != FUNC_ROOT)
+            {
+                emitLocation location(m_compiler->ehEmitCookie(func->GetStartBlock(m_compiler)));
+                start = location.CodeOffset(GetEmitter());
+            }
+            unsigned    end  = m_compiler->info.compNativeCodeSize;
+            BasicBlock* next = func->GetLastBlock(m_compiler)->Next();
+            if (next != nullptr)
+            {
+                emitLocation location(m_compiler->ehEmitCookie(next));
+                end = location.CodeOffset(GetEmitter());
+            }
+            assert(start <= end);
+            assert(end <= m_compiler->info.compTotalHotCodeSize);
+            if (start != end)
+            {
+                uint32_t gcInfoOffset =
+                    func->funKind == FUNC_ASYNC_WRAPPER ? m_compiler->compAsyncWrapperGcInfoOffset : 0;
+                assert(gcInfoOffset < m_compiler->compInfoBlkSize);
+                m_compiler->info.compCompHnd->reportCodeEntry(start, end, kind, signature, gcInfoOffset);
+            }
+        }
+    }
+#endif // !TARGET_WASM
+}
+
+//------------------------------------------------------------------------
+// genEmitUnwindDebugGCandEH: Emit unwind, debug, GC, and EH information.
 //
 void CodeGen::genEmitUnwindDebugGCandEH()
 {
-    /* Now that the code is issued, we can finalize and emit the unwind data */
-
     m_compiler->unwindEmit(*codePtr, coldCodePtr);
 
     /* Finalize the line # tracking logic after we know the exact block sizes/offsets */
@@ -2696,6 +2770,7 @@ void CodeGen::genEmitUnwindDebugGCandEH()
 
     // Create and store the GC info for this method.
     genCreateAndStoreGCInfo(codeSize, prologSize, epilogSize DEBUGARG(codePtr));
+    genReportCodeEntries();
     m_compiler->Metrics.GCInfoBytes = (int)m_compiler->compInfoBlkSize;
 
     /* Tell the emitter that we're done with this function */
@@ -3884,6 +3959,11 @@ void CodeGen::genCheckUseBlockInit()
         // The logic below is complex. Make sure we are not
         // double-counting the initialization impact of any locals.
         bool counted = false;
+        if (varDsc->lvIsAsyncWrapperLocal)
+        {
+            varDsc->lvMustInit = false;
+            continue;
+        }
 
         if (!varDsc->lvIsInReg() && !varDsc->lvOnFrame)
         {
@@ -4223,6 +4303,38 @@ regNumber CodeGen::genGetZeroReg(regNumber initReg, bool* pInitRegZeroed)
 }
 
 //-----------------------------------------------------------------------------
+// genIsAsyncResumeLocalRestored: Whether the noninterruptible restore defines this home.
+//
+bool CodeGen::genIsAsyncResumeLocalRestored(unsigned lclNum)
+{
+    assert(m_compiler->funCurrentFunc()->funKind == FUNC_ASYNC_RESUME);
+    BasicBlock* entry = m_compiler->funCurrentFunc()->GetStartBlock(m_compiler);
+    LclVarDsc*  var   = m_compiler->lvaGetDesc(lclNum);
+    for (GenTree* node : LIR::AsRange(entry))
+    {
+        if (node->OperIs(GT_STORE_LCL_VAR) && (node->GetRegNum() == REG_NA))
+        {
+            unsigned restored = node->AsLclVarCommon()->GetLclNum();
+            if ((restored == lclNum) || (var->lvIsStructField && (restored == var->lvParentLcl)))
+            {
+                return true;
+            }
+        }
+        if (node->OperIs(GT_STORE_BLK))
+        {
+            GenTree* address = node->AsBlk()->Addr();
+            if (address->OperIs(GT_LCL_ADDR) && (address->AsLclFld()->GetLclNum() == lclNum) &&
+                (address->AsLclFld()->GetLclOffs() == 0) &&
+                (node->AsBlk()->Size() >= m_compiler->lvaLclStackHomeSize(lclNum)))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+//-----------------------------------------------------------------------------
 // genZeroInitFrame: Zero any untracked pointer locals and/or initialize memory for locspace
 //
 // Arguments:
@@ -4237,7 +4349,8 @@ void CodeGen::genZeroInitFrame(int untrLclHi, int untrLclLo, regNumber initReg, 
 {
     assert(GetEmitter()->emitGeneratingPrologOrFuncletProlog());
 
-    if (genUseBlockInit)
+    bool isAsyncResume = m_compiler->funCurrentFunc()->funKind == FUNC_ASYNC_RESUME;
+    if (genUseBlockInit && !isAsyncResume)
     {
         genZeroInitFrameUsingBlockInit(untrLclHi, untrLclLo, initReg, pInitRegZeroed);
     }
@@ -4253,6 +4366,10 @@ void CodeGen::genZeroInitFrame(int untrLclHi, int untrLclLo, regNumber initReg, 
         for (varNum = 0, varDsc = m_compiler->lvaTable; varNum < m_compiler->lvaCount; varNum++, varDsc++)
         {
             if (!varDsc->lvMustInit)
+            {
+                continue;
+            }
+            if (isAsyncResume && genIsAsyncResumeLocalRestored(varNum))
             {
                 continue;
             }
@@ -4917,8 +5034,21 @@ void CodeGen::genReserveFuncletProlog(BasicBlock* block)
        restoring any registers, then we could have live-in reg vars...
     */
 
-    noway_assert((gcInfo.gcRegGCrefSetCur & RBM_EXCEPTION_OBJECT) == gcInfo.gcRegGCrefSetCur);
-    noway_assert(gcInfo.gcRegByrefSetCur == 0);
+    if ((m_compiler->funCurrentFunc()->funKind == FUNC_ASYNC_RESUME) ||
+        (m_compiler->funCurrentFunc()->funKind == FUNC_ASYNC_WRAPPER))
+    {
+#ifdef TARGET_AMD64
+        // The body entry receives the original method's async ABI arguments;
+        // only the wrapper uses RCX/RDX.
+#else
+        unreached();
+#endif
+    }
+    else
+    {
+        noway_assert((gcInfo.gcRegGCrefSetCur & RBM_EXCEPTION_OBJECT) == gcInfo.gcRegGCrefSetCur);
+        noway_assert(gcInfo.gcRegByrefSetCur == 0);
+    }
 
     JITDUMP("Reserving funclet prolog IG for block " FMT_BB "\n", block->bbNum);
 
@@ -4949,6 +5079,29 @@ void CodeGen::genReserveFuncletEpilog(BasicBlock* block)
  */
 void CodeGen::genFinalizeFrame()
 {
+#ifdef TARGET_AMD64
+    if (m_compiler->compAsyncResumeEntries)
+    {
+        regMaskTP wrapperRegs = m_compiler->compAsyncWrapperUsedRegs;
+        for (BasicBlock* block : m_compiler->Blocks())
+        {
+            if (!block->bbIsAsyncWrapper)
+            {
+                continue;
+            }
+            for (GenTree* node : LIR::AsRange(block))
+            {
+                wrapperRegs |= internalRegisters.GetAll(node);
+                if (node->gtHasReg(m_compiler))
+                {
+                    wrapperRegs |= node->gtGetRegMask();
+                }
+            }
+        }
+        m_compiler->compAsyncWrapperUsedRegs = wrapperRegs & RBM_CALLEE_SAVED;
+    }
+#endif // TARGET_AMD64
+
     JITDUMP("Finalizing stack frame\n");
 
     // Initializations need to happen based on the var locations at the start
@@ -5218,10 +5371,24 @@ void CodeGen::genFinalizeFrame()
  *
  *  ARM stepping code is here: debug\ee\arm\armwalker.cpp, vm\arm\armsinglestepper.cpp.
  */
-void CodeGen::genFnProlog()
+void CodeGen::genFnProlog(bool isAsyncResume)
 {
-
-    m_compiler->funSetCurrentFunc(0);
+    regMaskTP savedArgMask = calleeRegArgMaskLiveIn;
+    if (isAsyncResume)
+    {
+        assert(m_compiler->funCurrentFunc()->funKind == FUNC_ASYNC_RESUME);
+        assert(m_compiler->compAsyncResumeEntries);
+        gcInfo.gcResetForBB();
+#ifdef TARGET_AMD64
+        calleeRegArgMaskLiveIn = genMarkAsyncResumeArgs(m_compiler->funCurrentFunc()->GetStartBlock(m_compiler));
+#else
+        unreached();
+#endif // TARGET_AMD64
+    }
+    else
+    {
+        m_compiler->funSetCurrentFunc(0);
+    }
 
 #ifdef DEBUG
     if (verbose)
@@ -5238,13 +5405,19 @@ void CodeGen::genFnProlog()
 
     /* Ready to start on the prolog proper */
 
-    GetEmitter()->emitBegProlog();
+    if (!isAsyncResume)
+    {
+        GetEmitter()->emitBegProlog();
+    }
 
     m_compiler->unwindBegProlog();
 
     // Do this so we can put the prolog instruction group ahead of
     // other instruction groups
-    genIPmappingAddToFront(IPmappingDscKind::Prolog, DebugInfo(), true);
+    if (!isAsyncResume)
+    {
+        genIPmappingAddToFront(IPmappingDscKind::Prolog, DebugInfo(), true);
+    }
 
 #ifdef DEBUG
     if (m_compiler->opts.dspCode)
@@ -5253,7 +5426,7 @@ void CodeGen::genFnProlog()
     }
 #endif
 
-    if (m_compiler->opts.compScopeInfo && (m_compiler->info.compVarScopesCount > 0))
+    if (!isAsyncResume && m_compiler->opts.compScopeInfo && (m_compiler->info.compVarScopesCount > 0))
     {
         // Create new scopes for the method-parameters for the prolog-block.
         psiBegProlog();
@@ -5399,7 +5572,7 @@ void CodeGen::genFnProlog()
 
         /* For lvMustInit vars, gather pertinent info */
 
-        if (!varDsc->lvMustInit)
+        if (varDsc->lvIsAsyncWrapperLocal || !varDsc->lvMustInit)
         {
             continue;
         }
@@ -5820,6 +5993,32 @@ void CodeGen::genFnProlog()
 
     genZeroInitFrame(untrLclHi, untrLclLo, initReg, &initRegZeroed);
 
+    if (isAsyncResume)
+    {
+        // The wrapper reserves the original caller area but does not manufacture
+        // arguments. Homes reported as untracked must be valid even when dead
+        // at this suspension point and therefore omitted from the saved state.
+        for (unsigned lclNum = 0; lclNum < m_compiler->lvaCount; lclNum++)
+        {
+            LclVarDsc* var = m_compiler->lvaGetDesc(lclNum);
+            if (!var->lvIsParam || !var->lvOnFrame || !var->HasGCPtr() ||
+                (var->lvIsRegArg && var->lvTrackedNonStruct() && !m_compiler->opts.MinOpts()) ||
+                genIsAsyncResumeLocalRestored(lclNum))
+            {
+                continue;
+            }
+            unsigned size = m_compiler->lvaLclStackHomeSize(lclNum);
+            for (unsigned offset = 0; offset < size; offset += TARGET_POINTER_SIZE)
+            {
+                if (!var->TypeIs(TYP_STRUCT) || var->GetLayout()->IsGCPtr(offset / TARGET_POINTER_SIZE))
+                {
+                    GetEmitter()->emitIns_S_R(ins_Store(TYP_I_IMPL), EA_PTRSIZE, genGetZeroReg(initReg, &initRegZeroed),
+                                              lclNum, offset);
+                }
+            }
+        }
+    }
+
     // Save the generic context arg in the prolog so GetParamTypeArg can report it.
     genReportGenericContextArg(initReg, &initRegZeroed);
 
@@ -5856,7 +6055,7 @@ void CodeGen::genFnProlog()
         instGen(INS_nop);
     }
 
-    if (!GetInterruptible())
+    if (!isAsyncResume && !GetInterruptible())
     {
         // The 'real' prolog ends here for non-interruptible methods.
         // For fully-interruptible methods, we extend the prolog so that
@@ -5909,7 +6108,7 @@ void CodeGen::genFnProlog()
 
         m_compiler->lvaUpdateArgsWithInitialReg();
     }
-    else
+    else if (!isAsyncResume)
     {
         m_compiler->lvaUpdateArgsWithInitialReg();
 
@@ -5923,6 +6122,14 @@ void CodeGen::genFnProlog()
 
 #ifndef TARGET_WASM
     /* Initialize any must-init registers variables now */
+
+    if (isAsyncResume)
+    {
+        // All resume live-ins are explicitly defined in IR. Main-entry
+        // register initializers describe a different allocation and may
+        // overwrite the two incoming resume arguments.
+        initRegs = initFltRegs = initDblRegs = RBM_NONE;
+    }
 
     if (initRegs)
     {
@@ -5977,11 +6184,11 @@ void CodeGen::genFnProlog()
     // Increase the prolog size here only if fully interruptible.
     //
 
-    if (GetInterruptible())
+    if (!isAsyncResume && GetInterruptible())
     {
         GetEmitter()->emitMarkPrologEnd();
     }
-    if (m_compiler->opts.compScopeInfo && (m_compiler->info.compVarScopesCount > 0))
+    if (!isAsyncResume && m_compiler->opts.compScopeInfo && (m_compiler->info.compVarScopesCount > 0))
     {
         psiEndProlog();
     }
@@ -6060,7 +6267,14 @@ void CodeGen::genFnProlog()
     }
 #endif // defined(DEBUG) && defined(TARGET_XARCH)
 
-    GetEmitter()->emitEndProlog();
+    if (!isAsyncResume)
+    {
+        GetEmitter()->emitEndProlog();
+    }
+    else
+    {
+        calleeRegArgMaskLiveIn = savedArgMask;
+    }
 }
 
 #if !defined(TARGET_WASM)
@@ -7497,7 +7711,7 @@ void CodeGen::genReturn(GenTree* treeNode)
     }
 #endif // PROFILING_SUPPORTED
 
-    if (treeNode->OperIs(GT_RETURN) && m_compiler->compIsAsync())
+    if (treeNode->OperIs(GT_RETURN) && m_compiler->compIsAsync() && !m_compiler->compCurBB->bbIsAsyncWrapper)
     {
 #ifdef TARGET_WASM
         // Wasm returns the continuation in a global.
@@ -7542,6 +7756,24 @@ void CodeGen::genSwiftErrorReturn(GenTree* treeNode)
     genReturn(treeNode);
 }
 #endif // SWIFT_SUPPORT
+
+//------------------------------------------------------------------------
+// genMarkAsyncResumeArgs: Mark incoming arguments whose definitions survived liveness.
+//
+regMaskTP CodeGen::genMarkAsyncResumeArgs(BasicBlock* block)
+{
+    regMaskTP mask = RBM_NONE;
+    for (GenTree* node : LIR::AsRange(block))
+    {
+        if (node->OperIs(GT_ASYNC_RESUME_ARG, GT_RESUME_BODY_ARG))
+        {
+            regNumber reg = node->GetRegNum();
+            mask |= genRegMask(reg);
+            gcInfo.gcMarkRegPtrVal(reg, node->TypeGet());
+        }
+    }
+    return mask;
+}
 
 //------------------------------------------------------------------------
 // genReturnSuspend:
@@ -7634,6 +7866,11 @@ void CodeGen::genPatchpoint(GenTreeOp* treeNode)
 //
 void CodeGen::genMarkReturnGCInfo()
 {
+    if (m_compiler->compCurBB->bbIsAsyncWrapper)
+    {
+        gcInfo.gcMarkRegPtrVal(REG_INTRET, TYP_REF);
+        return;
+    }
     const ReturnTypeDesc& retTypeDesc = m_compiler->compRetTypeDesc;
 
     if (m_compiler->compMethodReturnsRetBufAddr())
@@ -7667,7 +7904,6 @@ void CodeGen::genCodeForAsyncContinuation(GenTree* tree)
 
     inst_Mov(targetType, targetReg, REG_ASYNC_CONTINUATION_RET, /* canSkip */ true);
     genTransferRegGCState(targetReg, REG_ASYNC_CONTINUATION_RET);
-
     genProduceReg(tree);
 }
 #endif // !TARGET_WASM
@@ -8548,7 +8784,7 @@ void CodeGen::genPoisonFrame(regMaskTP regLiveIn)
     for (unsigned varNum = 0; varNum < m_compiler->info.compLocalsCount; varNum++)
     {
         LclVarDsc* varDsc = m_compiler->lvaGetDesc(varNum);
-        if (varDsc->lvIsParam || varDsc->lvMustInit || !varDsc->IsAddressExposed())
+        if (varDsc->lvIsAsyncWrapperLocal || varDsc->lvIsParam || varDsc->lvMustInit || !varDsc->IsAddressExposed())
         {
             continue;
         }

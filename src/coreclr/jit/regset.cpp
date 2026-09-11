@@ -166,6 +166,13 @@ void RegSet::rsSetRegsModified(regMaskTP mask DEBUGARG(bool suppressDump))
 #endif // DEBUG
 
     rsModifiedRegsMask |= mask;
+#ifdef TARGET_AMD64
+    if ((m_compiler->compCurBB != nullptr) && m_compiler->compCurBB->bbIsAsyncWrapper &&
+        (m_compiler->lvaDoneFrameLayout < Compiler::FINAL_FRAME_LAYOUT))
+    {
+        m_compiler->compAsyncWrapperUsedRegs |= mask & RBM_CALLEE_SAVED;
+    }
+#endif
 }
 
 void RegSet::rsRemoveRegsModified(regMaskTP mask)

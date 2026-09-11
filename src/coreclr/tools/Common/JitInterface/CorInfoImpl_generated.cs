@@ -153,6 +153,7 @@ namespace Internal.JitInterface
                 s_callbacks.getWasmLowering = &_getWasmLowering;
                 s_callbacks.getAddressAlignment = &_getAddressAlignment;
                 s_callbacks.getWasmWellKnownGlobals = &_getWasmWellKnownGlobals;
+                s_callbacks.reportCodeEntry = &_reportCodeEntry;
                 s_callbacks.getThreadTLSIndex = &_getThreadTLSIndex;
                 s_callbacks.getAddrOfCaptureThreadGlobal = &_getAddrOfCaptureThreadGlobal;
                 s_callbacks.getHelperFtn = &_getHelperFtn;
@@ -338,6 +339,7 @@ namespace Internal.JitInterface
             public delegate* unmanaged<IntPtr, IntPtr*, CORINFO_CLASS_STRUCT_*, CorInfoWasmType> getWasmLowering;
             public delegate* unmanaged<IntPtr, IntPtr*, void*, uint> getAddressAlignment;
             public delegate* unmanaged<IntPtr, IntPtr*, CORINFO_WASM_WELLKNOWN_GLOBALS*, void> getWasmWellKnownGlobals;
+            public delegate* unmanaged<IntPtr, IntPtr*, uint, uint, CorInfoCodeEntryKind, CorInfoCodeEntrySignature, uint, void> reportCodeEntry;
             public delegate* unmanaged<IntPtr, IntPtr*, void**, uint> getThreadTLSIndex;
             public delegate* unmanaged<IntPtr, IntPtr*, void**, int*> getAddrOfCaptureThreadGlobal;
             public delegate* unmanaged<IntPtr, IntPtr*, CorInfoHelpFunc, CORINFO_CONST_LOOKUP*, CORINFO_METHOD_STRUCT_**, void> getHelperFtn;
@@ -2350,6 +2352,20 @@ namespace Internal.JitInterface
             try
             {
                 _this.getWasmWellKnownGlobals(ref *pWellKnownGlobalsOut);
+            }
+            catch (Exception ex)
+            {
+                *ppException = _this.AllocException(ex);
+            }
+        }
+
+        [UnmanagedCallersOnly]
+        private static void _reportCodeEntry(IntPtr thisHandle, IntPtr* ppException, uint startOffset, uint endOffset, CorInfoCodeEntryKind kind, CorInfoCodeEntrySignature signature, uint gcInfoOffset)
+        {
+            var _this = GetThis(thisHandle);
+            try
+            {
+                _this.reportCodeEntry(startOffset, endOffset, kind, signature, gcInfoOffset);
             }
             catch (Exception ex)
             {

@@ -33,6 +33,9 @@ GTNODE(LCL_ADDR         , GenTreeLclFld      ,0,0,GTK_LEAF)             // local
 
 GTNODE(CATCH_ARG        , GenTree            ,0,0,GTK_LEAF)             // Exception object in a catch block
 GTNODE(ASYNC_CONTINUATION, GenTree           ,0,0,GTK_LEAF)            // Access returned continuation by an async call
+GTNODE(ASYNC_RESUME_ARG , GenTree           ,0,0,GTK_LEAF)             // Fixed incoming continuation (ref) or result storage (byref)
+GTNODE(RESUME_BODY_ARG  , GenTreeVal        ,0,0,GTK_LEAF)             // Incoming argument of an internal body-resume entry
+GTNODE(RESUME_ENTRY_ADDR, GenTreeVal        ,0,0,GTK_LEAF)             // Symbolic address of an internal body-resume entry
 GTNODE(LABEL            , GenTree            ,0,0,GTK_LEAF)             // Jump-target
 GTNODE(JMP              , GenTreeVal         ,0,0,GTK_LEAF|GTK_NOVALUE) // Jump to another function
 GTNODE(FTN_ADDR         , GenTreeFptrVal     ,0,0,GTK_LEAF)             // Address of a function

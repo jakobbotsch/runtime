@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Text;
 
 using Internal.IL;
+using Internal.JitInterface;
 using Internal.Text;
 using Internal.TypeSystem;
 
@@ -20,6 +21,7 @@ namespace ILCompiler.DependencyAnalysis
         private MethodDesc _method;
         private ObjectData _methodCode;
         private FrameInfo[] _frameInfos;
+        private CodeEntryInfo[] _codeEntries;
         private byte[] _gcInfo;
         private MethodExceptionHandlingInfoNode _ehInfo;
         private DebugLocInfo[] _debugLocInfos;
@@ -115,6 +117,7 @@ namespace ILCompiler.DependencyAnalysis
         }
 
         public FrameInfo[] FrameInfos => _frameInfos;
+        public CodeEntryInfo[] CodeEntries => _codeEntries;
         public byte[] GCInfo => _gcInfo;
         public MethodExceptionHandlingInfoNode EHInfo => _ehInfo;
 
@@ -127,6 +130,12 @@ namespace ILCompiler.DependencyAnalysis
                 return factory.MethodAssociatedData(this);
 
             return null;
+        }
+
+        public void InitializeCodeEntries(CodeEntryInfo[] codeEntries)
+        {
+            Debug.Assert(_codeEntries is null);
+            _codeEntries = codeEntries;
         }
 
         public void InitializeFrameInfos(FrameInfo[] frameInfos)

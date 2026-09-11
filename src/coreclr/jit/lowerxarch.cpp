@@ -7478,6 +7478,12 @@ GenTree* Lowering::PreferredRegOptionalOperand(GenTree* op1, GenTree* op2)
 void Lowering::ContainCheckCallOperands(GenTreeCall* call)
 {
     GenTree* ctrlExpr = call->gtControlExpr;
+    if (call->IsAsyncResumeCall())
+    {
+        MakeSrcContained(call, ctrlExpr);
+        return;
+    }
+
     if (call->gtCallType == CT_INDIRECT)
     {
 #ifdef TARGET_X86

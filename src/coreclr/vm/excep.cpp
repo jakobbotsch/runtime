@@ -1698,8 +1698,19 @@ HRESULT SetIPFromSrcToDst(Thread *pThread,
 
     EECodeInfo codeInfo((TADDR)(addrStart));
 
+    if (codeInfo.GetJitManager() == ExecutionManager::GetEEJitManager())
+    {
+        CodeHeader* header = EEJitManager::GetCodeHeader(codeInfo.GetMethodToken());
+        PTR_CodeEntryInfo fromEntry = header->FindCodeEntry(offFrom);
+        PTR_CodeEntryInfo toEntry = header->FindCodeEntry(offTo);
+        bool fromWrapper = fromEntry != nullptr && fromEntry->kind == CORINFO_CODE_ENTRY_ASYNC_WRAPPER;
+        bool toWrapper = toEntry != nullptr && toEntry->kind == CORINFO_CODE_ENTRY_ASYNC_WRAPPER;
+        if ((fromWrapper || toWrapper) && fromEntry != toEntry)
+            return CORDBG_E_SET_IP_IMPOSSIBLE;
+    }
+
     ICodeManager * pEECM = codeInfo.GetCodeManager();
-    GCInfoToken gcInfoToken = codeInfo.GetGCInfoToken();
+    GCInfoToken gcInfoToken = codeInfo.GetGCInfoToken(offFrom);
 
     // Do both checks here so compiler doesn't complain about skipping
     // initialization b/c of goto.
@@ -2566,7 +2577,8 @@ void StackTraceInfo::AppendElement(OBJECTREF pThrowable, UINT_PTR currentIP, UIN
         return;
     }
 
-    if (pFunc != NULL && (pFunc->IsDiagnosticsHidden() || pFunc == g_pEnvironmentCallEntryPointMethodDesc))
+    if (((pCf != nullptr) && pCf->IsDiagnosticsHidden()) ||
+        (pFunc != nullptr && (pFunc->IsDiagnosticsHidden() || pFunc == g_pEnvironmentCallEntryPointMethodDesc)))
     {
         return;
     }
@@ -6144,6 +6156,7 @@ bool IsIPInProlog(EECodeInfo *pCodeInfo)
     CONTRACTL_END;
 
     bool fInsideProlog = true;
+    DWORD prologOffset = pCodeInfo->GetRelOffset();
 
     _ASSERTE(pCodeInfo->IsValid());
 
@@ -6160,6 +6173,8 @@ bool IsIPInProlog(EECodeInfo *pCodeInfo)
 
     // Check if the specified IP is beyond the prolog or not.
     DWORD prologLen = pUnwindInfo->SizeOfProlog;
+    prologOffset = static_cast<DWORD>(pCodeInfo->GetCodeAddress() -
+        (pCodeInfo->GetModuleBase() + RUNTIME_FUNCTION__BeginAddress(funcEntry)));
 
 #else // TARGET_AMD64
 
@@ -6183,7 +6198,7 @@ bool IsIPInProlog(EECodeInfo *pCodeInfo)
 
 #endif // TARGET_AMD64
 
-    if (pCodeInfo->GetRelOffset() >= prologLen)
+    if (prologOffset >= prologLen)
     {
         fInsideProlog = false;
     }

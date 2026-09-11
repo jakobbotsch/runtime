@@ -1240,6 +1240,8 @@ enum mcPackets
     Packet_GetWasmWellKnownGlobals = 240,
     Packet_CanValueClassInstancePointerEscape = 241,
     Packet_GetAwaitAwaiterInContinuationCall = 242,
+    // PacketCR_ReportCodeEntry_V1 = 243, // No per-entry GC info offset.
+    PacketCR_ReportCodeEntry = 244,
 };
 
 void SetDebugDumpVariables();

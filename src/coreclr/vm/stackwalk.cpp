@@ -314,6 +314,13 @@ void CrawlFrame::SetCurGSCookie(GSCookie * pGSCookie)
 #endif // !DACCESS_COMPILE
 }
 
+bool CrawlFrame::IsDiagnosticsHidden()
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    return ((pFunc != nullptr) && pFunc->IsDiagnosticsHidden()) ||
+           (IsFrameless() && codeInfo.IsValid() && GetJitManager()->IsAsyncWrapper(&codeInfo));
+}
+
 bool CrawlFrame::IsFilterFunclet()
 {
     WRAPPER_NO_CONTRACT;
@@ -1983,14 +1990,14 @@ ProcessFuncletsForGCReporting:
                         // and its parent, eventually making a callback for the parent as well.
                         if (m_flags & (FUNCTIONSONLY | SKIPFUNCLETS))
                         {
-                            if (!m_sfParent.IsNull() || m_crawl.pFunc->IsDiagnosticsHidden())
+                            if (!m_sfParent.IsNull() || m_crawl.IsDiagnosticsHidden())
                             {
                                 STRESS_LOG4(LF_GCROOTS, LL_INFO100,
                                     "STACKWALK: %s: not making callback for this frame, SPOfParent = %p, \
                                     isDiagnosticsHidden = %d, m_crawl.pFunc = %pM\n",
                                     (!m_sfParent.IsNull() ? "SKIPPING_TO_FUNCLET_PARENT" : "IS_DIAGNOSTICS_HIDDEN"),
                                     (void*)m_sfParent.SP,
-                                    (m_crawl.pFunc->IsDiagnosticsHidden() ? 1 : 0),
+                                    (m_crawl.IsDiagnosticsHidden() ? 1 : 0),
                                     m_crawl.pFunc);
 
                                 // don't stop here

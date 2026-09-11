@@ -4615,6 +4615,8 @@ BasicBlock* Compiler::fgSplitBlockAtEnd(BasicBlock* curr)
 
     // Set the new block's flags. Note that the new block isn't BBF_INTERNAL unless the old block is.
     newBlock->CopyFlags(curr);
+    newBlock->bbIsAsyncWrapper    = curr->bbIsAsyncWrapper;
+    newBlock->bbAsyncWrapperOwner = curr->bbAsyncWrapperOwner;
 
     // Remove flags that the new block can't have.
     newBlock->RemoveFlags(BBF_KEEP_BBJ_ALWAYS | BBF_OSR_PATCHPOINT | BBF_BACKWARD_JUMP_TARGET | BBF_LOOP_ALIGN);
@@ -4776,6 +4778,19 @@ BasicBlock* Compiler::fgSplitBlockAfterNode(BasicBlock* curr, GenTree* node)
         {
             LIR::Range nodesToMove = currBBRange.Remove(node->gtNext, currBBRange.LastNode());
             LIR::AsRange(newBlock).InsertAtBeginning(std::move(nodesToMove));
+            if (curr->bbAsyncResume != nullptr)
+            {
+                for (GenTree* moved : LIR::AsRange(newBlock))
+                {
+                    if (moved->OperIs(GT_ASYNC_RESUME_INFO) ||
+                        (moved->IsCall() && moved->AsCall()->IsAsyncResumeCall()))
+                    {
+                        newBlock->bbAsyncResume = curr->bbAsyncResume;
+                        curr->bbAsyncResume     = nullptr;
+                        break;
+                    }
+                }
+            }
         }
 
         // Update the IL offsets of the blocks to match the split.
@@ -4865,6 +4880,8 @@ BasicBlock* Compiler::fgSplitBlockAtBeginning(BasicBlock* curr)
         newBlock->SetLastLIRNode(curr->GetLastLIRNode());
         curr->SetFirstLIRNode(nullptr);
         curr->SetLastLIRNode(nullptr);
+        newBlock->bbAsyncResume = curr->bbAsyncResume;
+        curr->bbAsyncResume     = nullptr;
     }
     else
     {
@@ -4935,6 +4952,8 @@ BasicBlock* Compiler::fgSplitEdge(BasicBlock* curr, BasicBlock* succ)
     // Async resumption stubs are permitted to branch into EH regions, so if we
     // split such a branch we should also copy this flag.
     newBlock->CopyFlags(curr, BBF_ASYNC_RESUMPTION);
+    newBlock->bbIsAsyncWrapper    = curr->bbIsAsyncWrapper;
+    newBlock->bbAsyncWrapperOwner = curr->bbAsyncWrapperOwner;
 
     JITDUMP("Splitting edge from " FMT_BB " to " FMT_BB "; adding " FMT_BB "\n", curr->bbNum, succ->bbNum,
             newBlock->bbNum);

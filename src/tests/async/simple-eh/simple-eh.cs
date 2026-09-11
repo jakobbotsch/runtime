@@ -13,6 +13,38 @@ using Xunit;
 
 public class Async2SimpleEH
 {
+    [Theory]
+    [InlineData(1)]
+    [InlineData(11)]
+    public static void ResumptionPreservesExceptionRegions(int seed)
+    {
+        Assert.Equal(seed * 2 + 13, ResumeThroughHandlers(seed).GetAwaiter().GetResult());
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<int> ResumeThroughHandlers(int seed)
+    {
+        int progress = seed;
+        try
+        {
+            await Task.Yield();
+            progress += 3;
+            throw new IntegerException(progress);
+        }
+        catch (IntegerException ex) when (ex.Value == seed + 3)
+        {
+            await Task.Yield();
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+            progress += ex.Value;
+        }
+        finally
+        {
+            progress += 7;
+        }
+
+        return progress;
+    }
+
     [Fact]
     public static void TestThrowAfterYield()
     {

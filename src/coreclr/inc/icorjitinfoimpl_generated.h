@@ -553,6 +553,13 @@ uint32_t getAddressAlignment(
 void getWasmWellKnownGlobals(
           CORINFO_WASM_WELLKNOWN_GLOBALS* pWellKnownGlobalsOut) override;
 
+void reportCodeEntry(
+          uint32_t startOffset,
+          uint32_t endOffset,
+          CorInfoCodeEntryKind kind,
+          CorInfoCodeEntrySignature signature,
+          uint32_t gcInfoOffset) override;
+
 uint32_t getThreadTLSIndex(
           void** ppIndirection) override;
 

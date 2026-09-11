@@ -1177,6 +1177,27 @@ bool NearDiffer::compareEHInfo(MethodContext* mc, CompileResult* cr1, CompileRes
 //
 bool NearDiffer::compareGCInfo(MethodContext* mc, CompileResult* cr1, CompileResult* cr2)
 {
+    unsigned int entryCount1 = cr1->ReportCodeEntry == nullptr ? 0 : cr1->ReportCodeEntry->GetCount();
+    unsigned int entryCount2 = cr2->ReportCodeEntry == nullptr ? 0 : cr2->ReportCodeEntry->GetCount();
+    if (entryCount1 != entryCount2)
+    {
+        LogVerbose("Reported code entry counts don't match: %u != %u", entryCount1, entryCount2);
+        return false;
+    }
+
+    for (unsigned int i = 0; i < entryCount1; i++)
+    {
+        Agnostic_ReportCodeEntry entry1 = cr1->ReportCodeEntry->Get(i);
+        Agnostic_ReportCodeEntry entry2 = cr2->ReportCodeEntry->Get(i);
+        if (entry1.startOffset != entry2.startOffset || entry1.endOffset != entry2.endOffset ||
+            entry1.kind != entry2.kind || entry1.signature != entry2.signature ||
+            entry1.gcInfoOffset != entry2.gcInfoOffset)
+        {
+            LogVerbose("Reported code entry %u doesn't match.", i);
+            return false;
+        }
+    }
+
     void*  gcInfo1;
     size_t gcInfo1Size;
     void*  gcInfo2;

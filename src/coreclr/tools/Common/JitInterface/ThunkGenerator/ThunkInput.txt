@@ -137,6 +137,8 @@ CORINFO_CALLINFO_FLAGS
 CORINFO_GET_TAILCALL_HELPERS_FLAGS
 CorJitAllocMemFlag
 CorJitFuncKind
+CorInfoCodeEntryKind
+CorInfoCodeEntrySignature
 CorJitResult
 TypeCompareState
 CORINFO_InstructionSet,InstructionSet
@@ -308,6 +310,7 @@ FUNCTIONS
     CorInfoWasmType getWasmLowering(CORINFO_CLASS_HANDLE structHnd);
     uint32_t getAddressAlignment(void* address);
     void getWasmWellKnownGlobals(CORINFO_WASM_WELLKNOWN_GLOBALS* pWellKnownGlobalsOut);
+    void reportCodeEntry(uint32_t startOffset, uint32_t endOffset, CorInfoCodeEntryKind kind, CorInfoCodeEntrySignature signature, uint32_t gcInfoOffset);
     uint32_t getThreadTLSIndex(void                  **ppIndirection);
     int32_t * getAddrOfCaptureThreadGlobal(void                  **ppIndirection);
     void getHelperFtn (CorInfoHelpFunc ftnNum, CORINFO_CONST_LOOKUP* pNativeEntrypoint, CORINFO_METHOD_HANDLE *pMethod);

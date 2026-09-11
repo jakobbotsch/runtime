@@ -3883,6 +3883,12 @@ void GCInfo::gcInfoBlockHdrSave(GcInfoEncoder* gcInfoEncoder, unsigned methodSiz
         gcInfoEncoderWithLog->SetStackBaseRegister(REG_FPBASE);
     }
 
+    if (m_compiler->compGeneratingAsyncWrapperGCInfo)
+    {
+        gcInfoEncoderWithLog->SetSizeOfStackOutgoingAndScratchArea(m_compiler->compAsyncWrapperOutgoingSize);
+        return;
+    }
+
     if (m_compiler->info.compIsVarArgs)
     {
         gcInfoEncoderWithLog->SetIsVarArg();
@@ -4040,15 +4046,62 @@ void GCInfo::gcInfoBlockHdrSave(GcInfoEncoder* gcInfoEncoder, unsigned methodSiz
 //
 // Encoder should be either GcInfoEncoder or GcInfoEncoderWithLogging
 //
+template <typename Action>
+static void gcForEachFrameCodeRange(Compiler* comp, unsigned begin, unsigned end, Action action)
+{
+    if (!comp->compAsyncResumeEntries)
+    {
+        action(begin, end);
+        return;
+    }
+    for (FuncInfoDsc* func : comp->Funcs())
+    {
+        if ((func->funKind == FUNC_ASYNC_WRAPPER) != comp->compGeneratingAsyncWrapperGCInfo)
+        {
+            continue;
+        }
+        unsigned rangeBegin = 0;
+        if (func->funKind != FUNC_ROOT)
+        {
+            emitLocation location(comp->ehEmitCookie(func->GetStartBlock(comp)));
+            rangeBegin = location.CodeOffset(comp->GetEmitter());
+        }
+        unsigned    rangeEnd = comp->info.compNativeCodeSize;
+        BasicBlock* next     = func->GetLastBlock(comp)->Next();
+        if (next != nullptr)
+        {
+            emitLocation location(comp->ehEmitCookie(next));
+            rangeEnd = location.CodeOffset(comp->GetEmitter());
+        }
+        unsigned clippedBegin = max(begin, rangeBegin);
+        unsigned clippedEnd   = min(end, rangeEnd);
+        if (clippedBegin < clippedEnd)
+        {
+            action(clippedBegin, clippedEnd);
+        }
+    }
+}
+
+static bool gcIsOffsetInFrame(Compiler* comp, unsigned offset)
+{
+    bool included = false;
+    gcForEachFrameCodeRange(comp, offset, offset + 1, [&included](unsigned, unsigned) {
+        included = true;
+    });
+    return included;
+}
+
 class InterruptibleRangeReporter
 {
-    unsigned m_uninterruptibleEnd;
-    Encoder* m_gcInfoEncoder;
+    unsigned  m_uninterruptibleEnd;
+    Encoder*  m_gcInfoEncoder;
+    Compiler* m_compiler;
 
 public:
-    InterruptibleRangeReporter(unsigned prologSize, Encoder* gcInfo)
+    InterruptibleRangeReporter(unsigned prologSize, Encoder* gcInfo, Compiler* compiler)
         : m_uninterruptibleEnd(prologSize)
         , m_gcInfoEncoder(gcInfo)
+        , m_compiler(compiler)
     {
     }
 
@@ -4076,7 +4129,10 @@ public:
             {
                 interruptibleEnd += firstInstrSize;
             }
-            m_gcInfoEncoder->DefineInterruptibleRange(m_uninterruptibleEnd, interruptibleEnd - m_uninterruptibleEnd);
+            gcForEachFrameCodeRange(m_compiler, m_uninterruptibleEnd, interruptibleEnd,
+                                    [this](unsigned begin, unsigned end) {
+                m_gcInfoEncoder->DefineInterruptibleRange(begin, end - begin);
+            });
         }
         m_uninterruptibleEnd = igOffs + igSize;
         return true;
@@ -4119,6 +4175,10 @@ void GCInfo::gcMakeRegPtrTable(
     LclVarDsc* varDsc;
     for (varNum = 0, varDsc = m_compiler->lvaTable; varNum < m_compiler->lvaCount; varNum++, varDsc++)
     {
+        if (varDsc->lvIsAsyncWrapperLocal != m_compiler->compGeneratingAsyncWrapperGCInfo)
+        {
+            continue;
+        }
         if (m_compiler->lvaIsFieldOfDependentlyPromotedStruct(varDsc))
         {
             // Field local of a PROMOTION_TYPE_DEPENDENT struct must have been
@@ -4308,6 +4368,12 @@ void GCInfo::gcMakeRegPtrTable(
             if (varTypeIsGC(tempItem->tdTempType()))
             {
                 int offset = tempItem->tdTempOffs();
+#ifdef TARGET_AMD64
+                if (m_compiler->compGeneratingAsyncWrapperGCInfo)
+                {
+                    offset = tempItem->tdAsyncWrapperOffs;
+                }
+#endif
 
                 GcSlotFlags flags = GC_SLOT_UNTRACKED;
                 if (tempItem->tdTempType() == TYP_BYREF)
@@ -4330,7 +4396,7 @@ void GCInfo::gcMakeRegPtrTable(
             }
         }
 
-        if (m_compiler->lvaKeepAliveAndReportThis())
+        if (!m_compiler->compGeneratingAsyncWrapperGCInfo && m_compiler->lvaKeepAliveAndReportThis())
         {
             // We need to report the cached copy as an untracked pointer
             assert(m_compiler->info.compThisArg != BAD_VAR_NUM);
@@ -4363,8 +4429,16 @@ void GCInfo::gcMakeRegPtrTable(
     {
         assert(m_compiler->IsFullPtrRegMapRequired());
 
-        regMaskSmall ptrRegs          = 0;
-        regPtrDsc*   regStackArgFirst = nullptr;
+        regMaskSmall ptrRegs                = 0;
+        regPtrDsc*   regStackArgFirst       = nullptr;
+        regMaskSmall asyncByrefRegs         = 0;
+        unsigned     asyncBirths[REG_COUNT] = {};
+        auto         reportAsyncLifetime = [&](unsigned begin, unsigned end, regMaskSmall mask, regMaskSmall byrefs) {
+            gcForEachFrameCodeRange(m_compiler, begin, end, [&](unsigned clippedBegin, unsigned clippedEnd) {
+                gcInfoRecordGCRegStateChange(gcInfoEncoder, mode, clippedBegin, mask, GC_SLOT_LIVE, byrefs, nullptr);
+                gcInfoRecordGCRegStateChange(gcInfoEncoder, mode, clippedEnd, mask, GC_SLOT_DEAD, byrefs, nullptr);
+            });
+        };
 
         // Walk the list of pointer register/argument entries.
 
@@ -4372,6 +4446,11 @@ void GCInfo::gcMakeRegPtrTable(
         {
             if (genRegPtrTemp->rpdArg)
             {
+                if (!gcIsOffsetInFrame(m_compiler, genRegPtrTemp->rpdOffs == 0 ? 0 : genRegPtrTemp->rpdOffs - 1))
+                {
+                    regStackArgFirst = nullptr;
+                    continue;
+                }
                 if (genRegPtrTemp->rpdArgTypeGet() == rpdARG_KILL)
                 {
                     // Kill all arguments for a call
@@ -4417,6 +4496,29 @@ void GCInfo::gcMakeRegPtrTable(
             }
             else
             {
+                if (m_compiler->compAsyncResumeEntries)
+                {
+                    regMaskSmall dying = genRegPtrTemp->rpdCompiler.rpdDel & ptrRegs;
+                    for (regMaskSmall bits = dying; bits != 0; bits &= bits - 1)
+                    {
+                        regMaskSmall bit = genFindLowestBit(bits);
+                        reportAsyncLifetime(asyncBirths[genRegNumFromMask(bit)], genRegPtrTemp->rpdOffs, bit,
+                                            asyncByrefRegs & bit);
+                    }
+                    ptrRegs &= ~dying;
+                    asyncByrefRegs &= ~dying;
+                    regMaskSmall born = genRegPtrTemp->rpdCompiler.rpdAdd & ~ptrRegs;
+                    for (regMaskSmall bits = born; bits != 0; bits &= bits - 1)
+                    {
+                        asyncBirths[genRegNumFromMask(genFindLowestBit(bits))] = genRegPtrTemp->rpdOffs;
+                    }
+                    ptrRegs |= born;
+                    if (genRegPtrTemp->rpdGCtypeGet() == GCT_BYREF)
+                    {
+                        asyncByrefRegs |= born;
+                    }
+                    continue;
+                }
                 // Record any registers that are becoming dead.
 
                 regMaskSmall regMask   = genRegPtrTemp->rpdCompiler.rpdDel & ptrRegs;
@@ -4442,6 +4544,15 @@ void GCInfo::gcMakeRegPtrTable(
             }
         }
 
+        if (m_compiler->compAsyncResumeEntries)
+        {
+            for (regMaskSmall bits = ptrRegs; bits != 0; bits &= bits - 1)
+            {
+                regMaskSmall bit = genFindLowestBit(bits);
+                reportAsyncLifetime(asyncBirths[genRegNumFromMask(bit)], codeSize, bit, asyncByrefRegs & bit);
+            }
+        }
+
         // Now we can declare the entire method body fully interruptible.
         if (mode == MAKE_REG_PTR_MODE_DO_WORK)
         {
@@ -4449,20 +4560,22 @@ void GCInfo::gcMakeRegPtrTable(
 
             // Now exempt any region marked as IGF_NOGCINTERRUPT
 
-            InterruptibleRangeReporter reporter(prologSize, gcInfoEncoderWithLog);
+            InterruptibleRangeReporter reporter(prologSize, gcInfoEncoderWithLog, m_compiler);
             m_compiler->GetEmitter()->emitGenNoGCLst(reporter);
             unsigned uninterruptibleEnd = reporter.UninterruptibleEnd();
 
             // Report any remainder
             if (uninterruptibleEnd < codeSize)
             {
-                gcInfoEncoderWithLog->DefineInterruptibleRange(uninterruptibleEnd, codeSize - uninterruptibleEnd);
+                gcForEachFrameCodeRange(m_compiler, uninterruptibleEnd, codeSize, [&](unsigned begin, unsigned end) {
+                    gcInfoEncoderWithLog->DefineInterruptibleRange(begin, end - begin);
+                });
             }
         }
     }
-    else if (m_compiler->isFramePointerUsed()) // GetInterruptible() is false, and we're using EBP as a frame pointer.
+    else if (m_compiler->isFramePointerUsed())
     {
-        assert(m_compiler->IsFullPtrRegMapRequired() == false);
+        assert(!m_compiler->IsFullPtrRegMapRequired());
 
         // Walk the list of pointer register/argument entries.
 
@@ -4494,7 +4607,10 @@ void GCInfo::gcMakeRegPtrTable(
                 {
                     for (CallDsc* call = gcCallDescList; call != nullptr; call = call->cdNext)
                     {
-                        numCallSites++;
+                        if (gcIsOffsetInFrame(m_compiler, call->cdOffs - 1))
+                        {
+                            numCallSites++;
+                        }
                     }
                 }
                 pCallSites     = new (m_compiler, CMK_GC) unsigned[numCallSites];
@@ -4505,6 +4621,10 @@ void GCInfo::gcMakeRegPtrTable(
         // Now consider every call.
         for (CallDsc* call = gcCallDescList; call != nullptr; call = call->cdNext)
         {
+            if (!gcIsOffsetInFrame(m_compiler, call->cdOffs - 1))
+            {
+                continue;
+            }
             // Figure out the code offset of this entry.
             unsigned nextOffset = call->cdOffs;
 
@@ -4586,7 +4706,8 @@ void GCInfo::gcMakeRegPtrTable(
             for (regPtrDsc* genRegPtrTemp = gcRegPtrList; genRegPtrTemp != nullptr;
                  genRegPtrTemp            = genRegPtrTemp->rpdNext)
             {
-                if (genRegPtrTemp->rpdArg && genRegPtrTemp->rpdIsCallInstr())
+                if (genRegPtrTemp->rpdArg && genRegPtrTemp->rpdIsCallInstr() &&
+                    gcIsOffsetInFrame(m_compiler, genRegPtrTemp->rpdOffs - 1))
                 {
                     numCallSites++;
                 }
@@ -4601,6 +4722,10 @@ void GCInfo::gcMakeRegPtrTable(
 
         for (regPtrDsc* genRegPtrTemp = gcRegPtrList; genRegPtrTemp != nullptr; genRegPtrTemp = genRegPtrTemp->rpdNext)
         {
+            if (!gcIsOffsetInFrame(m_compiler, genRegPtrTemp->rpdOffs == 0 ? 0 : genRegPtrTemp->rpdOffs - 1))
+            {
+                continue;
+            }
             if (genRegPtrTemp->rpdArg)
             {
                 // Is this a call site?
@@ -4742,7 +4867,8 @@ void GCInfo::gcMakeVarPtrTable(GcInfoEncoder* gcInfoEncoder, MakeRegPtrMode mode
     static_assert((OFFSET_MASK + 1) <= sizeof(int));
 
     // Only need to do this once, and only if we have EH.
-    if ((mode == MAKE_REG_PTR_MODE_ASSIGN_SLOTS) && m_compiler->ehAnyFunclets())
+    if ((mode == MAKE_REG_PTR_MODE_ASSIGN_SLOTS) && m_compiler->ehAnyFunclets() &&
+        !m_compiler->compGeneratingAsyncWrapperGCInfo)
     {
         gcMarkFilterVarsPinned();
     }
@@ -4784,24 +4910,25 @@ void GCInfo::gcMakeVarPtrTable(GcInfoEncoder* gcInfoEncoder, MakeRegPtrMode mode
         {
             stackSlotBase = GC_FRAMEREG_REL;
         }
-        StackSlotIdKey sskey(varOffs, (stackSlotBase == GC_FRAMEREG_REL), flags);
-        GcSlotId       varSlotId;
-        if (mode == MAKE_REG_PTR_MODE_ASSIGN_SLOTS)
-        {
-            if (!m_stackSlotMap->Lookup(sskey, &varSlotId))
+        gcForEachFrameCodeRange(m_compiler, begOffs, endOffs, [&](unsigned clippedBegin, unsigned clippedEnd) {
+            StackSlotIdKey sskey(varOffs, (stackSlotBase == GC_FRAMEREG_REL), flags);
+            GcSlotId       varSlotId;
+            if (mode == MAKE_REG_PTR_MODE_ASSIGN_SLOTS)
             {
-                varSlotId = gcInfoEncoderWithLog->GetStackSlotId(varOffs, flags, stackSlotBase);
-                m_stackSlotMap->Set(sskey, varSlotId);
+                if (!m_stackSlotMap->Lookup(sskey, &varSlotId))
+                {
+                    varSlotId = gcInfoEncoderWithLog->GetStackSlotId(varOffs, flags, stackSlotBase);
+                    m_stackSlotMap->Set(sskey, varSlotId);
+                }
             }
-        }
-        else
-        {
-            bool b = m_stackSlotMap->Lookup(sskey, &varSlotId);
-            assert(b); // Should have been added in the first pass.
-            // Live from the beginning to the end.
-            gcInfoEncoderWithLog->SetSlotState(begOffs, varSlotId, GC_SLOT_LIVE);
-            gcInfoEncoderWithLog->SetSlotState(endOffs, varSlotId, GC_SLOT_DEAD);
-        }
+            else
+            {
+                bool b = m_stackSlotMap->Lookup(sskey, &varSlotId);
+                assert(b);
+                gcInfoEncoderWithLog->SetSlotState(clippedBegin, varSlotId, GC_SLOT_LIVE);
+                gcInfoEncoderWithLog->SetSlotState(clippedEnd, varSlotId, GC_SLOT_DEAD);
+            }
+        });
     }
 }
 

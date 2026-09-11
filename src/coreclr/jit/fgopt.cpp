@@ -1212,6 +1212,8 @@ void Compiler::fgUnreachableBlock(BasicBlock* block)
 
     // First, delete all the code in the block.
 
+    block->bbAsyncResume = nullptr;
+
     if (block->IsLIR())
     {
         LIR::Range& blockRange = LIR::AsRange(block);

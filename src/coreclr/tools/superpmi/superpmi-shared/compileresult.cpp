@@ -1296,6 +1296,27 @@ void CompileResult::dmpAllocUnwindInfo(DWORD key, const Agnostic_AllocUnwindInfo
            value.pUnwindBlock_index, value.funcKind);
 }
 
+void CompileResult::recReportCodeEntry(uint32_t startOffset, uint32_t endOffset,
+                                      CorInfoCodeEntryKind kind, CorInfoCodeEntrySignature signature, uint32_t gcInfoOffset)
+{
+    if (ReportCodeEntry == nullptr)
+        ReportCodeEntry = new DenseLightWeightMap<Agnostic_ReportCodeEntry>();
+
+    Agnostic_ReportCodeEntry value;
+    value.startOffset = startOffset;
+    value.endOffset = endOffset;
+    value.kind = static_cast<DWORD>(kind);
+    value.signature = static_cast<DWORD>(signature);
+    value.gcInfoOffset = gcInfoOffset;
+    ReportCodeEntry->Append(value);
+}
+
+void CompileResult::dmpReportCodeEntry(DWORD key, const Agnostic_ReportCodeEntry& value)
+{
+    printf("ReportCodeEntry key %u, startOff-%u endOff-%u kind-%u signature-%u gcInfoOff-%u",
+           key, value.startOffset, value.endOffset, value.kind, value.signature, value.gcInfoOffset);
+}
+
 void CompileResult::recRecordCallSite(ULONG instrOffset, CORINFO_SIG_INFO* callSig, CORINFO_METHOD_HANDLE methodHandle)
 {
     repRecordCallSite(instrOffset, callSig, methodHandle);

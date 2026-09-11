@@ -2186,6 +2186,27 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
             genCodeForCatchArg(treeNode);
             break;
 
+        case GT_ASYNC_RESUME_ARG:
+        case GT_RESUME_BODY_ARG:
+#ifdef TARGET_AMD64
+            assert(m_compiler->compAsyncResumeEntries);
+            if (treeNode->OperIs(GT_ASYNC_RESUME_ARG))
+            {
+                assert(treeNode->GetRegNum() == (treeNode->TypeIs(TYP_REF) ? REG_ARG_0 : REG_ARG_1));
+            }
+            else
+            {
+                const ABIPassingInformation& abi =
+                    m_compiler->lvaGetParameterABIInfo(static_cast<unsigned>(treeNode->AsVal()->gtVal1));
+                assert(abi.NumSegments == 1 && abi.Segment(0).IsPassedInRegister());
+                assert(treeNode->GetRegNum() == abi.Segment(0).GetRegister());
+            }
+            genProduceReg(treeNode);
+            break;
+#else
+            unreached();
+#endif
+
         case GT_LABEL:
             genPendingCallLabel = genCreateTempLabel();
             emit->emitIns_R_L(INS_lea, EA_PTR_DSP_RELOC, genPendingCallLabel, treeNode->GetRegNum());
@@ -6078,7 +6099,14 @@ void CodeGen::genCallInstruction(GenTreeCall* call X86_ARG(target_ssize_t stackA
 
     GenTree* target = getCallTarget(call, &params.methHnd);
 
-    if (target != nullptr)
+    if (call->IsAsyncResumeCall())
+    {
+        assert(target != nullptr && target->OperIs(GT_RESUME_ENTRY_ADDR) && target->isContained());
+        params.callType  = EC_FUNC_TOKEN;
+        params.codeEntry = call->GetAsyncResumeTarget();
+        genEmitCallWithCurrentGC(params);
+    }
+    else if (target != nullptr)
     {
 #ifdef TARGET_X86
         if (call->IsVirtualStub() && (call->gtCallType == CT_INDIRECT) &&
@@ -8463,6 +8491,34 @@ void CodeGen::genCreateAndStoreGCInfoX64(unsigned codeSize, unsigned prologSize 
 
     gcInfoEncoder->Build();
 
+    if (m_compiler->compAsyncResumeEntries)
+    {
+        GcInfoEncoder* wrapperEncoder = new (m_compiler, CMK_GC)
+            GcInfoEncoder(m_compiler->info.compCompHnd, m_compiler->info.compMethodInfo, allowZeroAlloc, NOMEM);
+        m_compiler->compGeneratingAsyncWrapperGCInfo = true;
+        gcInfo.gcInfoBlockHdrSave(wrapperEncoder, codeSize, 0);
+        unsigned wrapperCallCnt = 0;
+        gcInfo.gcMakeRegPtrTable(wrapperEncoder, codeSize, 0, GCInfo::MAKE_REG_PTR_MODE_ASSIGN_SLOTS, &wrapperCallCnt);
+        wrapperEncoder->FinalizeSlotIds();
+        gcInfo.gcMakeRegPtrTable(wrapperEncoder, codeSize, 0, GCInfo::MAKE_REG_PTR_MODE_DO_WORK, &wrapperCallCnt);
+        wrapperEncoder->Build();
+        m_compiler->compGeneratingAsyncWrapperGCInfo = false;
+
+        size_t mainSize    = gcInfoEncoder->GetEncodedGCInfoSize();
+        size_t wrapperSize = wrapperEncoder->GetEncodedGCInfoSize();
+        if ((mainSize > UINT32_MAX) || (wrapperSize > SIZE_MAX - mainSize))
+        {
+            NOMEM();
+        }
+        m_compiler->compAsyncWrapperGcInfoOffset = static_cast<uint32_t>(mainSize);
+        m_compiler->compInfoBlkSize              = mainSize + wrapperSize;
+        m_compiler->compInfoBlkAddr =
+            static_cast<BYTE*>(m_compiler->info.compCompHnd->allocGCInfo(m_compiler->compInfoBlkSize));
+        gcInfoEncoder->Emit(m_compiler->compInfoBlkAddr);
+        wrapperEncoder->Emit(m_compiler->compInfoBlkAddr + mainSize);
+        return;
+    }
+
     // GC Encoder automatically puts the GC info in the right spot using ICorJitInfo::allocGCInfo(size_t)
     // let's save the values anyway for debugging purposes
     m_compiler->compInfoBlkAddr = gcInfoEncoder->Emit();
@@ -10195,7 +10251,7 @@ void CodeGen::genPushCalleeSavedRegisters(regNumber initReg, bool* pInitRegZeroe
 void CodeGen::genPushCalleeSavedRegistersFromMaskAPX(regMaskTP rsPushRegs)
 {
     // This is not a funclet or an On-Stack Replacement.
-    assert((m_compiler->funCurrentFunc()->funKind == FuncKind::FUNC_ROOT) && !m_compiler->opts.IsOSR());
+    assert(m_compiler->funCurrentFunc()->HasMainFrame() && !m_compiler->opts.IsOSR());
     // PUSH2 doesn't work for ESP.
     assert((rsPushRegs & RBM_SPBASE) == 0);
     // We need to align the stack to 16 bytes to use push2/pop2.
@@ -10438,6 +10494,13 @@ unsigned CodeGen::genPopCalleeSavedRegistersFromMaskAPX(regMaskTP rsPopRegs)
 
 void CodeGen::genFnEpilog(BasicBlock* block)
 {
+#ifdef TARGET_AMD64
+    if (block->bbIsAsyncWrapper)
+    {
+        genAsyncWrapperEpilog();
+        return;
+    }
+#endif
 #ifdef DEBUG
     if (verbose)
     {
@@ -10900,8 +10963,138 @@ void CodeGen::genFnEpilog(BasicBlock* block)
  *
  */
 
+int CodeGen::genAsyncWrapperTempOffset(int tempNum)
+{
+    return regSet.tmpGetNum(tempNum)->tdAsyncWrapperOffs;
+}
+
+int CodeGen::genFrameAddress(int varNum, bool* fpBased)
+{
+    insGroup* ig      = GetEmitter()->emitCurIG;
+    bool      wrapper = (m_compiler->compCurBB != nullptr) && m_compiler->compCurBB->bbIsAsyncWrapper;
+    if ((ig != nullptr) && (m_compiler->compFuncInfoCount != 0))
+    {
+        FuncKind lastKind = m_compiler->funGetFunc(m_compiler->compFuncInfoCount - 1)->funKind;
+        if ((lastKind == FUNC_ASYNC_WRAPPER) || (lastKind == FUNC_ASYNC_RESUME))
+        {
+            // During final output compCurBB is stale; the instruction group owns
+            // the address. Before entry descriptors exist, use the block flags.
+            wrapper = m_compiler->funGetFunc(ig->igFuncIdx)->funKind == FUNC_ASYNC_WRAPPER;
+        }
+    }
+    if ((varNum >= 0) && m_compiler->lvaGetDesc(varNum)->lvIsAsyncWrapperLocal)
+    {
+        *fpBased = isFramePointerUsed();
+        return m_compiler->lvaGetDesc(varNum)->GetStackOffset();
+    }
+    if (wrapper)
+    {
+        if (varNum < 0)
+        {
+            *fpBased = isFramePointerUsed();
+            return genAsyncWrapperTempOffset(varNum);
+        }
+        if (static_cast<unsigned>(varNum) == m_compiler->lvaOutgoingArgSpaceVar)
+        {
+            *fpBased = false;
+            return 0;
+        }
+        assert(!"Wrapper must not address a body-frame local");
+    }
+    return m_compiler->lvaFrameAddress(varNum, fpBased);
+}
+
+void CodeGen::genAsyncWrapperProlog(BasicBlock* block)
+{
+    assert(TargetOS::IsWindows && block->bbIsAsyncWrapperEntry);
+    gcInfo.gcResetForBB();
+    regMaskTP incomingRegs = genMarkAsyncResumeArgs(block);
+    m_compiler->unwindBegProlog();
+
+    if (isFramePointerUsed())
+    {
+        GetEmitter()->emitIns_R(INS_push, EA_PTRSIZE, REG_FPBASE);
+        m_compiler->unwindPush(REG_FPBASE);
+    }
+
+    bool initRegZeroed = false;
+    genAllocLclFrame(m_compiler->compAsyncWrapperFrameSize, REG_R11, &initRegZeroed, incomingRegs);
+    unsigned offset = m_compiler->compAsyncWrapperSaveOffset;
+    for (regNumber reg = REG_INT_FIRST; reg < REG_COUNT; reg = REG_NEXT(reg))
+    {
+        if ((m_compiler->compAsyncWrapperSavedRegs & genRegMask(reg)) == RBM_NONE)
+        {
+            continue;
+        }
+        bool floating = genIsValidFloatReg(reg);
+        GetEmitter()->emitIns_AR_R(floating ? INS_movaps : INS_mov, floating ? EA_16BYTE : EA_PTRSIZE, reg, REG_SPBASE,
+                                   offset);
+        m_compiler->unwindSaveReg(reg, offset);
+        offset += 16;
+    }
+    if (isFramePointerUsed())
+    {
+        genEstablishFramePointer(0, true);
+    }
+    m_compiler->unwindEndProlog();
+
+    // Only roots with untracked lifetimes need initialization. Inputs and
+    // tracked locals are defined by wrapper IR before its first safe point.
+    for (unsigned lclNum = 0; lclNum < m_compiler->lvaCount; lclNum++)
+    {
+        LclVarDsc* var = m_compiler->lvaGetDesc(lclNum);
+        if (!var->lvIsAsyncWrapperLocal || !var->lvOnFrame || !var->HasGCPtr() ||
+            (var->lvTracked && !varTypeIsStruct(var) && !m_compiler->opts.MinOpts()))
+        {
+            continue;
+        }
+        unsigned size = m_compiler->lvaLclStackHomeSize(lclNum);
+        for (unsigned slot = 0; slot < size; slot += TARGET_POINTER_SIZE)
+        {
+            if (!varTypeIsStruct(var) || var->GetLayout()->IsGCPtr(slot / TARGET_POINTER_SIZE))
+            {
+                GetEmitter()->emitIns_I_AR(INS_mov, EA_PTRSIZE, 0, REG_SPBASE, var->GetStackOffset() + slot);
+            }
+        }
+    }
+    for (TempDsc* temp = regSet.tmpListBeg(); temp != nullptr; temp = regSet.tmpListNxt(temp))
+    {
+        if (varTypeIsGC(temp->tdTempType()))
+        {
+            GetEmitter()->emitIns_I_AR(INS_mov, EA_PTRSIZE, 0, REG_SPBASE, temp->tdAsyncWrapperOffs);
+        }
+    }
+}
+
+void CodeGen::genAsyncWrapperEpilog()
+{
+    unsigned offset = m_compiler->compAsyncWrapperSaveOffset;
+    for (regNumber reg = REG_INT_FIRST; reg < REG_COUNT; reg = REG_NEXT(reg))
+    {
+        if ((m_compiler->compAsyncWrapperSavedRegs & genRegMask(reg)) == RBM_NONE)
+        {
+            continue;
+        }
+        bool floating = genIsValidFloatReg(reg);
+        GetEmitter()->emitIns_R_AR(floating ? INS_movaps : INS_mov, floating ? EA_16BYTE : EA_PTRSIZE, reg, REG_SPBASE,
+                                   offset);
+        offset += 16;
+    }
+    inst_RV_IV(INS_add, REG_SPBASE, m_compiler->compAsyncWrapperFrameSize, EA_PTRSIZE);
+    if (isFramePointerUsed())
+    {
+        GetEmitter()->emitIns_R(INS_pop, EA_PTRSIZE, REG_FPBASE);
+    }
+    instGen_Return(0);
+}
+
 void CodeGen::genFuncletProlog(BasicBlock* block)
 {
+    if (block->bbIsAsyncWrapper)
+    {
+        genAsyncWrapperProlog(block);
+        return;
+    }
 #ifdef DEBUG
     if (verbose)
     {
@@ -10951,6 +11144,11 @@ void CodeGen::genFuncletProlog(BasicBlock* block)
 
 void CodeGen::genFuncletEpilog(BasicBlock* /* block */)
 {
+    if (m_compiler->funCurrentFunc()->funKind == FUNC_ASYNC_WRAPPER)
+    {
+        genAsyncWrapperEpilog();
+        return;
+    }
 #ifdef DEBUG
     if (verbose)
     {

@@ -818,6 +818,42 @@ namespace Internal.JitInterface
         CORJIT_ALLOCMEM_HAS_POINTERS_TO_CODE = 8,
     }
 
+    public enum CorInfoCodeEntryKind
+    {
+        CORINFO_CODE_ENTRY_MAIN,
+        CORINFO_CODE_ENTRY_HANDLER,
+        CORINFO_CODE_ENTRY_FILTER,
+        CORINFO_CODE_ENTRY_ASYNC_RESUME,
+        CORINFO_CODE_ENTRY_ASYNC_WRAPPER
+    }
+
+    public enum CorInfoCodeEntrySignature
+    {
+        CORINFO_CODE_ENTRY_SIG_METHOD,
+        CORINFO_CODE_ENTRY_SIG_CATCH_FILTER,
+        CORINFO_CODE_ENTRY_SIG_FINALLY_FAULT,
+        CORINFO_CODE_ENTRY_SIG_ASYNC_RESUME,
+        CORINFO_CODE_ENTRY_SIG_BODY_RESUME
+    }
+
+    public readonly struct CodeEntryInfo
+    {
+        public readonly uint StartOffset;
+        public readonly uint EndOffset;
+        public readonly CorInfoCodeEntryKind Kind;
+        public readonly CorInfoCodeEntrySignature Signature;
+        public readonly uint GCInfoOffset;
+
+        public CodeEntryInfo(uint startOffset, uint endOffset, CorInfoCodeEntryKind kind, CorInfoCodeEntrySignature signature, uint gcInfoOffset)
+        {
+            StartOffset = startOffset;
+            EndOffset = endOffset;
+            Kind = kind;
+            Signature = signature;
+            GCInfoOffset = gcInfoOffset;
+        }
+    }
+
     public enum CorJitFuncKind
     {
         CORJIT_FUNC_ROOT,          // The main/root function (always id==0)

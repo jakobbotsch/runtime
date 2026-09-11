@@ -22,6 +22,7 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
 
         private ObjectData _methodCode;
         private FrameInfo[] _frameInfos;
+        private CodeEntryInfo[] _codeEntries;
         private FrameInfo[] _coldFrameInfos;
         private byte[] _gcInfo;
         private ObjectData _ehInfo;
@@ -313,12 +314,19 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
         }
 
         public FrameInfo[] FrameInfos => _frameInfos;
+        public CodeEntryInfo[] CodeEntries => _codeEntries;
 
         public FrameInfo[] ColdFrameInfos => _coldFrameInfos;
 
         public byte[] GCInfo => _gcInfo;
         public ObjectData EHInfo => _ehInfo;
         public MethodDesc[] InlinedMethods => _inlinedMethods;
+
+        public void InitializeCodeEntries(CodeEntryInfo[] codeEntries)
+        {
+            Debug.Assert(_codeEntries is null);
+            _codeEntries = codeEntries;
+        }
 
         public void InitializeFrameInfos(FrameInfo[] frameInfos)
         {

@@ -1076,6 +1076,12 @@ bool LinearScan::buildKillPositionsForNode(GenTree* tree, LsraLocation currentLo
 {
     bool insertedKills = false;
 
+    if (m_compiler->compAsyncResumeEntries && (m_compiler->compCurBB != nullptr) &&
+        m_compiler->compCurBB->bbIsAsyncWrapper)
+    {
+        m_compiler->compAsyncWrapperUsedRegs |= killMask & RBM_CALLEE_SAVED;
+    }
+
     if (killMask.IsNonEmpty())
     {
         addKillForRegs(killMask, currentLoc);
@@ -2326,6 +2332,11 @@ void LinearScan::buildIntervals()
             }
             VarSetOps::AssignNoCopy(m_compiler, currentLiveVars,
                                     VarSetOps::Intersection(m_compiler, registerCandidateVars, block->bbLiveIn));
+            if (block->bbIsAsyncResumeEntry || block->bbIsAsyncWrapperEntry)
+            {
+                // A dummy definition here would read an uninitialized new frame.
+                assert(VarSetOps::IsEmpty(m_compiler, block->bbLiveIn));
+            }
 
             if (block == m_compiler->fgFirstBB)
             {

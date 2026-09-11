@@ -2394,8 +2394,7 @@ template <typename GcInfoEncoding> void TGcInfoEncoder<GcInfoEncoding>::Eliminat
 //
 template <typename GcInfoEncoding> BYTE* TGcInfoEncoder<GcInfoEncoding>::Emit()
 {
-    size_t cbGcInfoSize = m_Info1.GetByteCount() +
-                          m_Info2.GetByteCount();
+    size_t cbGcInfoSize = GetEncodedGCInfoSize();
 
     GCINFO_LOG( LL_INFO100, "GcInfoEncoder::Emit(): Size of GC info is %u bytes, code size %u bytes.\n", (unsigned)cbGcInfoSize, m_CodeLength );
 
@@ -2404,6 +2403,13 @@ template <typename GcInfoEncoding> BYTE* TGcInfoEncoder<GcInfoEncoding>::Emit()
     // NOTE: the returned pointer may not be aligned during ngen.
     _ASSERTE( destBuffer );
 
+    return Emit(destBuffer);
+}
+
+template <typename GcInfoEncoding> BYTE* TGcInfoEncoder<GcInfoEncoding>::Emit(BYTE* destBuffer)
+{
+    _ASSERTE(destBuffer != nullptr);
+    m_BlockSize = m_Info1.GetByteCount() + m_Info2.GetByteCount();
     BYTE* ptr = destBuffer;
 
     m_Info1.CopyTo( ptr );
@@ -2429,7 +2435,7 @@ template <typename GcInfoEncoding> void * TGcInfoEncoder<GcInfoEncoding>::eeAllo
 
 template <typename GcInfoEncoding> size_t TGcInfoEncoder<GcInfoEncoding>::GetEncodedGCInfoSize() const
 {
-    return m_BlockSize;
+    return m_BlockSize != 0 ? m_BlockSize : m_Info1.GetByteCount() + m_Info2.GetByteCount();
 }
 
 

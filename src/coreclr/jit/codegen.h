@@ -619,9 +619,18 @@ protected:
     // Common or driving functions
     //
 
-    void genReserveProlog(BasicBlock* block); // currently unused
-    void genReserveEpilog(BasicBlock* block);
-    void genFnProlog();
+    void      genReserveProlog(BasicBlock* block); // currently unused
+    void      genReserveEpilog(BasicBlock* block);
+    void      genFnProlog(bool isAsyncResume = false);
+    regMaskTP genMarkAsyncResumeArgs(BasicBlock* block);
+    bool      genIsAsyncResumeLocalRestored(unsigned lclNum);
+    void      genReportCodeEntries();
+#ifdef TARGET_AMD64
+    void genAsyncWrapperProlog(BasicBlock* block);
+    void genAsyncWrapperEpilog();
+    int  genAsyncWrapperTempOffset(int tempNum);
+    int  genFrameAddress(int varNum, bool* fpBased);
+#endif
     void genBeginFnProlog();
     void genFnEpilog(BasicBlock* block);
 

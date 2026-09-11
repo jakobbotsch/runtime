@@ -14,6 +14,108 @@ public class Async2Returns
         Returns(new C()).Wait();
     }
 
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(17, false)]
+    [InlineData(17, true)]
+    [InlineData(-91, false)]
+    [InlineData(-91, true)]
+    public static void ResumptionPreservesState(int seed, bool suspend)
+    {
+        S<long> result = ResumeWithState(seed, suspend).GetAwaiter().GetResult();
+
+        Assert.Equal(seed + 3L, result.A);
+        Assert.Equal(seed * 7L + 11, result.B);
+        Assert.Equal(seed * 13L + 19, result.C);
+        Assert.Equal(seed * 23L + 29, result.D);
+    }
+
+    [Theory]
+    [InlineData("first")]
+    [InlineData("another result")]
+    public static void ResumptionPropagatesGcStruct(string value)
+    {
+        S<string> result = ResumeGcStruct(value).GetAwaiter().GetResult();
+        Assert.Same(value, result.A);
+        Assert.Equal(value, result.B);
+        Assert.Same(result.B, result.C);
+        Assert.Same(value, result.D);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<S<string>> ResumeGcStruct(string value)
+    {
+        string copy = new string(value.ToCharArray());
+        await Task.Yield();
+        CollectWithWrapperOnStack();
+        return new S<string> { A = value, B = copy, C = copy, D = value };
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void CollectWithWrapperOnStack()
+    {
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<S<long>> ResumeWithState(int seed, bool suspend)
+    {
+        long a = seed + 3L;
+        long b = seed * 7L + 11;
+        long c = seed * 13L + 19;
+        long d = seed * 23L + 29;
+        double fraction = seed + 0.25;
+        string text = seed.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        C holder = new C { Val = new S<long> { A = a, B = b, C = c, D = d } };
+
+        for (int i = 0; i < 3; i++)
+        {
+            if (suspend)
+            {
+                await Task.Yield();
+            }
+            else
+            {
+                await Task.CompletedTask;
+            }
+
+            Assert.Equal(a, holder.Val.A);
+            Assert.Equal(b, holder.Val.B);
+            Assert.Equal(c, holder.Val.C);
+            Assert.Equal(d, holder.Val.D);
+            Assert.Equal(seed + 0.25, fraction);
+            Assert.Equal(seed.ToString(System.Globalization.CultureInfo.InvariantCulture), text);
+
+            if ((seed & 1) == 0)
+            {
+                await Task.Yield();
+                a += i;
+            }
+            else
+            {
+                await Task.Yield();
+                b += i;
+            }
+
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+
+            Assert.Equal(seed + 3L, holder.Val.A);
+            Assert.Equal(seed * 7L + 11, holder.Val.B);
+            if ((seed & 1) == 0)
+            {
+                a -= i;
+            }
+            else
+            {
+                b -= i;
+            }
+        }
+
+        GC.KeepAlive(text);
+        return new S<long> { A = a, B = b, C = c, D = d };
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static async Task Returns(C c)
     {

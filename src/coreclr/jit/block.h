@@ -1722,6 +1722,17 @@ public:
 
     void* bbEmitCookie;
 
+    // Lifetime dependency, not an executable successor. The save point keeps its
+    // independently callable resume entry reachable, without transporting register state.
+    BasicBlock*               bbAsyncResume         = nullptr;
+    unsigned short            bbAsyncResumeFuncIdx  = 0;
+    bool                      bbIsAsyncResumeEntry  = false;
+    bool                      bbIsAsyncWrapper      = false;
+    bool                      bbIsAsyncWrapperEntry = false;
+    BasicBlock*               bbAsyncWrapperOwner   = nullptr;
+    BasicBlock*               bbAsyncWrapperLast    = nullptr;
+    jitstd::vector<unsigned>* bbAsyncRestoreLocals  = nullptr;
+
     //-------------------------------------------------------------------------
 
 #if MEASURE_BLOCK_SIZE

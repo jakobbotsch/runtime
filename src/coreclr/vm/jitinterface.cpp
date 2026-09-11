@@ -11213,10 +11213,12 @@ CEECodeGenInfo::CEECodeGenInfo(PrepareCodeConfig* config, MethodDesc* fd, COR_IL
     , m_CodeHeader(NULL)
     , m_CodeHeaderRW(NULL)
     , m_codeWriteBufferSize(0)
+    , m_gcInfoSize(0)
     , m_pRealCodeHeader(NULL)
     , m_pCodeHeap(NULL)
     , m_ILHeader(header)
     , m_MethodInfo()
+    , m_codeSize(0)
     , m_iOffsetMapping(0)
     , m_pOffsetMapping(NULL)
     , m_iNativeVarInfo(0)
@@ -11919,9 +11921,7 @@ void CInterpreterJitInfo::allocMem(AllocMemArgs *pArgs)
 
     _ASSERTE((SIZE_T)(current - (BYTE *)((InterpreterCodeHeader*)m_CodeHeader)->GetCodeStartAddress()) <= totalSize.Value());
 
-#ifdef _DEBUG
     m_codeSize = codeSize;
-#endif  // _DEBUG
 
     EE_TO_JIT_TRANSITION();
 }
@@ -12141,6 +12141,97 @@ void CEEJitInfo::reserveUnwindInfo(bool isFunclet, bool isColdCode, uint32_t unw
     m_totalUnwindInfos++;
 
     EE_TO_JIT_TRANSITION_LEAF();
+}
+
+void CEEInfo::reportCodeEntry(uint32_t startOffset, uint32_t endOffset,
+                            CorInfoCodeEntryKind kind, CorInfoCodeEntrySignature signature, uint32_t gcInfoOffset)
+{
+    CONTRACTL {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+    } CONTRACTL_END;
+
+    JIT_TO_EE_TRANSITION();
+    // Only native code generation has code ranges to report.
+    COMPlusThrowHR(COR_E_INVALIDPROGRAM);
+    EE_TO_JIT_TRANSITION();
+}
+
+void CEEJitInfo::reportCodeEntry(uint32_t startOffset, uint32_t endOffset,
+                               CorInfoCodeEntryKind kind, CorInfoCodeEntrySignature signature, uint32_t gcInfoOffset)
+{
+    CONTRACTL {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+    } CONTRACTL_END;
+
+    JIT_TO_EE_TRANSITION();
+
+    bool validSignature = false;
+    switch (kind)
+    {
+        case CORINFO_CODE_ENTRY_MAIN:
+            validSignature = startOffset == 0 && signature == CORINFO_CODE_ENTRY_SIG_METHOD;
+            break;
+        case CORINFO_CODE_ENTRY_HANDLER:
+            validSignature = signature == CORINFO_CODE_ENTRY_SIG_CATCH_FILTER ||
+                             signature == CORINFO_CODE_ENTRY_SIG_FINALLY_FAULT;
+            break;
+        case CORINFO_CODE_ENTRY_FILTER:
+            validSignature = signature == CORINFO_CODE_ENTRY_SIG_CATCH_FILTER;
+            break;
+        case CORINFO_CODE_ENTRY_ASYNC_RESUME:
+            validSignature = signature == CORINFO_CODE_ENTRY_SIG_BODY_RESUME;
+            break;
+        case CORINFO_CODE_ENTRY_ASYNC_WRAPPER:
+            validSignature = signature == CORINFO_CODE_ENTRY_SIG_ASYNC_RESUME;
+            break;
+    }
+
+    if (m_CodeHeaderRW == nullptr || startOffset >= endOffset ||
+        endOffset > m_codeSize || !validSignature || gcInfoOffset >= m_gcInfoSize ||
+        (kind == CORINFO_CODE_ENTRY_ASYNC_WRAPPER) != (gcInfoOffset != 0))
+        COMPlusThrowHR(COR_E_INVALIDPROGRAM);
+
+    CodeHeader* header = static_cast<CodeHeader*>(m_CodeHeaderRW);
+    UINT count = header->GetNumberOfCodeEntries();
+    if (count >= max(1u, header->GetNumberOfUnwindInfos()))
+        COMPlusThrowHR(COR_E_INVALIDPROGRAM);
+
+    for (UINT i = 0; i < count; i++)
+    {
+        CodeEntryInfo* entry = header->GetCodeEntry(i);
+        if (startOffset < entry->endOffset && entry->startOffset < endOffset)
+            COMPlusThrowHR(COR_E_INVALIDPROGRAM);
+    }
+
+    if (count == 0)
+    {
+        S_SIZE_T size = S_SIZE_T(sizeof(CodeEntryTable)) +
+            S_SIZE_T(sizeof(CodeEntryInfo)) * S_SIZE_T(max(1u, header->GetNumberOfUnwindInfos()));
+        if (size.IsOverflow())
+            COMPlusThrowOM();
+
+        // The JIT metadata heap follows the method's loader allocator, or its LCG resolver.
+        CodeEntryTable* entries = reinterpret_cast<CodeEntryTable*>(
+            m_jitManager->AllocFromJitMetaHeap(m_pMethodBeingCompiled, size.Value()));
+        _ASSERTE(FitsInU4(m_gcInfoSize));
+        entries->gcInfoSize = static_cast<DWORD>(m_gcInfoSize);
+        entries->count = 0;
+        header->SetCodeEntries(entries);
+    }
+
+    CodeEntryInfo* entry = header->GetCodeEntry(count);
+    entry->startOffset = startOffset;
+    entry->endOffset = endOffset;
+    entry->kind = kind;
+    entry->signature = signature;
+    entry->gcInfoOffset = gcInfoOffset;
+    header->SetNumberOfCodeEntries(count + 1);
+
+    EE_TO_JIT_TRANSITION();
 }
 
 // Allocate and initialize the .rdata and .pdata for this method or
@@ -13263,9 +13354,7 @@ void CEEJitInfo::allocMem (AllocMemArgs *pArgs)
 
     _ASSERTE(offset <= totalSize.Value());
 
-#ifdef _DEBUG
     m_codeSize = codeSize;
-#endif  // _DEBUG
 
     EE_TO_JIT_TRANSITION();
 }
@@ -13297,6 +13386,7 @@ void * CEEJitInfo::allocGCInfo (size_t size)
     _ASSERTE(block);      // AllocFromJitMetaHeap throws if there's not enough memory
 
     ((CodeHeader*)m_CodeHeaderRW)->SetGCInfo(block);
+    m_gcInfoSize = size;
 
     EE_TO_JIT_TRANSITION();
 
@@ -16144,7 +16234,7 @@ PTR_CBYTE EECodeInfo::DecodeGCHdrInfoHelper(hdrInfo ** infoPtr)
 PTR_CBYTE EECodeInfo::DecodeGCHdrInfo(hdrInfo * infoPtr, DWORD relOffset)
 {
     _ASSERTE(infoPtr != NULL);
-    GCInfoToken gcInfoToken = GetGCInfoToken();
+    GCInfoToken gcInfoToken = GetGCInfoToken(relOffset);
     DWORD hdrInfoSize = (DWORD)::DecodeGCHdrInfo(gcInfoToken, relOffset, infoPtr);
     _ASSERTE(hdrInfoSize != 0);
     return (PTR_CBYTE)gcInfoToken.Info + hdrInfoSize;

@@ -558,7 +558,8 @@ public:
     unsigned char lvHasILStoreOp         : 1; // there is at least one STLOC or STARG on this local
     unsigned char lvHasMultipleILStoreOp : 1; // there is more than one STLOC on this local
 
-    unsigned char lvIsTemp : 1; // Short-lifetime compiler temp
+    unsigned char lvIsTemp              : 1; // Short-lifetime compiler temp
+    unsigned char lvIsAsyncWrapperLocal : 1; // Home belongs to the independent async wrapper frame.
 
 #if FEATURE_IMPLICIT_BYREFS
     // Set if the argument is an implicit byref.
@@ -1397,6 +1398,7 @@ class TempDsc
 {
 public:
     TempDsc* tdNext;
+    int      tdAsyncWrapperOffs = 0;
 
 private:
     int tdOffs;
@@ -1802,6 +1804,8 @@ enum FuncKind : BYTE
     FUNC_ROOT,    // The main/root function (always id==0)
     FUNC_HANDLER, // a funclet associated with an EH handler (finally, fault, catch, filter handler)
     FUNC_FILTER,  // a funclet associated with an EH filter
+    FUNC_ASYNC_RESUME, // a new invocation that establishes the main function's frame
+    FUNC_ASYNC_WRAPPER, // external async ABI adapter with an independent frame
     FUNC_COUNT
 };
 
@@ -1816,6 +1820,8 @@ struct FuncInfoDsc
     unsigned short funEHIndex; // index, into the ebd table, of innermost EH clause corresponding to this
                                // funclet. It is only valid if funKind field indicates this is a
                                // EH-related funclet: FUNC_HANDLER or FUNC_FILTER
+    BasicBlock* funEntry;
+    BasicBlock* funLast;
 
 #if !HAS_FIXED_REGISTER_SET
     regNumber funStackPointerReg;
@@ -1829,6 +1835,7 @@ struct FuncInfoDsc
     unsigned             GetFuncletIdx(Compiler* comp) const;
     bool                 IsFunclet() const { return funKind != FUNC_ROOT; }
     bool                 IsMethod() const { return funKind == FUNC_ROOT; }
+    bool                 HasMainFrame() const { return (funKind == FUNC_ROOT) || (funKind == FUNC_ASYNC_RESUME); }
 
 
 #if defined(TARGET_WASM)
@@ -4467,6 +4474,23 @@ public:
     // SaveAsyncContexts. When false for an inlinee, its resumed indicator is provably
     // always false and no post-inline async frame IR needs to be emitted for it.
     bool compAsyncBodyMaySuspend = false;
+    bool compAsyncResumeEntries = false;
+    unsigned lvaAsyncResumeResult = BAD_VAR_NUM;
+    unsigned lvaAsyncWrapperContinuation = BAD_VAR_NUM;
+    unsigned lvaAsyncWrapperResultStorage = BAD_VAR_NUM;
+    unsigned lvaAsyncWrapperReturnValue = BAD_VAR_NUM;
+    unsigned lvaAsyncWrapperNextContinuation = BAD_VAR_NUM;
+    unsigned compAsyncWrapperOutgoingSize = 0;
+    unsigned compAsyncWrapperFrameSize = 0;
+    unsigned compAsyncWrapperSaveOffset = 0;
+    unsigned compAsyncWrapperTempOffset = 0;
+    uint32_t compAsyncWrapperGcInfoOffset = 0;
+    bool compGeneratingAsyncWrapperGCInfo = false;
+    regMaskTP compAsyncWrapperSavedRegs = RBM_NONE;
+    regMaskTP compAsyncWrapperUsedRegs = RBM_NONE;
+    ReturnTypeDesc compAsyncWrapperRetTypeDesc;
+    jitstd::vector<BasicBlock*>* compAsyncResumeBlocks = nullptr;
+    jitstd::vector<BasicBlock*>* compAsyncBodyResumeBlocks = nullptr;
 
 #if defined(DEBUG) && defined(TARGET_XARCH)
 
@@ -10020,6 +10044,7 @@ public:
     void         funSetCurrentFunc(unsigned funcIdx);
     FuncInfoDsc* funGetFunc(unsigned funcIdx);
     unsigned int funGetFuncIdx(BasicBlock* block);
+    void         fgCreateAsyncResumeFunclets();
     unsigned int bbFuncletRegionOf(BasicBlock* block);
     bool         bbIsInSameFunclet(BasicBlock* block1, BasicBlock* block2);
 
@@ -13474,7 +13499,7 @@ public:
 
 inline EHblkDsc* FuncInfoDsc::GetEHDesc(Compiler* comp) const
 {
-    assert(funKind != FUNC_ROOT);
+    assert((funKind == FUNC_HANDLER) || (funKind == FUNC_FILTER));
 
     EHblkDsc* const ehDsc = comp->ehGetDsc(funEHIndex);
     assert(ehDsc != nullptr);
@@ -13484,6 +13509,11 @@ inline EHblkDsc* FuncInfoDsc::GetEHDesc(Compiler* comp) const
 
 inline BasicBlock* FuncInfoDsc::GetStartBlock(Compiler* comp) const
 {
+    if ((funKind == FUNC_ASYNC_RESUME) || (funKind == FUNC_ASYNC_WRAPPER))
+    {
+        assert(funEntry != nullptr);
+        return funEntry;
+    }
     if (funKind == FUNC_ROOT)
     {
         assert(comp->fgFirstBB != nullptr);
@@ -13504,6 +13534,11 @@ inline BasicBlock* FuncInfoDsc::GetStartBlock(Compiler* comp) const
 
 inline BasicBlock* FuncInfoDsc::GetLastBlock(Compiler* comp) const
 {
+    if ((funKind == FUNC_ASYNC_RESUME) || (funKind == FUNC_ASYNC_WRAPPER))
+    {
+        assert(funLast != nullptr);
+        return funLast;
+    }
     if (funKind == FUNC_ROOT)
     {
         return comp->fgLastBBInMainFunction();

@@ -1098,7 +1098,8 @@ PhaseStatus Compiler::TransformAsync()
 //
 PhaseStatus AsyncTransformation::Run()
 {
-    PhaseStatus             result = PhaseStatus::MODIFIED_NOTHING;
+    m_compiler->compAsyncResumeEntries = CanUseResumeEntries();
+    PhaseStatus             result     = PhaseStatus::MODIFIED_NOTHING;
     ArrayStack<BasicBlock*> blocksWithNormalAwaits(m_compiler->getAllocator(CMK_Async));
     ArrayStack<BasicBlock*> blocksWithTailAwaits(m_compiler->getAllocator(CMK_Async));
     ArrayStack<GenTree*>    continuationMemberOffsets(m_compiler->getAllocator(CMK_Async));
@@ -1133,6 +1134,7 @@ PhaseStatus AsyncTransformation::Run()
 
     if (awaits.NumNormalAwaits <= 0)
     {
+        m_compiler->compAsyncResumeEntries = false;
         assert(continuationMemberOffsets.Empty());
         if ((awaits.NumTailAwaits > 0) && m_compiler->doesMethodHavePatchpoints())
         {
@@ -1263,7 +1265,14 @@ PhaseStatus AsyncTransformation::Run()
 
     // After transforming all async calls we have created resumption blocks;
     // create the resumption switch.
-    CreateResumptionSwitch(commonAsyncResumedDef);
+    if (m_compiler->compAsyncResumeEntries)
+    {
+        CreateResumeEntries(commonAsyncResumedDef);
+    }
+    else
+    {
+        CreateResumptionSwitch(commonAsyncResumedDef);
+    }
 
     // Now bash all GT_CONTINUATION_MEMBER_OFFSET into appropriate constants.
     for (GenTree* node : continuationMemberOffsets.BottomUpOrder())
@@ -1531,6 +1540,11 @@ void AsyncTransformation::Transform(BasicBlock*               block,
 
     if (reusedState != nullptr)
     {
+        for (unsigned lclNum : layoutBuilder->DefaultLocals())
+        {
+            reusedState->Layout->AddDefaultLocal(lclNum);
+        }
+
         JITDUMP("  Reused state %u\n", reusedState->Number);
         CreateCheckAndSuspendAfterCall(block, call, callDefInfo, reusedState->SuspensionBB, remainder);
 
@@ -2794,6 +2808,14 @@ void AsyncTransformation::CreateSuspension(BasicBlock*                      call
         new (m_compiler, GT_ASYNC_RESUME_INFO) GenTreeVal(GT_ASYNC_RESUME_INFO, TYP_I_IMPL, (ssize_t)stateNum);
     GenTree* storeResume = StoreAtOffset(newContinuation, resumeInfoOffset, resumeInfoAddr, TYP_I_IMPL);
     LIR::AsRange(suspendBB).InsertAtEnd(LIR::SeqTree(m_compiler, storeResume));
+    if (m_compiler->compAsyncResumeEntries)
+    {
+        assert(suspendBB->bbAsyncResume == nullptr);
+        assert(m_states[stateNum].Number == stateNum);
+        suspendBB->bbAsyncResume = m_states[stateNum].ResumptionBB;
+        JITDUMP("Async lifetime dependency " FMT_BB " -> " FMT_BB " (not executable flow)\n", suspendBB->bbNum,
+                suspendBB->bbAsyncResume->bbNum);
+    }
 
     // Fill in 'state'
     newContinuation       = m_compiler->gtNewLclvNode(newContinuationVar, TYP_REF);
@@ -5042,9 +5064,477 @@ BasicBlock* AsyncTransformation::CreateOSRJumpBB(GenTree* osrAddress)
 }
 
 //------------------------------------------------------------------------
-// AsyncTransformation::CreateResumptionSwitch:
-//   Create the IR for the entry of the function that checks the continuation
-//   and dispatches on its state number.
+// AsyncTransformation::CanUseResumeEntries:
+//   Gate backend features not yet covered by the experimental wrapper implementation.
+//
+bool AsyncTransformation::CanUseResumeEntries()
+{
+    if (JitConfig.JitAsyncResumeEntries() == 0)
+    {
+        return false;
+    }
+
+    const char* reason = nullptr;
+#if !defined(TARGET_AMD64) || defined(UNIX_AMD64_ABI)
+    reason = "requires Windows x64";
+#else
+    if (m_compiler->IsAot() || m_compiler->opts.IsOSR() || m_compiler->opts.IsTier0() ||
+        m_compiler->opts.OptimizationDisabled() || m_compiler->doesMethodHavePatchpoints())
+    {
+        reason = "requires optimized, non-OSR native JIT code";
+    }
+    else if ((m_compiler->compHndBBtabCount > 1) ||
+             ((m_compiler->compHndBBtabCount == 1) &&
+              !m_compiler->ehIsAsyncContextRestore(m_compiler->ehGetDsc(0)->ebdID)))
+    {
+        reason = "user or nested EH frame";
+    }
+    else if (m_compiler->compLocallocUsed || m_compiler->compJmpOpUsed || m_compiler->compTailCallUsed ||
+             m_compiler->getNeedsGSSecurityCookie() || m_compiler->compIsProfilerHookNeeded() ||
+             m_compiler->info.compIsVarArgs || m_compiler->info.compPublishStubParam ||
+             (m_compiler->lvaInlinedPInvokeFrameVar != BAD_VAR_NUM))
+    {
+        reason = "unsupported frame or entry instrumentation";
+    }
+    else if (m_compiler->lvaReportParamTypeArg() || m_compiler->lvaKeepAliveAndReportThis())
+    {
+        reason = "reported generic context";
+    }
+    else
+    {
+        for (BasicBlock* block : m_compiler->Blocks())
+        {
+            for (GenTree* node : LIR::AsRange(block))
+            {
+                if (node->IsCall() && node->AsCall()->IsUnmanaged())
+                {
+                    reason = "unmanaged call";
+                    break;
+                }
+            }
+        }
+        for (unsigned i = 0; i < m_compiler->lvaCount; i++)
+        {
+            if (i == m_compiler->lvaOutgoingArgSpaceVar)
+            {
+                continue;
+            }
+            LclVarDsc* dsc = m_compiler->lvaGetDesc(i);
+            if (dsc->IsImplicitByRef())
+            {
+                reason = "implicit-byref parameter pointee home";
+                break;
+            }
+        }
+    }
+#endif
+    if (reason != nullptr)
+    {
+        JITDUMP("Async resume entries rejected: %s\n", reason);
+        return false;
+    }
+
+    JITDUMP("Async resume entries enabled\n");
+    return true;
+}
+
+//------------------------------------------------------------------------
+// CreateResumeEntries: Define the arguments of each independent invocation.
+// The suspension block's lifetime dependency is its only incoming graph edge.
+//
+void AsyncTransformation::CreateResumeEntries(GenTreeLclVarCommon* commonAsyncResumedDef)
+{
+    m_compiler->compAsyncResumeBlocks =
+        new (m_compiler, CMK_Async) jitstd::vector<BasicBlock*>(m_compiler->getAllocator(CMK_Async));
+    m_compiler->compAsyncBodyResumeBlocks =
+        new (m_compiler, CMK_Async) jitstd::vector<BasicBlock*>(m_compiler->getAllocator(CMK_Async));
+    m_compiler->compAsyncWrapperOutgoingSize =
+        max(m_compiler->lvaParameterStackSize, static_cast<unsigned>(MIN_ARG_AREA_FOR_CALL));
+    m_compiler->compAsyncWrapperRetTypeDesc.InitializeReturnType(m_compiler, TYP_REF, NO_CLASS_HANDLE,
+                                                                 CorInfoCallConvExtension::Managed);
+
+    auto newWrapperLocal = [this](var_types type, const char* reason) {
+        unsigned   lclNum          = m_compiler->lvaGrabTemp(false DEBUGARG(reason));
+        LclVarDsc* dsc             = m_compiler->lvaGetDesc(lclNum);
+        dsc->lvType                = type;
+        dsc->lvIsAsyncWrapperLocal = true;
+        return lclNum;
+    };
+
+    m_compiler->lvaAsyncWrapperContinuation     = newWrapperLocal(TYP_REF, "Resume wrapper continuation");
+    m_compiler->lvaAsyncWrapperResultStorage    = newWrapperLocal(TYP_BYREF, "Resume wrapper result storage");
+    m_compiler->lvaAsyncWrapperNextContinuation = newWrapperLocal(TYP_REF, "Resume wrapper next continuation");
+    if (m_compiler->info.compRetType != TYP_VOID)
+    {
+        unsigned result = newWrapperLocal(m_compiler->info.compRetType, "Resume wrapper return value");
+        if (varTypeIsStruct(m_compiler->info.compRetType))
+        {
+            m_compiler->lvaSetStruct(result, m_compiler->info.compMethodInfo->args.retTypeClass, false);
+        }
+        if (m_compiler->info.compRetBuffArg != BAD_VAR_NUM)
+        {
+            m_compiler->lvaSetVarAddrExposed(result DEBUGARG(AddressExposedReason::ESCAPE_ADDRESS));
+        }
+        m_compiler->lvaAsyncWrapperReturnValue = result;
+    }
+
+    BlockToBlockMap wrappers(m_compiler->getAllocator(CMK_Async));
+
+    for (const AsyncState& state : m_states)
+    {
+        BasicBlock* entry           = state.ResumptionBB;
+        entry->bbIsAsyncResumeEntry = true;
+        m_compiler->compAsyncBodyResumeBlocks->push_back(entry);
+        assert(entry->bbPreds == nullptr);
+        assert(entry->KindIs(BBJ_ALWAYS));
+
+        entry->bbAsyncRestoreLocals =
+            new (m_compiler, CMK_Async) jitstd::vector<unsigned>(m_compiler->getAllocator(CMK_Async));
+        for (unsigned lclNum : state.Layout->Locals())
+        {
+            entry->bbAsyncRestoreLocals->push_back(lclNum);
+        }
+        for (unsigned lclNum : state.Layout->DefaultLocals())
+        {
+            LclVarDsc* dsc = m_compiler->lvaGetDesc(lclNum);
+            GenTree*   zero =
+                dsc->TypeIs(TYP_STRUCT) ? m_compiler->gtNewIconNode(0) : m_compiler->gtNewZeroConNode(dsc->TypeGet());
+            GenTree* clear = m_compiler->gtNewStoreLclVarNode(lclNum, zero);
+            LIR::AsRange(entry).InsertAtBeginning(LIR::SeqTree(m_compiler, clear));
+            entry->bbAsyncRestoreLocals->push_back(lclNum);
+        }
+
+        GenTree* continuation = new (m_compiler, GT_RESUME_BODY_ARG)
+            GenTreeVal(GT_RESUME_BODY_ARG, TYP_REF, m_compiler->lvaAsyncContinuationArg);
+        continuation->SetHasOrderingSideEffect();
+        GenTree* saveContinuation = m_compiler->gtNewStoreLclVarNode(m_compiler->lvaAsyncContinuationArg, continuation);
+        LIR::AsRange(entry).InsertAtBeginning(continuation, saveContinuation);
+        GenTree* lastInput = saveContinuation;
+        entry->bbAsyncRestoreLocals->push_back(m_compiler->lvaAsyncContinuationArg);
+
+        if (m_compiler->info.compRetBuffArg != BAD_VAR_NUM)
+        {
+            unsigned lclNum = m_compiler->info.compRetBuffArg;
+            GenTree* buffer = new (m_compiler, GT_RESUME_BODY_ARG)
+                GenTreeVal(GT_RESUME_BODY_ARG, m_compiler->lvaGetDesc(lclNum)->TypeGet(), lclNum);
+            buffer->SetHasOrderingSideEffect();
+            GenTree* saveBuffer = m_compiler->gtNewStoreLclVarNode(lclNum, buffer);
+            LIR::AsRange(entry).InsertAfter(continuation, buffer);
+            LIR::AsRange(entry).InsertAfter(saveContinuation, saveBuffer);
+            lastInput = saveBuffer;
+            entry->bbAsyncRestoreLocals->push_back(lclNum);
+        }
+
+        // These values have no semantic use on a resumed path, but can remain
+        // syntactically live until a resumed-indicator test is folded.
+        for (unsigned i = 0; i < m_compiler->lvaCount; i++)
+        {
+            LclVarDsc* dsc = m_compiler->lvaGetDesc(i);
+            if (dsc->lvOnlyUsedOnSynchronousPath)
+            {
+                assert(!dsc->TypeIs(TYP_STRUCT));
+                GenTree* clear = m_compiler->gtNewStoreLclVarNode(i, m_compiler->gtNewZeroConNode(dsc->TypeGet()));
+                LIR::AsRange(entry).InsertAfter(lastInput, LIR::SeqTree(m_compiler, clear));
+                entry->bbAsyncRestoreLocals->push_back(i);
+            }
+        }
+        if (commonAsyncResumedDef != nullptr)
+        {
+            StoreResumedDef(commonAsyncResumedDef, entry);
+        }
+
+        BasicBlock* wrapper = CreateResumeWrapper(entry);
+        m_compiler->compAsyncResumeBlocks->push_back(wrapper);
+        wrappers.Set(entry, wrapper);
+    }
+
+    for (BasicBlock* block : m_compiler->Blocks())
+    {
+        if ((block->bbAsyncResume != nullptr) && !block->bbIsAsyncWrapper)
+        {
+            BasicBlock* wrapper;
+            bool        found = wrappers.Lookup(block->bbAsyncResume, &wrapper);
+            assert(found);
+            block->bbAsyncResume = wrapper;
+        }
+    }
+
+    m_compiler->opts.compProcedureSplitting = false;
+}
+
+//------------------------------------------------------------------------
+// fgCreateAsyncResumeFunclets: Finalize independently emitted entry ranges
+// after CFG cleanup and register allocation. Dead suspensions have already
+// lost their dependencies, so their resume blocks can disappear.
+//
+void Compiler::fgCreateAsyncResumeFunclets()
+{
+    assert(compAsyncResumeEntries);
+    assert(compHndBBtabCount <= 1);
+    assert((compHndBBtabCount == 0) || ehIsAsyncContextRestore(ehGetDsc(0)->ebdID));
+    assert(compAsyncResumeBlocks != nullptr);
+    assert(compAsyncBodyResumeBlocks != nullptr);
+
+    unsigned originalCount = compFuncInfoCount;
+    unsigned count         = originalCount;
+    for (BasicBlock* entry : *compAsyncResumeBlocks)
+    {
+        if (!entry->HasFlag(BBF_REMOVED))
+        {
+            count++;
+        }
+    }
+    for (BasicBlock* entry : *compAsyncBodyResumeBlocks)
+    {
+        if (!entry->HasFlag(BBF_REMOVED))
+        {
+            count++;
+        }
+    }
+    if (!FitsIn<unsigned short>(count))
+    {
+        IMPL_LIMITATION("Too many async resume entries");
+    }
+
+    FuncInfoDsc* funcs = new (this, CMK_Async) FuncInfoDsc[count];
+    memset(funcs, 0, sizeof(FuncInfoDsc) * count);
+    memcpy(funcs, compFuncInfos, sizeof(FuncInfoDsc) * originalCount);
+
+    typedef JitHashTable<BasicBlock*, JitPtrKeyFuncs<BasicBlock>, ArrayStack<BasicBlock*>*> WrapperBlockMap;
+    WrapperBlockMap wrapperBlocks(getAllocator(CMK_Async));
+    BasicBlock*     firstWrapper = nullptr;
+    for (BasicBlock* entry : *compAsyncResumeBlocks)
+    {
+        if (!entry->HasFlag(BBF_REMOVED))
+        {
+            if (firstWrapper == nullptr)
+            {
+                firstWrapper = entry;
+            }
+            wrapperBlocks.Set(entry, new (this, CMK_Async) ArrayStack<BasicBlock*>(getAllocator(CMK_Async)));
+        }
+    }
+    for (BasicBlock* block : Blocks())
+    {
+        if (block->bbIsAsyncWrapper && !block->HasFlag(BBF_REMOVED))
+        {
+            if (block->bbAsyncWrapperOwner->HasFlag(BBF_REMOVED))
+            {
+                assert(firstWrapper != nullptr);
+                block->bbAsyncWrapperOwner = firstWrapper;
+            }
+            ArrayStack<BasicBlock*>* group;
+            bool                     found = wrapperBlocks.Lookup(block->bbAsyncWrapperOwner, &group);
+            assert(found);
+            group->Push(block);
+        }
+    }
+
+    auto moveToEnd = [this](BasicBlock* block) {
+        if (block != fgLastBB)
+        {
+            fgUnlinkRange(block, block);
+            fgMoveBlocksAfter(block, block, fgLastBB);
+        }
+    };
+
+    unsigned index = originalCount;
+    for (BasicBlock* entry : *compAsyncResumeBlocks)
+    {
+        if (entry->HasFlag(BBF_REMOVED))
+        {
+            continue;
+        }
+        assert(entry->bbIsAsyncWrapperEntry);
+        assert(entry->bbPreds == nullptr);
+        moveToEnd(entry);
+        ArrayStack<BasicBlock*>* group;
+        bool                     found = wrapperBlocks.Lookup(entry, &group);
+        assert(found);
+        for (BasicBlock* block : group->BottomUpOrder())
+        {
+            if (block != entry)
+            {
+                moveToEnd(block);
+            }
+        }
+        entry->bbAsyncWrapperLast   = fgLastBB;
+        entry->bbAsyncResumeFuncIdx = static_cast<unsigned short>(index);
+        funcs[index].funKind        = FUNC_ASYNC_WRAPPER;
+        funcs[index].funEntry       = entry;
+        funcs[index].funLast        = entry->bbAsyncWrapperLast;
+        if (fgFirstFuncletBB == nullptr)
+        {
+            fgFirstFuncletBB = entry;
+        }
+        index++;
+    }
+    for (BasicBlock* entry : *compAsyncBodyResumeBlocks)
+    {
+        if (entry->HasFlag(BBF_REMOVED))
+        {
+            continue;
+        }
+        assert(entry->bbPreds == nullptr);
+        assert(entry->KindIs(BBJ_ALWAYS));
+        assert(!entry->GetTarget()->bbIsAsyncResumeEntry);
+        moveToEnd(entry);
+        entry->bbAsyncResumeFuncIdx = static_cast<unsigned short>(index);
+        entry->SetFlags(BBF_KEEP_BBJ_ALWAYS);
+        funcs[index].funKind  = FUNC_ASYNC_RESUME;
+        funcs[index].funEntry = entry;
+        funcs[index].funLast  = entry;
+        if (fgFirstFuncletBB == nullptr)
+        {
+            fgFirstFuncletBB = entry;
+        }
+        index++;
+    }
+    compFuncInfos     = funcs;
+    compFuncInfoCount = static_cast<unsigned short>(count);
+    fgInvalidateDfsTree();
+    INDEBUG(fgDebugCheckLinks());
+}
+
+//------------------------------------------------------------------------
+// CreateResumeWrapper: Call a body entry and adapt its result to the dispatcher ABI.
+//
+BasicBlock* AsyncTransformation::CreateResumeWrapper(BasicBlock* bodyEntry)
+{
+    BasicBlock* owner    = nullptr;
+    auto        newBlock = [this, &owner](BBKinds kind, BasicBlock* after) {
+        BasicBlock* block = m_compiler->fgNewBBafter(kind, after, false);
+        block->clearTryIndex();
+        block->clearHndIndex();
+        block->SetFlags(BBF_INTERNAL | BBF_IMPORTED);
+        block->bbIsAsyncWrapper    = true;
+        block->bbAsyncWrapperOwner = owner;
+        block->bbSetRunRarely();
+        return block;
+    };
+
+    BasicBlock* entry            = newBlock(BBJ_ALWAYS, m_compiler->fgLastBB);
+    owner                        = entry;
+    entry->bbAsyncWrapperOwner   = entry;
+    bool        createResultPath = m_sharedWrapperReturn == nullptr;
+    BasicBlock* done             = createResultPath ? newBlock(BBJ_RETURN, entry) : m_sharedWrapperReturn;
+    m_sharedWrapperReturn        = done;
+    entry->bbIsAsyncWrapperEntry = true;
+    entry->SetFlags(BBF_ASYNC_RESUMPTION);
+    entry->bbAsyncResume      = bodyEntry;
+    entry->bbAsyncWrapperLast = createResultPath ? done : entry;
+
+    unsigned contLcl    = m_compiler->lvaAsyncWrapperContinuation;
+    unsigned storageLcl = m_compiler->lvaAsyncWrapperResultStorage;
+    unsigned nextLcl    = m_compiler->lvaAsyncWrapperNextContinuation;
+    unsigned valueLcl   = m_compiler->lvaAsyncWrapperReturnValue;
+
+    GenTree* contArg    = new (m_compiler, GT_ASYNC_RESUME_ARG) GenTree(GT_ASYNC_RESUME_ARG, TYP_REF);
+    GenTree* storageArg = new (m_compiler, GT_ASYNC_RESUME_ARG) GenTree(GT_ASYNC_RESUME_ARG, TYP_BYREF);
+    contArg->SetHasOrderingSideEffect();
+    storageArg->SetHasOrderingSideEffect();
+    LIR::AsRange(entry).InsertAtEnd(contArg, storageArg, m_compiler->gtNewStoreLclVarNode(contLcl, contArg),
+                                    m_compiler->gtNewStoreLclVarNode(storageLcl, storageArg));
+
+    BasicBlock* savedBlock = m_compiler->compCurBB;
+    m_compiler->compCurBB  = entry;
+    unsigned  firstTemp    = m_compiler->lvaCount;
+    bool      hasRetBuffer = m_compiler->info.compRetBuffArg != BAD_VAR_NUM;
+    var_types returnType   = hasRetBuffer ? TYP_VOID : m_compiler->info.compRetType;
+    GenTree*  target       = new (m_compiler, GT_RESUME_ENTRY_ADDR)
+        GenTreeVal(GT_RESUME_ENTRY_ADDR, TYP_I_IMPL, reinterpret_cast<size_t>(bodyEntry));
+    GenTreeCall* call = m_compiler->gtNewIndCallNode(target, returnType);
+    if (varTypeIsStruct(returnType))
+    {
+        call->gtRetClsHnd = m_compiler->info.compMethodInfo->args.retTypeClass;
+        call->InitializeStructReturnType(m_compiler, call->gtRetClsHnd, m_compiler->info.compCallConv);
+    }
+    if (hasRetBuffer)
+    {
+        call->gtArgs.PushBack(m_compiler, NewCallArg::Primitive(m_compiler->gtNewLclAddrNode(valueLcl, 0))
+                                              .WellKnown(WellKnownArg::RetBuffer));
+    }
+    call->gtArgs.PushBack(m_compiler, NewCallArg::Primitive(m_compiler->gtNewLclvNode(contLcl, TYP_REF))
+                                          .WellKnown(WellKnownArg::AsyncContinuation));
+    call->gtArgs.SetReservedStackSize(m_compiler->lvaParameterStackSize);
+
+    GenTree* callTree = call;
+    if (returnType != TYP_VOID)
+    {
+        callTree = m_compiler->gtNewStoreLclVarNode(valueLcl, call);
+    }
+    callTree = m_compiler->fgMorphTree(callTree);
+    call->SetIsAsync(new (m_compiler, CMK_Async) AsyncCallInfo());
+    LIR::AsRange(entry).InsertAtEnd(LIR::SeqTree(m_compiler, callTree));
+    GenTree* next = new (m_compiler, GT_ASYNC_CONTINUATION) GenTree(GT_ASYNC_CONTINUATION, TYP_REF);
+    next->SetHasOrderingSideEffect();
+    LIR::AsRange(entry).InsertAfter(call, next, m_compiler->gtNewStoreLclVarNode(nextLcl, next));
+
+    if (valueLcl == BAD_VAR_NUM)
+    {
+        entry->SetTargetEdge(m_compiler->fgAddRefPred(done, entry));
+    }
+    else
+    {
+        BasicBlock* checkStorage = createResultPath ? newBlock(BBJ_COND, entry) : m_sharedWrapperResult;
+        BasicBlock* copyResult   = createResultPath ? newBlock(BBJ_ALWAYS, checkStorage) : nullptr;
+        m_sharedWrapperResult    = checkStorage;
+        GenTree* pending = m_compiler->gtNewOperNode(GT_NE, TYP_INT, m_compiler->gtNewLclvNode(nextLcl, TYP_REF),
+                                                     m_compiler->gtNewNull());
+        LIR::AsRange(entry).InsertAtEnd(
+            LIR::SeqTree(m_compiler, m_compiler->gtNewOperNode(GT_JTRUE, TYP_VOID, pending)));
+        entry->SetCond(m_compiler->fgAddRefPred(done, entry), m_compiler->fgAddRefPred(checkStorage, entry));
+        entry->GetTrueEdge()->setLikelihood(0.5);
+        entry->GetFalseEdge()->setLikelihood(0.5);
+
+        if (createResultPath)
+        {
+            GenTree* hasStorage =
+                m_compiler->gtNewOperNode(GT_NE, TYP_INT, m_compiler->gtNewLclvNode(storageLcl, TYP_BYREF),
+                                          m_compiler->gtNewZeroConNode(TYP_BYREF));
+            LIR::AsRange(checkStorage)
+                .InsertAtEnd(LIR::SeqTree(m_compiler, m_compiler->gtNewOperNode(GT_JTRUE, TYP_VOID, hasStorage)));
+            checkStorage->SetCond(m_compiler->fgAddRefPred(copyResult, checkStorage),
+                                  m_compiler->fgAddRefPred(done, checkStorage));
+            checkStorage->GetTrueEdge()->setLikelihood(0.5);
+            checkStorage->GetFalseEdge()->setLikelihood(0.5);
+
+            m_compiler->compCurBB = copyResult;
+            GenTree* destination  = m_compiler->gtNewLclvNode(storageLcl, TYP_BYREF);
+            GenTree* value        = m_compiler->gtNewLclVarNode(valueLcl);
+            GenTree* copy;
+            if (varTypeIsStruct(value))
+            {
+                copy = m_compiler->gtNewStoreValueNode(m_compiler->lvaGetDesc(valueLcl)->GetLayout(), destination,
+                                                       value, GTF_IND_NONFAULTING);
+            }
+            else
+            {
+                copy = m_compiler->gtNewStoreIndNode(m_compiler->info.compRetType, destination, value,
+                                                     GTF_IND_NONFAULTING);
+            }
+            copy = m_compiler->fgMorphTree(copy);
+            LIR::AsRange(copyResult).InsertAtEnd(LIR::SeqTree(m_compiler, copy));
+            copyResult->SetTargetEdge(m_compiler->fgAddRefPred(done, copyResult));
+        }
+    }
+
+    if (createResultPath)
+    {
+        LIR::AsRange(done).InsertAtEnd(
+            LIR::SeqTree(m_compiler,
+                         m_compiler->gtNewOperNode(GT_RETURN, TYP_REF, m_compiler->gtNewLclvNode(nextLcl, TYP_REF))));
+    }
+    for (unsigned lclNum = firstTemp; lclNum < m_compiler->lvaCount; lclNum++)
+    {
+        m_compiler->lvaGetDesc(lclNum)->lvIsAsyncWrapperLocal = true;
+    }
+    m_compiler->compCurBB = savedBlock;
+    return entry;
+}
+
+//------------------------------------------------------------------------
+// CreateResumptionSwitch: Dispatch the legacy common resumption entry.
 //
 void AsyncTransformation::CreateResumptionSwitch(GenTreeLclVarCommon* commonAsyncResumedDef)
 {

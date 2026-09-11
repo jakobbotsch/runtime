@@ -5026,7 +5026,7 @@ void Compiler::compCompile(void** methodCodePtr, uint32_t* methodCodeSize, JitFl
     //
     DoPhase(this, PHASE_WASM_CONTROL_FLOW, &Compiler::fgWasmControlFlow);
 #else
-    if (opts.OptimizationEnabled())
+    if (opts.OptimizationEnabled() && !compAsyncResumeEntries)
     {
         // We won't introduce new blocks from here on out,
         // so run the new block layout.
@@ -5042,6 +5042,11 @@ void Compiler::compCompile(void** methodCodePtr, uint32_t* methodCodeSize, JitFl
         DoPhase(this, PHASE_DETERMINE_FIRST_COLD_BLOCK, &Compiler::fgDetermineFirstColdBlock);
     }
 #endif // TARGET_WASM
+
+    if (compAsyncResumeEntries)
+    {
+        fgCreateAsyncResumeFunclets();
+    }
 
 #if FEATURE_LOOP_ALIGN
     // Place loop alignment instructions

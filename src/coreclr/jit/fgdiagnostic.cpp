@@ -74,7 +74,7 @@ void Compiler::fgDebugCheckUpdate()
     {
         // no unreachable blocks
 
-        if ((block->countOfInEdges() == 0) && !block->HasFlag(BBF_DONT_REMOVE))
+        if ((block->countOfInEdges() == 0) && !block->HasFlag(BBF_DONT_REMOVE) && !block->bbIsAsyncResumeEntry)
         {
             noway_assert(!"Unreachable block not removed!");
         }
@@ -3132,13 +3132,13 @@ void Compiler::fgDebugCheckBBlist(bool checkBBNum /* = false */, bool checkBBRef
             //
             // There should be no handler blocks until
             // we get to the fgFirstFuncletBB block,
-            // then every block should be a handler block
+            // then every block should be a handler block or an async entry.
             //
             if (!reachedFirstFunclet)
             {
                 if (block == fgFirstFuncletBB)
                 {
-                    assert(block->hasHndIndex() == true);
+                    assert(block->hasHndIndex() || (block->bbAsyncResumeFuncIdx != 0) || block->bbIsAsyncWrapper);
                     reachedFirstFunclet = true;
                 }
                 else
@@ -3148,7 +3148,7 @@ void Compiler::fgDebugCheckBBlist(bool checkBBNum /* = false */, bool checkBBRef
             }
             else // reachedFirstFunclet
             {
-                assert(block->hasHndIndex() == true);
+                assert(block->hasHndIndex() || (block->bbAsyncResumeFuncIdx != 0) || block->bbIsAsyncWrapper);
             }
         }
 
@@ -3386,6 +3386,7 @@ void Compiler::fgDebugCheckFlagsAndTypes(GenTree* tree, BasicBlock* block)
             break;
 
         case GT_CATCH_ARG:
+        case GT_ASYNC_RESUME_ARG:
         case GT_ASYNC_CONTINUATION:
             expectedFlags |= GTF_ORDER_SIDEEFF;
             break;

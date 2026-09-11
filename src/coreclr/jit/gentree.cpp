@@ -1223,6 +1223,7 @@ CallArgs::CallArgs()
     : m_head(nullptr)
     , m_lateHead(nullptr)
     , m_argsStackSize(0)
+    , m_reservedStackSize(0)
 #ifdef UNIX_X86_ABI
     , m_stkSizeBytes(0)
     , m_padStkAlign(0)
@@ -2858,6 +2859,8 @@ AGAIN:
                 return true;
 
             case GT_ASYNC_RESUME_INFO:
+            case GT_RESUME_BODY_ARG:
+            case GT_RESUME_ENTRY_ADDR:
             case GT_CONTINUATION_MEMBER_OFFSET:
                 return op1->AsVal()->gtVal1 == op2->AsVal()->gtVal1;
 
@@ -8983,6 +8986,8 @@ bool GenTree::OperSupportsOrderingSideEffect() const
         case GT_MOD:
         case GT_UMOD:
         case GT_CATCH_ARG:
+        case GT_ASYNC_RESUME_ARG:
+        case GT_RESUME_BODY_ARG:
         case GT_ASYNC_CONTINUATION:
         case GT_RETURN_SUSPEND:
         case GT_PATCHPOINT:
@@ -11271,6 +11276,7 @@ GenTree* Compiler::gtCloneExpr(GenTree* tree)
                 goto DONE;
 
             case GT_CATCH_ARG:
+            case GT_ASYNC_RESUME_ARG:
             case GT_ASYNC_CONTINUATION:
             case GT_NO_OP:
             case GT_NOP:
@@ -11285,6 +11291,8 @@ GenTree* Compiler::gtCloneExpr(GenTree* tree)
             case GT_JMP:
             case GT_RECORD_ASYNC_RESUME:
             case GT_ASYNC_RESUME_INFO:
+            case GT_RESUME_BODY_ARG:
+            case GT_RESUME_ENTRY_ADDR:
             case GT_CONTINUATION_MEMBER_OFFSET:
                 copy = new (this, oper) GenTreeVal(oper, tree->gtType, tree->AsVal()->gtVal1);
                 goto DONE;
@@ -11640,6 +11648,7 @@ void CallArgs::InternalCopyFrom(Compiler* comp, CallArgs* other, CopyNodeFunc co
     assert((m_head == nullptr) && (m_lateHead == nullptr));
 
     m_argsStackSize            = other->m_argsStackSize;
+    m_reservedStackSize        = other->m_reservedStackSize;
     m_hasThisPointer           = other->m_hasThisPointer;
     m_hasRetBuffer             = other->m_hasRetBuffer;
     m_isVarArgs                = other->m_isVarArgs;
@@ -12040,8 +12049,11 @@ GenTreeUseEdgeIterator::GenTreeUseEdgeIterator(GenTree* node)
         case GT_LCL_FLD:
         case GT_LCL_ADDR:
         case GT_CATCH_ARG:
+        case GT_ASYNC_RESUME_ARG:
         case GT_ASYNC_CONTINUATION:
         case GT_ASYNC_RESUME_INFO:
+        case GT_RESUME_BODY_ARG:
+        case GT_RESUME_ENTRY_ADDR:
         case GT_CONTINUATION_MEMBER_OFFSET:
         case GT_LABEL:
         case GT_FTN_ADDR:
@@ -14260,6 +14272,7 @@ void Compiler::gtDispLeaf(GenTree* tree, IndentStack* indentStack)
         case GT_START_PREEMPTGC:
         case GT_PROF_HOOK:
         case GT_CATCH_ARG:
+        case GT_ASYNC_RESUME_ARG:
         case GT_ASYNC_CONTINUATION:
         case GT_FTN_ENTRY:
         case GT_MEMORYBARRIER:
@@ -14306,6 +14319,14 @@ void Compiler::gtDispLeaf(GenTree* tree, IndentStack* indentStack)
         case GT_RECORD_ASYNC_RESUME:
         case GT_ASYNC_RESUME_INFO:
             printf(" state=%zu", tree->AsVal()->gtVal1);
+            break;
+
+        case GT_RESUME_BODY_ARG:
+            printf(" V%02zu", tree->AsVal()->gtVal1);
+            break;
+
+        case GT_RESUME_ENTRY_ADDR:
+            printf(" " FMT_BB, reinterpret_cast<BasicBlock*>(tree->AsVal()->gtVal1)->bbNum);
             break;
 
         case GT_JCC:

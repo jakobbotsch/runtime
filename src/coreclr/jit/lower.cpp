@@ -2976,7 +2976,7 @@ GenTree* Lowering::LowerCall(GenTree* node)
 #endif // TARGET_RISCV64
     }
 
-    if (m_compiler->opts.IsCFGEnabled())
+    if (m_compiler->opts.IsCFGEnabled() && !call->IsAsyncResumeCall())
     {
         LowerCFGCall(call);
     }
@@ -5170,7 +5170,7 @@ void Lowering::LowerRet(GenTreeOp* ret)
     else if (!ret->TypeIs(TYP_VOID))
     {
 #if FEATURE_MULTIREG_RET
-        if (m_compiler->compMethodReturnsMultiRegRetType() && retVal->OperIs(GT_LCL_VAR))
+        if (!m_block->bbIsAsyncWrapper && m_compiler->compMethodReturnsMultiRegRetType() && retVal->OperIs(GT_LCL_VAR))
         {
             CheckMultiRegLclVar(retVal->AsLclVar(), m_compiler->compRetTypeDesc.GetReturnRegCount());
         }
@@ -5212,7 +5212,7 @@ void Lowering::LowerRet(GenTreeOp* ret)
         }
     }
 
-    if (m_compiler->compMethodRequiresPInvokeFrame())
+    if (!m_block->bbIsAsyncWrapper && m_compiler->compMethodRequiresPInvokeFrame())
     {
         InsertPInvokeMethodEpilog(m_compiler->compCurBB DEBUGARG(ret));
     }
@@ -9034,7 +9034,10 @@ PhaseStatus Lowering::DoPhase()
 
         m_compiler->fgPostLowerLiveness();
         // local var liveness can delete code, which may create empty blocks
-        bool modified = m_compiler->fgUpdateFlowGraph(/* doTailDuplication */ false, /* isPhase */ false);
+        // Late block compaction does not yet transfer async lifetime
+        // dependencies. Keep those state-specific save blocks intact.
+        bool modified = !m_compiler->compAsyncResumeEntries &&
+                        m_compiler->fgUpdateFlowGraph(/* doTailDuplication */ false, /* isPhase */ false);
 
         if (modified)
         {
@@ -13290,6 +13293,12 @@ GenTree* Lowering::NormalizeIndexToNativeSized(GenTree* index)
 void Lowering::RequireOutgoingArgSpace(GenTree* node, unsigned size)
 {
 #if FEATURE_FIXED_OUT_ARGS
+    if ((m_block != nullptr) && m_block->bbIsAsyncWrapper)
+    {
+        m_compiler->compAsyncWrapperOutgoingSize = max(m_compiler->compAsyncWrapperOutgoingSize, size);
+        return;
+    }
+
     if (size <= m_outgoingArgSpaceSize)
     {
         return;

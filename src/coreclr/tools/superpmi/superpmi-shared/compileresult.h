@@ -209,6 +209,9 @@ public:
                             BYTE*          pUnwindBlock,
                             CorJitFuncKind funcKind);
     void dmpAllocUnwindInfo(DWORD key, const Agnostic_AllocUnwindInfo& value);
+    void recReportCodeEntry(uint32_t startOffset, uint32_t endOffset,
+                            CorInfoCodeEntryKind kind, CorInfoCodeEntrySignature signature, uint32_t gcInfoOffset);
+    void dmpReportCodeEntry(DWORD key, const Agnostic_ReportCodeEntry& value);
 
     void recRecordCallSite(ULONG instrOffset, CORINFO_SIG_INFO* callSig, CORINFO_METHOD_HANDLE methodHandle);
     void dmpRecordCallSiteWithSignature(DWORD key, const Agnostic_RecordCallSite& value) const;

@@ -203,7 +203,7 @@ public:
         return m_BitCount;
     }
 
-    inline size_t GetByteCount()
+    inline size_t GetByteCount() const
     {
         return ( m_BitCount + 7 )  / 8;
     }
@@ -437,9 +437,13 @@ public:
     //
     BYTE* Emit();
 
+    // Writes to caller-owned storage of at least GetEncodedGCInfoSize() bytes.
+    // Like Emit(), this consumes the encoded buffers, but does not call allocGCInfo.
+    BYTE* Emit(BYTE* destination);
+
     //
     // Return the size in bytes of the constructed GC info. This is the size passed
-    // to the VM via `allocGCInfo`. It is only valid after `Emit` is called.
+    // to the VM via `allocGCInfo`. It is valid after `Build` is called.
     //
     size_t GetEncodedGCInfoSize() const;
 

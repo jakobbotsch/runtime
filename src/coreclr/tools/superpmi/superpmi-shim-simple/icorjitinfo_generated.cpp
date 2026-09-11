@@ -943,6 +943,16 @@ void interceptor_ICJI::getWasmWellKnownGlobals(
     original_ICorJitInfo->getWasmWellKnownGlobals(pWellKnownGlobalsOut);
 }
 
+void interceptor_ICJI::reportCodeEntry(
+          uint32_t startOffset,
+          uint32_t endOffset,
+          CorInfoCodeEntryKind kind,
+          CorInfoCodeEntrySignature signature,
+          uint32_t gcInfoOffset)
+{
+    original_ICorJitInfo->reportCodeEntry(startOffset, endOffset, kind, signature, gcInfoOffset);
+}
+
 uint32_t interceptor_ICJI::getThreadTLSIndex(
           void** ppIndirection)
 {

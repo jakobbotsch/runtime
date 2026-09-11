@@ -1746,6 +1746,13 @@ void MyICJI::allocUnwindInfo(uint8_t*       pHotCode,     /* IN */
                                             funcKind);
 }
 
+void MyICJI::reportCodeEntry(uint32_t startOffset, uint32_t endOffset,
+                           CorInfoCodeEntryKind kind, CorInfoCodeEntrySignature signature, uint32_t gcInfoOffset)
+{
+    jitInstance->mc->cr->AddCall("reportCodeEntry");
+    jitInstance->mc->cr->recReportCodeEntry(startOffset, endOffset, kind, signature, gcInfoOffset);
+}
+
 // Get a block of memory needed for the code manager information,
 // (the info for enumerating the GC pointers while crawling the
 // stack frame).

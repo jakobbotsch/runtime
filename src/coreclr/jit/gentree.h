@@ -4964,7 +4964,9 @@ class CallArgs
     CallArg* m_head;
     CallArg* m_lateHead;
 
-    unsigned m_argsStackSize;
+    unsigned    m_argsStackSize;
+    unsigned    m_reservedStackSize;
+    static bool TryClassifyResumeArgument(Compiler* comp, GenTreeCall* call, CallArg& arg);
 #ifdef UNIX_X86_ABI
     // Number of stack bytes pushed before we start pushing these arguments.
     unsigned m_stkSizeBytes;
@@ -5081,6 +5083,10 @@ public:
     // clang-format on
 
     unsigned OutgoingArgsStackSize() const;
+    void     SetReservedStackSize(unsigned size)
+    {
+        m_reservedStackSize = size;
+    }
 
     unsigned CountArgs();
     unsigned CountUserArgs();
@@ -5187,6 +5193,17 @@ public:
 struct GenTreeCall final : public GenTree
 {
     CallArgs gtArgs;
+
+    bool IsAsyncResumeCall() const
+    {
+        return (gtCallType == CT_INDIRECT) && (gtControlExpr != nullptr) && gtControlExpr->OperIs(GT_RESUME_ENTRY_ADDR);
+    }
+
+    BasicBlock* GetAsyncResumeTarget() const
+    {
+        assert(IsAsyncResumeCall());
+        return reinterpret_cast<BasicBlock*>(gtControlExpr->AsVal()->gtVal1);
+    }
 
 #if defined(DEBUG) || defined(TARGET_WASM)
     // Used to register callsites with the EE

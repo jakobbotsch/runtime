@@ -1369,6 +1369,47 @@ BOOL IJitManager::LazyIsFunclet(EECodeInfo * pCodeInfo)
     return funcletStartAddress != methodStartAddress;
 }
 
+BOOL EEJitManager::LazyIsFunclet(EECodeInfo* pCodeInfo)
+{
+    CONTRACTL {
+        NOTHROW;
+        GC_NOTRIGGER;
+        MODE_ANY;
+        SUPPORTS_DAC;
+    } CONTRACTL_END;
+
+    CodeHeader* header = GetCodeHeader(pCodeInfo->GetMethodToken());
+    UINT count = header->GetNumberOfCodeEntries();
+    if (count == 0)
+        return IJitManager::LazyIsFunclet(pCodeInfo);
+
+    DWORD offset = pCodeInfo->GetRelOffset();
+    for (UINT i = 0; i < count; i++)
+    {
+        PTR_CodeEntryInfo entry = header->GetCodeEntry(i);
+        if (entry->startOffset <= offset && offset < entry->endOffset)
+        {
+            return entry->kind == CORINFO_CODE_ENTRY_HANDLER || entry->kind == CORINFO_CODE_ENTRY_FILTER;
+        }
+    }
+
+    // A reported table is authoritative: only its EH ranges are funclets.
+    return FALSE;
+}
+
+BOOL IJitManager::IsAsyncWrapper(EECodeInfo* pCodeInfo)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    return FALSE;
+}
+
+BOOL EEJitManager::IsAsyncWrapper(EECodeInfo* pCodeInfo)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    PTR_CodeEntryInfo entry = GetCodeHeader(pCodeInfo->GetMethodToken())->FindCodeEntry(pCodeInfo->GetRelOffset());
+    return (entry != nullptr) && (entry->kind == CORINFO_CODE_ENTRY_ASYNC_WRAPPER);
+}
+
 BOOL IJitManager::IsFilterFunclet(EECodeInfo * pCodeInfo)
 {
     CONTRACTL {
@@ -3255,7 +3296,11 @@ void EECodeGenManager::AllocCode(MethodDesc* pMD, size_t blockSize, size_t reser
     {
         requestInfo.SetReserveForJumpStubs(reserveForJumpStubs);
 
-        realHeaderSize = offsetof(RealCodeHeader, unwindInfos[0]) + (sizeof(T_RUNTIME_FUNCTION) * nUnwindInfos);
+        S_SIZE_T size = S_SIZE_T(offsetof(RealCodeHeader, unwindInfos)) +
+            S_SIZE_T(sizeof(T_RUNTIME_FUNCTION)) * S_SIZE_T(nUnwindInfos);
+        if (size.IsOverflow())
+            COMPlusThrowOM();
+        realHeaderSize = size.Value();
     }
 
     // if this is a LCG method then we will be allocating the RealCodeHeader
@@ -3263,7 +3308,12 @@ void EECodeGenManager::AllocCode(MethodDesc* pMD, size_t blockSize, size_t reser
     // the LCG code heap.
     if (requestInfo.IsDynamicDomain())
     {
-        totalSize = ALIGN_UP(totalSize, sizeof(void*)) + realHeaderSize;
+        S_SIZE_T size = S_SIZE_T(totalSize) + S_SIZE_T(sizeof(void*) - 1);
+        if (!size.IsOverflow())
+            size = S_SIZE_T(size.Value() & ~(sizeof(void*) - 1)) + S_SIZE_T(realHeaderSize);
+        if (size.IsOverflow())
+            COMPlusThrowOM();
+        totalSize = size.Value();
         static_assert(CODE_SIZE_ALIGN >= sizeof(void*));
     }
 
@@ -3338,6 +3388,7 @@ void EECodeGenManager::AllocCode(MethodDesc* pMD, size_t blockSize, size_t reser
         if (std::is_same<TCodeHeader, CodeHeader>::value)
         {
             ((CodeHeader*)pCodeHdrRW)->SetNumberOfUnwindInfos(nUnwindInfos);
+            ((CodeHeader*)pCodeHdrRW)->SetCodeEntries(nullptr);
         }
 
         if (requestInfo.IsDynamicDomain())
@@ -3660,7 +3711,7 @@ BYTE* EECodeGenManager::AllocFromJitMetaHeap(MethodDesc* pMD, size_t blockSize)
 }
 #endif // !DACCESS_COMPILE
 
-GCInfoToken EEJitManager::GetGCInfoToken(const METHODTOKEN& MethodToken)
+GCInfoToken EEJitManager::GetGCInfoToken(const METHODTOKEN& MethodToken, DWORD codeOffset)
 {
     CONTRACTL {
         NOTHROW;
@@ -3669,11 +3720,16 @@ GCInfoToken EEJitManager::GetGCInfoToken(const METHODTOKEN& MethodToken)
     } CONTRACTL_END;
 
     // The JIT-ed code always has the current version of GCInfo
-    return{ GetCodeHeader(MethodToken)->GetGCInfo(), GCINFO_VERSION };
+    CodeHeader* header = GetCodeHeader(MethodToken);
+    PTR_BYTE gcInfo = header->GetGCInfo();
+    DWORD gcInfoOffset = header->GetGCInfoOffset(codeOffset);
+    if (gcInfoOffset != 0)
+        gcInfo += gcInfoOffset;
+    return{ gcInfo, GCINFO_VERSION };
 }
 
 #ifdef FEATURE_INTERPRETER
-GCInfoToken InterpreterJitManager::GetGCInfoToken(const METHODTOKEN& MethodToken)
+GCInfoToken InterpreterJitManager::GetGCInfoToken(const METHODTOKEN& MethodToken, DWORD codeOffset)
 {
     CONTRACTL {
         NOTHROW;
@@ -4690,6 +4746,13 @@ void CodeHeader::EnumMemoryRegions(CLRDataEnumMemoryFlags flags, IJitManager* pJ
         DacEnumMemoryRegion(PTR_TO_MEMBER_TADDR(RealCodeHeader, pRealCodeHeader, unwindInfos), this->pRealCodeHeader->nUnwindInfos * sizeof(T_RUNTIME_FUNCTION));
     }
 
+    if (GetNumberOfCodeEntries() != 0)
+    {
+        pRealCodeHeader->pCodeEntries.EnumMem();
+        DacEnumMemoryRegion(dac_cast<TADDR>(GetCodeEntry(0)), GetNumberOfCodeEntries() * sizeof(CodeEntryInfo));
+        DacEnumMemoryRegion(dac_cast<TADDR>(GetGCInfo()), pRealCodeHeader->pCodeEntries->gcInfoSize);
+    }
+
     if (this->GetDebugInfo() != NULL)
     {
         CompressDebugInfo::EnumMemoryRegions(flags, this->GetDebugInfo());
@@ -5262,6 +5325,22 @@ DWORD EEJitManager::GetFuncletStartOffsets(const METHODTOKEN& MethodToken, DWORD
     CONTRACTL_END;
 
     CodeHeader * pCH = dac_cast<PTR_CodeHeader>(GetCodeHeader(MethodToken));
+    if (pCH->GetNumberOfCodeEntries() != 0)
+    {
+        DWORD count = 0;
+        for (UINT i = 0; i < pCH->GetNumberOfCodeEntries(); i++)
+        {
+            PTR_CodeEntryInfo entry = pCH->GetCodeEntry(i);
+            if (entry->kind == CORINFO_CODE_ENTRY_HANDLER || entry->kind == CORINFO_CODE_ENTRY_FILTER)
+            {
+                if (count < dwLength)
+                    pStartFuncletOffsets[count] = entry->startOffset;
+                count++;
+            }
+        }
+        return count;
+    }
+
     TADDR moduleBase = JitTokenToModuleFunctionsBase(MethodToken);
 
     _ASSERTE(pCH->GetNumberOfUnwindInfos() >= 1);
@@ -6978,7 +7057,7 @@ TADDR ReadyToRunJitManager::JitTokenToStartAddress(const METHODTOKEN& MethodToke
         RUNTIME_FUNCTION__BeginAddress(dac_cast<PTR_RUNTIME_FUNCTION>(MethodToken.m_pCodeHeader));
 }
 
-GCInfoToken ReadyToRunJitManager::GetGCInfoToken(const METHODTOKEN& MethodToken)
+GCInfoToken ReadyToRunJitManager::GetGCInfoToken(const METHODTOKEN& MethodToken, DWORD codeOffset)
 {
     CONTRACTL {
         NOTHROW;

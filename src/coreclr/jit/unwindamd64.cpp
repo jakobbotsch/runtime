@@ -753,7 +753,7 @@ void Compiler::unwindReserveFunc(FuncInfoDsc* func)
 //
 void Compiler::unwindReserveFuncHelper(FuncInfoDsc* func, bool isHotCode)
 {
-    const bool isFunclet       = (func->funKind != FUNC_ROOT);
+    const bool isFunclet       = (func->funKind == FUNC_HANDLER) || (func->funKind == FUNC_FILTER);
     DWORD      unwindCodeBytes = 0;
 
     if (isHotCode || isFunclet)
@@ -950,7 +950,9 @@ void Compiler::unwindEmitFuncHelper(FuncInfoDsc* func, void* pHotCode, void* pCo
     }
 
     eeAllocUnwindInfo((BYTE*)pHotCode, (BYTE*)pColdCode, startOffset, endOffset, unwindCodeBytes, pUnwindBlock,
-                      (CorJitFuncKind)func->funKind);
+                      ((func->funKind == FUNC_ASYNC_RESUME) || (func->funKind == FUNC_ASYNC_WRAPPER))
+                          ? CORJIT_FUNC_ROOT
+                          : (CorJitFuncKind)func->funKind);
 }
 
 //------------------------------------------------------------------------

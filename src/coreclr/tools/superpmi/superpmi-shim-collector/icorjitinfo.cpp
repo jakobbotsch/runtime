@@ -1926,6 +1926,14 @@ void interceptor_ICJI::allocUnwindInfo(uint8_t*       pHotCode,     /* IN */
     mc->cr->recAllocUnwindInfo(pHotCode, pColdCode, startOffset, endOffset, unwindSize, pUnwindBlock, funcKind);
 }
 
+void interceptor_ICJI::reportCodeEntry(uint32_t startOffset, uint32_t endOffset,
+                                     CorInfoCodeEntryKind kind, CorInfoCodeEntrySignature signature, uint32_t gcInfoOffset)
+{
+    mc->cr->AddCall("reportCodeEntry");
+    original_ICorJitInfo->reportCodeEntry(startOffset, endOffset, kind, signature, gcInfoOffset);
+    mc->cr->recReportCodeEntry(startOffset, endOffset, kind, signature, gcInfoOffset);
+}
+
 // Get a block of memory needed for the code manager information,
 // (the info for enumerating the GC pointers while crawling the
 // stack frame).

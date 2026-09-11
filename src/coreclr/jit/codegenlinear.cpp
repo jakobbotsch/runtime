@@ -439,10 +439,21 @@ void CodeGen::genCodeForBlock(BasicBlock* block)
     if (m_compiler->bbIsFuncletBeg(block))
     {
         genUpdateCurrentFunclet(block);
+#ifdef TARGET_AMD64
+        if ((m_compiler->funCurrentFunc()->funKind == FUNC_ASYNC_RESUME) ||
+            (m_compiler->funCurrentFunc()->funKind == FUNC_ASYNC_WRAPPER))
+        {
+            genMarkAsyncResumeArgs(block);
+        }
+#endif // TARGET_AMD64
         genReserveFuncletProlog(block);
     }
 
     genEmitStartBlock(block);
+    if (block->bbIsAsyncResumeEntry)
+    {
+        GetEmitter()->emitDisableGC();
+    }
 
     // Clear compCurStmt and compCurLifeTree.
     m_compiler->compCurStmt     = nullptr;
@@ -548,12 +559,30 @@ void CodeGen::genCodeForBlock(BasicBlock* block)
 #endif // DEBUG
         }
 
+#ifdef TARGET_AMD64
+        if (block->bbIsAsyncWrapper)
+        {
+            regMaskTP usedRegs = regSet.GetMaskVars() | internalRegisters.GetAll(node);
+            if (node->gtHasReg(m_compiler))
+            {
+                usedRegs |= node->gtGetRegMask();
+            }
+            m_compiler->compAsyncWrapperUsedRegs |= usedRegs & RBM_CALLEE_SAVED;
+            assert((m_compiler->compAsyncWrapperUsedRegs & ~m_compiler->compAsyncWrapperSavedRegs & ~RBM_FPBASE) ==
+                   RBM_NONE);
+        }
+#endif
         genCodeForTreeNode(node);
         if (node->gtHasReg(m_compiler) && node->IsUnusedValue())
         {
             genConsumeReg(node);
         }
     } // end for each node in block
+
+    if (block->bbIsAsyncResumeEntry)
+    {
+        GetEmitter()->emitEnableGC();
+    }
 
 #ifdef DEBUG
     // The following set of register spill checks and GC pointer tracking checks used to be
@@ -578,8 +607,9 @@ void CodeGen::genCodeForBlock(BasicBlock* block)
     }
     else
     {
-        const ReturnTypeDesc& retTypeDesc = m_compiler->compRetTypeDesc;
-        const unsigned        regCount    = retTypeDesc.GetReturnRegCount();
+        const ReturnTypeDesc& retTypeDesc =
+            block->bbIsAsyncWrapper ? m_compiler->compAsyncWrapperRetTypeDesc : m_compiler->compRetTypeDesc;
+        const unsigned regCount = retTypeDesc.GetReturnRegCount();
 
         for (unsigned i = 0; i < regCount; ++i)
         {

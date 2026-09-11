@@ -285,6 +285,8 @@ public:
         return pRD;
     }
 
+    bool IsDiagnosticsHidden();
+
     EECodeInfo * GetCodeInfo()
     {
         LIMITED_METHOD_DAC_CONTRACT;

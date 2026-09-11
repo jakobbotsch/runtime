@@ -766,7 +766,7 @@ bool AsyncAnalysis::IsLocalCaptureUnnecessary(unsigned lclNum)
 // Returns:
 //   True if the local is live and capturing it is necessary.
 //
-bool AsyncAnalysis::IsLive(unsigned lclNum)
+bool AsyncAnalysis::IsLive(unsigned lclNum, bool includeDefaults)
 {
     if (IsLocalCaptureUnnecessary(lclNum))
     {
@@ -827,7 +827,7 @@ bool AsyncAnalysis::IsLive(unsigned lclNum)
                 !fieldDsc->lvTracked || VarSetOps::IsMember(m_compiler, m_mutatedValues, fieldDsc->lvVarIndex);
         }
 
-        return anyLive && anyMutated;
+        return anyLive && (anyMutated || includeDefaults);
     }
 
     if (dsc->lvIsStructField && (m_compiler->lvaGetParentPromotionType(dsc) == Compiler::PROMOTION_TYPE_DEPENDENT))
@@ -845,7 +845,7 @@ bool AsyncAnalysis::IsLive(unsigned lclNum)
         return false;
     }
 
-    if (!VarSetOps::IsMember(m_compiler, m_mutatedValues, dsc->lvVarIndex))
+    if (!includeDefaults && !VarSetOps::IsMember(m_compiler, m_mutatedValues, dsc->lvVarIndex))
     {
         return false;
     }

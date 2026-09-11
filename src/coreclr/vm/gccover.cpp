@@ -435,8 +435,15 @@ static MethodDesc* getTargetMethodDesc(PCODE target)
     return nullptr;
 }
 
-void ReplaceInstrAfterCall(PBYTE instrToReplace, MethodDesc* callMD)
+void ReplaceInstrAfterCall(PBYTE instrToReplace, MethodDesc* callMD, PCODE callTarget)
 {
+    EECodeInfo targetInfo(callTarget);
+    if (targetInfo.IsValid() && targetInfo.GetJitManager()->IsAsyncWrapper(&targetInfo))
+    {
+        *instrToReplace = INTERRUPT_INSTR_PROTECT_RET;
+        return;
+    }
+
     ReturnKind returnKind = callMD->GetReturnKind();
     if (!IsValidReturnKind(returnKind))
     {
@@ -515,6 +522,7 @@ void GCCoverageInfo::SprinkleBreakpoints(
     // This variable is non-null if the previous instruction was a direct call,
     //  and we have found it's target MethodDesc
     MethodDesc* prevDirectCallTargetMD = NULL;
+    PCODE prevDirectCallTarget = 0;
 
     /* TODO. Simulating the hijack could cause problems in cases where the
        return register is not always a valid GC ref on the return offset.
@@ -535,6 +543,7 @@ void GCCoverageInfo::SprinkleBreakpoints(
         _ASSERTE(*cur != INTERRUPT_INSTR && *cur != INTERRUPT_INSTR_CALL);
 
         MethodDesc* targetMD = NULL;
+        PCODE directCallTarget = 0;
         InstructionType instructionType;
         size_t len = disassembler.DisassembleInstruction(cur, codeEnd - cur, &instructionType);
 
@@ -560,6 +569,7 @@ void GCCoverageInfo::SprinkleBreakpoints(
 
                 if (target != 0)
                 {
+                    directCallTarget = (PCODE)target;
                     targetMD = getTargetMethodDesc((PCODE)target);
                 }
             }
@@ -572,7 +582,7 @@ void GCCoverageInfo::SprinkleBreakpoints(
 
         if (prevDirectCallTargetMD != 0)
         {
-            ReplaceInstrAfterCall(cur + writeableOffset, prevDirectCallTargetMD);
+            ReplaceInstrAfterCall(cur + writeableOffset, prevDirectCallTargetMD, prevDirectCallTarget);
         }
 
         // For fully interruptible locations, we end up whacking every instruction
@@ -593,6 +603,7 @@ void GCCoverageInfo::SprinkleBreakpoints(
 
         // If we couldn't find the method desc targetMD is zero
         prevDirectCallTargetMD = targetMD;
+        prevDirectCallTarget = directCallTarget;
 
         cur += len;
     }
@@ -831,7 +842,7 @@ void DoGcStress (PCONTEXT regs, NativeCodeVersion nativeCodeVersion)
                     // It could become a problem if 64bit does partially interrupt work.
                     // OK, we have the MD, mark the instruction after the CALL
                     // appropriately
-                    ReplaceInstrAfterCall(nextInstrWriterHolder.GetRW(), targetMD);
+                    ReplaceInstrAfterCall(nextInstrWriterHolder.GetRW(), targetMD, (PCODE)target);
                 }
             }
         }
@@ -930,11 +941,28 @@ void DoGcStress (PCONTEXT regs, NativeCodeVersion nativeCodeVersion)
 ////////////////////////////// end of x86-specific //////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 
+struct GCCoverageEntryContext
+{
+    GCCoverageInfo* coverage;
+    CodeHeader* header;
+    DWORD gcInfoOffset;
+
+    bool ContainsOffset(UINT32 codeOffset)
+    {
+        LIMITED_METHOD_CONTRACT;
+        return header == nullptr || header->GetGCInfoOffset(codeOffset) == gcInfoOffset;
+    }
+};
+
 #ifdef PARTIALLY_INTERRUPTIBLE_GC_SUPPORTED
 void replaceSafePointInstructionWithGcStressInstr(GcInfoDecoder* decoder, UINT32 safePointOffset, LPVOID pGCCover)
 {
+    GCCoverageEntryContext* context = static_cast<GCCoverageEntryContext*>(pGCCover);
+    if (!context->ContainsOffset(safePointOffset))
+        return;
+
     PCODE pCode = (PCODE)NULL;
-    IJitManager::MethodRegionInfo *ptr = &(((GCCoverageInfo*)pGCCover)->methodRegion);
+    IJitManager::MethodRegionInfo *ptr = &context->coverage->methodRegion;
 
     //Get code address from offset
     if (safePointOffset < ptr->hotSize)
@@ -978,14 +1006,14 @@ void replaceSafePointInstructionWithGcStressInstr(GcInfoDecoder* decoder, UINT32
 #endif // PARTIALLY_INTERRUPTIBLE_GC_SUPPORTED
 
 //Replaces the provided interruptible range with corresponding 2 or 4 byte gcStress illegal instruction
-bool replaceInterruptibleRangesWithGcStressInstr (UINT32 startOffset, UINT32 stopOffset, LPVOID pGCCover)
+static bool replaceInterruptibleRangeWithGcStressInstr(UINT32 startOffset, UINT32 stopOffset, GCCoverageInfo* coverage)
 {
 #if defined(TARGET_AMD64)
 #if defined(USE_DISASSEMBLER)
     Disassembler disassembler;
 #else
     // we can't instrument fully interruptible ranges in x64 without disassembling
-    return;
+    return false;
 #endif // USE_DISASSEMBLER
 #endif // TARGET_AMD64
 
@@ -997,7 +1025,7 @@ bool replaceInterruptibleRangesWithGcStressInstr (UINT32 startOffset, UINT32 sto
     int acrossHotRegion = 1; // 1 means range is not across end of hot region & 2 is when it is across end of hot region
 
     //Find the code addresses from offsets
-    IJitManager::MethodRegionInfo *ptr = &(((GCCoverageInfo*)pGCCover)->methodRegion);
+    IJitManager::MethodRegionInfo *ptr = &coverage->methodRegion;
     if (startOffset < ptr->hotSize)
     {
         pCode = ptr->hotStartAddress + startOffset;
@@ -1075,6 +1103,33 @@ bool replaceInterruptibleRangesWithGcStressInstr (UINT32 startOffset, UINT32 sto
     return FALSE;
 }
 
+bool replaceInterruptibleRangesWithGcStressInstr(UINT32 startOffset, UINT32 stopOffset, LPVOID pGCCover)
+{
+    GCCoverageEntryContext* context = static_cast<GCCoverageEntryContext*>(pGCCover);
+    if (context->header == nullptr || context->header->GetNumberOfCodeEntries() == 0)
+        return replaceInterruptibleRangeWithGcStressInstr(startOffset, stopOffset, context->coverage);
+
+    // Clip ranges to the entries that select this blob. A main blob must not instrument
+    // a wrapper's instructions, even when its encoded range spans the wrapper.
+    while (startOffset < stopOffset)
+    {
+        UINT32 nextOffset = stopOffset;
+        for (UINT i = 0; i < context->header->GetNumberOfCodeEntries(); i++)
+        {
+            CodeEntryInfo* entry = context->header->GetCodeEntry(i);
+            if (startOffset < entry->startOffset && entry->startOffset < nextOffset)
+                nextOffset = entry->startOffset;
+            if (startOffset < entry->endOffset && entry->endOffset < nextOffset)
+                nextOffset = entry->endOffset;
+        }
+
+        if (context->ContainsOffset(startOffset))
+            replaceInterruptibleRangeWithGcStressInstr(startOffset, nextOffset, context->coverage);
+        startOffset = nextOffset;
+    }
+    return false;
+}
+
 /****************************************************************************/
 /* sprinkle interrupt instructions that will stop on every GCSafe location
    regionOffsetAdj - Represents the offset of the current region
@@ -1108,15 +1163,49 @@ void GCCoverageInfo::SprinkleBreakpoints(
         }
     }
 
-    GcInfoDecoder safePointDecoder(gcInfoToken, (GcInfoDecoderFlags)0, 0);
-
     assert(methodRegion.hotSize > 0);
 
+    EECodeInfo codeInfo(methodRegion.hotStartAddress);
+    CodeHeader* header = nullptr;
+    if (codeInfo.GetJitManager() == ExecutionManager::GetEEJitManager())
+        header = EEJitManager::GetCodeHeader(codeInfo.GetMethodToken());
+
+    UINT entryCount = header == nullptr ? 0 : header->GetNumberOfCodeEntries();
+    for (UINT blobIndex = 0; blobIndex <= entryCount; blobIndex++)
+    {
+        DWORD gcInfoOffset = 0;
+        if (blobIndex != 0)
+        {
+            gcInfoOffset = header->GetCodeEntry(blobIndex - 1)->gcInfoOffset;
+            if (gcInfoOffset == 0)
+                continue;
+
+            bool alreadyInstrumented = false;
+            for (UINT i = 0; i < blobIndex - 1; i++)
+            {
+                if (header->GetCodeEntry(i)->gcInfoOffset == gcInfoOffset)
+                {
+                    alreadyInstrumented = true;
+                    break;
+                }
+            }
+            if (alreadyInstrumented)
+                continue;
+        }
+
+        GCInfoToken entryToken = gcInfoToken;
+        if (gcInfoOffset != 0)
+            entryToken.Info = dac_cast<PTR_BYTE>(gcInfoToken.Info) + gcInfoOffset;
+
+        GCCoverageEntryContext context = {this, header, gcInfoOffset};
+        GcInfoDecoder safePointDecoder(entryToken, (GcInfoDecoderFlags)0, 0);
+
 #ifdef PARTIALLY_INTERRUPTIBLE_GC_SUPPORTED
-    safePointDecoder.EnumerateSafePoints(&replaceSafePointInstructionWithGcStressInstr,this);
+        safePointDecoder.EnumerateSafePoints(&replaceSafePointInstructionWithGcStressInstr, &context);
 #endif // PARTIALLY_INTERRUPTIBLE_GC_SUPPORTED
 
-    safePointDecoder.EnumerateInterruptibleRanges(&replaceInterruptibleRangesWithGcStressInstr, this);
+        safePointDecoder.EnumerateInterruptibleRanges(&replaceInterruptibleRangesWithGcStressInstr, &context);
+    }
 
     FlushInstructionCache(GetCurrentProcess(), (BYTE*)methodRegion.hotStartAddress, methodRegion.hotSize);
 

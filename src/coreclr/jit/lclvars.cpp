@@ -4380,6 +4380,75 @@ void Compiler::lvaAssignFrameOffsets(FrameLayoutState curState)
     // Modify the stack offset for fields of promoted structs.
     lvaAssignFrameOffsetsToPromotedStructs();
 
+#ifdef TARGET_AMD64
+    if (compAsyncResumeEntries)
+    {
+        if (compAsyncWrapperOutgoingSize > INT_MAX - 16)
+        {
+            IMPL_LIMITATION("Async wrapper frame is too large");
+        }
+        unsigned offset  = roundUp(compAsyncWrapperOutgoingSize, TARGET_POINTER_SIZE);
+        auto     reserve = [&offset](unsigned size) {
+            if ((offset > INT_MAX - 16) || (size > static_cast<unsigned>(INT_MAX) - offset - 16))
+            {
+                IMPL_LIMITATION("Async wrapper frame is too large");
+            }
+            offset += size;
+        };
+        for (unsigned lclNum = 0; lclNum < lvaCount; lclNum++)
+        {
+            LclVarDsc* varDsc = lvaGetDesc(lclNum);
+            if (!varDsc->lvIsAsyncWrapperLocal || !varDsc->lvOnFrame)
+            {
+                continue;
+            }
+            offset                      = roundUp(offset, TARGET_POINTER_SIZE);
+            varDsc->lvFramePointerBased = codeGen->isFramePointerUsed();
+            varDsc->SetStackOffset(offset);
+            unsigned size = lvaLclStackHomeSize(lclNum);
+            if (size > INT_MAX - TARGET_POINTER_SIZE)
+            {
+                IMPL_LIMITATION("Async wrapper local is too large");
+            }
+            reserve(roundUp(size, TARGET_POINTER_SIZE));
+        }
+
+        compAsyncWrapperTempOffset = roundUp(offset, 16);
+        offset                     = compAsyncWrapperTempOffset;
+        unsigned tempCount         = 0;
+        for (TempDsc* temp = codeGen->regSet.tmpListBeg(); temp != nullptr; temp = codeGen->regSet.tmpListNxt(temp))
+        {
+            tempCount++;
+        }
+        // Free-list ordering changes during codegen; the homes must not.
+        for (unsigned index = 1; index <= tempCount; index++)
+        {
+            TempDsc* temp            = codeGen->regSet.tmpGetNum(-static_cast<int>(index));
+            temp->tdAsyncWrapperOffs = offset;
+            reserve(roundUp(temp->tdTempSize(), 16));
+        }
+
+        // All wrappers can branch to the common postlude, so every entry must
+        // preserve the same union of registers used anywhere in the family.
+        compAsyncWrapperSavedRegs = (curState == FINAL_FRAME_LAYOUT) ? compAsyncWrapperUsedRegs : RBM_CALLEE_SAVED;
+        if (codeGen->isFramePointerUsed())
+        {
+            compAsyncWrapperSavedRegs &= ~RBM_FPBASE;
+        }
+        compAsyncWrapperSaveOffset = roundUp(offset, 16);
+        offset                     = compAsyncWrapperSaveOffset;
+        for (regNumber reg = REG_INT_FIRST; reg < REG_COUNT; reg = REG_NEXT(reg))
+        {
+            if ((compAsyncWrapperSavedRegs & genRegMask(reg)) != RBM_NONE)
+            {
+                reserve(16);
+            }
+        }
+        unsigned entryMisalignment = codeGen->isFramePointerUsed() ? 0 : TARGET_POINTER_SIZE;
+        compAsyncWrapperFrameSize  = roundUp(offset + entryMisalignment, 16) - entryMisalignment;
+    }
+#endif
+
     /*-------------------------------------------------------------------------
      *
      * Finalize
@@ -4508,6 +4577,10 @@ void Compiler::lvaFixVirtualFrameOffsets()
     for (lclNum = 0, varDsc = lvaTable; lclNum < lvaCount; lclNum++, varDsc++)
     {
         bool doAssignStkOffs = true;
+        if (varDsc->lvIsAsyncWrapperLocal)
+        {
+            continue;
+        }
 
         // Can't be relative to EBP unless we have an EBP
         noway_assert(!varDsc->lvFramePointerBased || codeGen->doubleAlignOrFramePointerUsed());
@@ -5229,6 +5302,10 @@ void Compiler::lvaAssignVirtualFrameOffsetsToLocals()
 
         for (lclNum = 0, varDsc = lvaTable; lclNum < lvaCount; lclNum++, varDsc++)
         {
+            if (varDsc->lvIsAsyncWrapperLocal)
+            {
+                continue;
+            }
             /* Ignore field locals of the promotion type PROMOTION_TYPE_FIELD_DEPENDENT.
                In other words, we will not calculate the "base" address of the struct local if
                the promotion type is PROMOTION_TYPE_FIELD_DEPENDENT.

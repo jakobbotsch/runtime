@@ -1840,7 +1840,9 @@ void CallArgs::AddFinalArgsAndDetermineABIInfo(Compiler* comp, GenTreeCall* call
         // Example: on AMD64 R10 and R11 are used for indirect VSD (generic interface) and cookie calls.
         // TODO-Cleanup: Integrate this into the new style ABI classifiers.
         regNumber nonStdRegNum;
-        if (GetCustomRegister(comp, call->GetUnmanagedCallConv(), arg.GetWellKnownArg(), &nonStdRegNum))
+        bool      isResumeArgument = TryClassifyResumeArgument(comp, call, arg);
+        if (!isResumeArgument &&
+            GetCustomRegister(comp, call->GetUnmanagedCallConv(), arg.GetWellKnownArg(), &nonStdRegNum))
         {
             if (nonStdRegNum != REG_NA)
             {
@@ -1852,7 +1854,7 @@ void CallArgs::AddFinalArgsAndDetermineABIInfo(Compiler* comp, GenTreeCall* call
                 arg.AbiInfo = ABIPassingInformation(comp, 0);
             }
         }
-        else
+        else if (!isResumeArgument)
         {
             arg.AbiInfo = classifier.Classify(comp, argSigType, argLayout, arg.GetWellKnownArg());
         }
@@ -1923,7 +1925,9 @@ void CallArgs::DetermineABIInfo(Compiler* comp, GenTreeCall* call)
         // Example: on AMD64 R10 and R11 are used for indirect VSD (generic interface) and cookie calls.
         // TODO-Cleanup: Integrate this into the new style ABI classifiers.
         regNumber nonStdRegNum;
-        if (GetCustomRegister(comp, call->GetUnmanagedCallConv(), arg.GetWellKnownArg(), &nonStdRegNum))
+        bool      isResumeArgument = TryClassifyResumeArgument(comp, call, arg);
+        if (!isResumeArgument &&
+            GetCustomRegister(comp, call->GetUnmanagedCallConv(), arg.GetWellKnownArg(), &nonStdRegNum))
         {
             if (nonStdRegNum != REG_NA)
             {
@@ -1935,7 +1939,7 @@ void CallArgs::DetermineABIInfo(Compiler* comp, GenTreeCall* call)
                 arg.AbiInfo = ABIPassingInformation(comp, 0);
             }
         }
-        else
+        else if (!isResumeArgument)
         {
             arg.AbiInfo = classifier.Classify(comp, argSigType, argLayout, arg.GetWellKnownArg());
         }
@@ -1955,8 +1959,33 @@ void CallArgs::DetermineABIInfo(Compiler* comp, GenTreeCall* call)
 //
 unsigned CallArgs::OutgoingArgsStackSize() const
 {
-    unsigned aligned = Compiler::GetOutgoingArgByteSize(m_argsStackSize);
+    unsigned aligned = Compiler::GetOutgoingArgByteSize(max(m_argsStackSize, m_reservedStackSize));
     return max(aligned, (unsigned)MIN_ARG_AREA_FOR_CALL);
+}
+
+bool CallArgs::TryClassifyResumeArgument(Compiler* comp, GenTreeCall* call, CallArg& arg)
+{
+    if (!call->IsAsyncResumeCall())
+    {
+        return false;
+    }
+
+    unsigned lclNum;
+    switch (arg.GetWellKnownArg())
+    {
+        case WellKnownArg::AsyncContinuation:
+            lclNum = comp->lvaAsyncContinuationArg;
+            break;
+        case WellKnownArg::RetBuffer:
+            lclNum = comp->info.compRetBuffArg;
+            break;
+        default:
+            return false;
+    }
+
+    assert(lclNum != BAD_VAR_NUM);
+    arg.AbiInfo = comp->lvaGetParameterABIInfo(lclNum);
+    return true;
 }
 
 //------------------------------------------------------------------------

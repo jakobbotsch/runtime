@@ -2306,7 +2306,17 @@ void emitter::emitGeneratePrologEpilog()
             case IGPT_FUNCLET_PROLOG:
                 INDEBUG(++funcletPrologCnt);
                 emitBegFuncletProlog(igPh);
-                codeGen->genFuncletProlog(igPhBB);
+                if (m_compiler->funCurrentFunc()->funKind == FUNC_ASYNC_RESUME)
+                {
+                    // Use the main allocation when computing the identical
+                    // frame's zero-init ranges, not the resume's local map.
+                    m_compiler->m_regAlloc->recordVarLocationsAtStartOfBB(m_compiler->fgFirstBB);
+                    codeGen->genFnProlog(true);
+                }
+                else
+                {
+                    codeGen->genFuncletProlog(igPhBB);
+                }
                 emitEndFuncletProlog();
                 break;
 
@@ -2332,7 +2342,7 @@ void emitter::emitGeneratePrologEpilog()
         // prolog/epilog code doesn't use this yet
         // noway_assert(prologCnt == 1);
         // noway_assert(epilogCnt == emitEpilogCnt); // Is this correct?
-        assert(funcletPrologCnt == m_compiler->ehFuncletCount());
+        assert(funcletPrologCnt + 1 == static_cast<unsigned>(m_compiler->compFuncCount()));
     }
 #endif // DEBUG
 }
@@ -6720,6 +6730,17 @@ void emitter::emitCheckFuncletBranch(instrDesc* jmp, insGroup* jmpIG)
                 assert(jmpEH->ebdEnclosingHndIndex == EHblkDsc::NO_ENCLOSING_INDEX);
             }
         }
+        else if (m_compiler->funGetFunc(jmpIG->igFuncIdx)->funKind == FUNC_ASYNC_RESUME)
+        {
+            assert(m_compiler->compAsyncResumeEntries);
+            assert(m_compiler->funGetFunc(tgtIG->igFuncIdx)->funKind == FUNC_ROOT);
+        }
+        else if (m_compiler->funGetFunc(jmpIG->igFuncIdx)->funKind == FUNC_ASYNC_WRAPPER)
+        {
+            assert(m_compiler->compAsyncResumeEntries);
+            assert(m_compiler->funGetFunc(tgtIG->igFuncIdx)->funKind == FUNC_ASYNC_WRAPPER);
+            assert(tgtIG != emitCodeGetCookie(m_compiler->funGetFunc(tgtIG->igFuncIdx)->GetStartBlock(m_compiler)));
+        }
         else
         {
             printf("Hit an illegal branch between funclets!");
@@ -7627,6 +7648,16 @@ unsigned emitter::emitEndCodeGen(Compiler*             comp,
 
     /* Patch any forward jumps */
 
+#ifdef TARGET_XARCH
+    for (LocalCallFixup* fixup = emitLocalCallFixups; fixup != nullptr; fixup = fixup->next)
+    {
+        insGroup* target       = static_cast<insGroup*>(fixup->target->bbEmitCookie);
+        ssize_t   displacement = emitOffsetToPtr(target->igOffs) - (fixup->displacement + sizeof(INT32));
+        assert(FitsIn<int32_t>(displacement));
+        emitOutputLong(fixup->displacement, displacement);
+    }
+#endif
+
     if (emitFwdJumps)
     {
         for (instrDescJmp* jmp = emitJumpList; jmp != nullptr; jmp = jmp->idjNext)
@@ -8014,7 +8045,7 @@ void emitter::emitAsyncResumeTable(unsigned numEntries, UNATIVE_OFFSET* dataSecO
 
     // We will need the resume stub. Get it from the EE now so we can display
     // it before we emit the actual table later.
-    if (emitAsyncResumeStub == NO_METHOD_HANDLE)
+    if (!m_compiler->compAsyncResumeEntries && (emitAsyncResumeStub == NO_METHOD_HANDLE))
     {
         emitAsyncResumeStub = emitCmpHandle->getAsyncResumptionStub(&emitAsyncResumeStubEntryPoint);
     }
@@ -8542,19 +8573,30 @@ void emitter::emitOutputDataSec(dataSecDsc* sec, AllocMemChunk* chunks)
 #else
                 BYTE* target = emitLoc->Valid() ? emitOffsetToPtr(emitLoc->CodeOffset(this)) : nullptr;
 #endif
-                aDstRW[i].Resume       = (target_size_t)(uintptr_t)emitAsyncResumeStubEntryPoint;
+                void* resume = emitAsyncResumeStubEntryPoint;
+                if (m_compiler->compAsyncResumeEntries)
+                {
+                    BasicBlock* entry = (*m_compiler->compAsyncResumeBlocks)[i];
+                    resume            = entry->HasFlag(BBF_REMOVED)
+                                            ? nullptr
+                                            : emitOffsetToPtr(static_cast<insGroup*>(emitCodeGetCookie(entry))->igOffs);
+                }
+                aDstRW[i].Resume       = (target_size_t)(uintptr_t)resume;
                 aDstRW[i].DiagnosticIP = (target_size_t)(uintptr_t)target;
 
                 if (m_compiler->opts.compReloc)
                 {
-                    emitRecordRelocation(&aDstRW[i].Resume, emitAsyncResumeStubEntryPoint, CorInfoReloc::DIRECT);
+                    if (resume != nullptr)
+                    {
+                        emitRecordRelocation(&aDstRW[i].Resume, resume, CorInfoReloc::DIRECT);
+                    }
                     if (target != nullptr)
                     {
                         emitRecordRelocation(&aDstRW[i].DiagnosticIP, target, CorInfoReloc::DIRECT);
                     }
                 }
 
-                JITDUMP("  Resume=%p, FinalResumeIP=%p\n", emitAsyncResumeStubEntryPoint, (void*)target);
+                JITDUMP("  Resume=%p, FinalResumeIP=%p\n", resume, (void*)target);
             }
         }
         else
@@ -8692,14 +8734,17 @@ void emitter::emitDispDataSec(dataSecDsc* section, AllocMemChunk* dataChunks)
         }
         else if (data->dsType == dataSection::asyncResumeInfo)
         {
-            assert(emitAsyncResumeStub != NO_METHOD_HANDLE);
-            assert(emitAsyncResumeStubEntryPoint != nullptr);
-
             char        nameBuffer[256];
-            const char* resumeStubName =
-                m_compiler->eeGetMethodFullName(emitAsyncResumeStub, true, true, nameBuffer, sizeof(nameBuffer));
+            const char* resumeStubName = "async resume entry";
+            if (!m_compiler->compAsyncResumeEntries)
+            {
+                assert(emitAsyncResumeStub != NO_METHOD_HANDLE);
+                assert(emitAsyncResumeStubEntryPoint != nullptr);
+                resumeStubName =
+                    m_compiler->eeGetMethodFullName(emitAsyncResumeStub, true, true, nameBuffer, sizeof(nameBuffer));
+            }
 
-            size_t infoCount = data->dsSize / sizeof(emitLocation);
+            size_t infoCount = data->dsSize / sizeof(CORINFO_AsyncResumeInfo);
             for (size_t i = 0; i < infoCount; i++)
             {
                 if (i > 0)

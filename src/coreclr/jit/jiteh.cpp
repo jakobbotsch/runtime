@@ -661,7 +661,7 @@ bool Compiler::bbIsHandlerBeg(const BasicBlock* block)
 bool Compiler::bbIsFuncletBeg(const BasicBlock* block)
 {
     assert(fgFuncletsCreated);
-    return bbIsHandlerBeg(block);
+    return (block->bbAsyncResumeFuncIdx != 0) || bbIsHandlerBeg(block);
 }
 
 bool Compiler::ehHasCallableHandlers()

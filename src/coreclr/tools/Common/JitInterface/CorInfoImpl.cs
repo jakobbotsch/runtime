@@ -512,6 +512,7 @@ namespace Internal.JitInterface
 #endif
 
             _methodCodeNode.InitializeFrameInfos(_frameInfos);
+            _methodCodeNode.InitializeCodeEntries(_codeEntries.ToArray());
 #if READYTORUN
             _methodCodeNode.InitializeColdFrameInfos(_coldFrameInfos);
 #endif
@@ -710,6 +711,7 @@ namespace Internal.JitInterface
             _numFrameInfos = 0;
             _usedFrameInfos = 0;
             _frameInfos = null;
+            _codeEntries = default;
 
 #if READYTORUN
             _numColdFrameInfos = 0;
@@ -4249,6 +4251,7 @@ namespace Internal.JitInterface
         private int _numFrameInfos;
         private int _usedFrameInfos;
         private FrameInfo[] _frameInfos;
+        private ArrayBuilder<CodeEntryInfo> _codeEntries;
 
 #if READYTORUN
         private int _numColdFrameInfos;
@@ -4387,6 +4390,32 @@ namespace Internal.JitInterface
             {
                 _numFrameInfos++;
             }
+        }
+
+        private void reportCodeEntry(uint startOffset, uint endOffset, CorInfoCodeEntryKind kind, CorInfoCodeEntrySignature signature, uint gcInfoOffset)
+        {
+            bool validSignature = kind switch
+            {
+                CorInfoCodeEntryKind.CORINFO_CODE_ENTRY_MAIN => startOffset == 0 && signature == CorInfoCodeEntrySignature.CORINFO_CODE_ENTRY_SIG_METHOD,
+                CorInfoCodeEntryKind.CORINFO_CODE_ENTRY_HANDLER => signature is CorInfoCodeEntrySignature.CORINFO_CODE_ENTRY_SIG_CATCH_FILTER or CorInfoCodeEntrySignature.CORINFO_CODE_ENTRY_SIG_FINALLY_FAULT,
+                CorInfoCodeEntryKind.CORINFO_CODE_ENTRY_FILTER => signature == CorInfoCodeEntrySignature.CORINFO_CODE_ENTRY_SIG_CATCH_FILTER,
+                CorInfoCodeEntryKind.CORINFO_CODE_ENTRY_ASYNC_RESUME => signature == CorInfoCodeEntrySignature.CORINFO_CODE_ENTRY_SIG_BODY_RESUME,
+                CorInfoCodeEntryKind.CORINFO_CODE_ENTRY_ASYNC_WRAPPER => signature == CorInfoCodeEntrySignature.CORINFO_CODE_ENTRY_SIG_ASYNC_RESUME,
+                _ => false,
+            };
+            if (_code is null || startOffset >= endOffset || endOffset > _code.Length || !validSignature ||
+                _gcInfo is null || gcInfoOffset >= _gcInfo.Length ||
+                (kind == CorInfoCodeEntryKind.CORINFO_CODE_ENTRY_ASYNC_WRAPPER) != (gcInfoOffset != 0))
+                throw new InvalidOperationException($"Invalid code entry [{startOffset}, {endOffset}): {kind}, {signature}, GC offset {gcInfoOffset}.");
+
+            for (int i = 0; i < _codeEntries.Count; i++)
+            {
+                CodeEntryInfo entry = _codeEntries[i];
+                if (startOffset < entry.EndOffset && entry.StartOffset < endOffset)
+                    throw new InvalidOperationException($"Overlapping code entry [{startOffset}, {endOffset}).");
+            }
+
+            _codeEntries.Add(new CodeEntryInfo(startOffset, endOffset, kind, signature, gcInfoOffset));
         }
 
         private void allocUnwindInfo(byte* pHotCode, byte* pColdCode, uint startOffset, uint endOffset, uint unwindSize, byte* pUnwindBlock, CorJitFuncKind funcKind)

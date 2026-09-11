@@ -5301,7 +5301,11 @@ inline UNATIVE_OFFSET emitter::emitInsSizeSVCalcDisp(instrDesc* id, code_t code,
     bool dspInByte;
     bool dspIsZero;
 
+#ifdef TARGET_AMD64
+    adr = codeGen->genFrameAddress(var, &EBPbased);
+#else
     adr = m_compiler->lvaFrameAddress(var, &EBPbased);
+#endif
     dsp = adr + id->idAddr()->iiaLclVar.lvaOffset();
 
     dspIsZero = (dsp == 0);
@@ -10955,14 +10959,20 @@ void emitter::emitAdjustStackDepth(instruction ins, ssize_t val)
 void emitter::emitIns_Call(const EmitCallParams& params)
 // clang-format on
 {
+    if ((m_compiler->compCurBB != nullptr) && m_compiler->compCurBB->bbIsAsyncResumeEntry &&
+        !emitNoGChelper(params.methHnd))
+    {
+        IMPL_LIMITATION("Async body restoration cannot contain a GC-triggering call");
+    }
+
     /* Sanity check the arguments depending on callType */
 
     assert(params.callType < EC_COUNT);
     if (!m_compiler->IsTargetAbi(CORINFO_NATIVEAOT_ABI))
     {
         assert((params.callType != EC_FUNC_TOKEN && params.callType != EC_FUNC_TOKEN_INDIR) ||
-               (params.addr != nullptr && params.ireg == REG_NA && params.xreg == REG_NA && params.xmul == 0 &&
-                params.disp == 0));
+               ((params.addr != nullptr || params.codeEntry != nullptr) && params.ireg == REG_NA &&
+                params.xreg == REG_NA && params.xmul == 0 && params.disp == 0));
     }
     assert(params.callType != EC_INDIR_R || (params.addr == nullptr && params.ireg < REG_COUNT &&
                                              params.xreg == REG_NA && params.xmul == 0 && params.disp == 0));
@@ -11166,7 +11176,7 @@ void emitter::emitIns_Call(const EmitCallParams& params)
 
         assert(params.callType == EC_FUNC_TOKEN);
 
-        assert(params.addr != nullptr || m_compiler->IsTargetAbi(CORINFO_NATIVEAOT_ABI));
+        assert(params.addr != nullptr || params.codeEntry != nullptr || m_compiler->IsTargetAbi(CORINFO_NATIVEAOT_ABI));
 
         id->idInsFmt(IF_METHOD);
         sz = 5;
@@ -11174,7 +11184,13 @@ void emitter::emitIns_Call(const EmitCallParams& params)
         id->idAddr()->iiaAddr = (BYTE*)params.addr;
 
         // Direct call to a method and no addr indirection is needed.
-        if (codeGen->genCodeAddrNeedsReloc((size_t)params.addr))
+        if (params.codeEntry != nullptr)
+        {
+            assert(!params.isJump && params.addr == nullptr);
+            id->idInsFmt(IF_METHOD_LBL);
+            id->idAddr()->iiaBBlabel = params.codeEntry;
+        }
+        else if (codeGen->genCodeAddrNeedsReloc((size_t)params.addr))
         {
             id->idSetIsDspReloc();
 
@@ -11877,7 +11893,11 @@ void emitter::emitDispFrameRef(int varx, int disp, int offs, bool asmfm)
             printf(" ");
         }
 
+#ifdef TARGET_AMD64
+        addr = codeGen->genFrameAddress(varx, &bEBP) + disp;
+#else
         addr = m_compiler->lvaFrameAddress(varx, &bEBP) + disp;
+#endif
 
         if (bEBP)
         {
@@ -13691,9 +13711,15 @@ void emitter::emitDispIns(
         }
 
         case IF_METHOD:
+        case IF_METHOD_LBL:
         case IF_METHPTR:
         {
             assert(!IsSimdEvexEncodableInstruction(id->idIns()));
+            if (id->idIsLocalCall())
+            {
+                printf("L_M%03u_" FMT_BB, m_compiler->compMethodID, id->idAddr()->iiaBBlabel->bbNum);
+                break;
+            }
             methodName = m_compiler->eeGetMethodFullName((CORINFO_METHOD_HANDLE)id->idDebugOnlyInfo()->idMemCookie);
 
             if (id->idInsFmt() == IF_METHPTR)
@@ -15288,7 +15314,11 @@ BYTE* emitter::emitOutputSV(BYTE* dst, instrDesc* id, code_t code, CnsVal* addc)
     // Figure out the variable's frame position
     int varNum = id->idAddr()->iiaLclVar.lvaVarNum();
 
+#ifdef TARGET_AMD64
+    adr = codeGen->genFrameAddress(varNum, &EBPbased);
+#else
     adr = m_compiler->lvaFrameAddress(varNum, &EBPbased);
+#endif
     dsp = adr + id->idAddr()->iiaLclVar.lvaOffset();
 
     if (IsEvexEncodableInstruction(ins))
@@ -18212,6 +18242,7 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
         }
 
         case IF_METHOD:
+        case IF_METHOD_LBL:
         case IF_METHPTR:
         {
             // Get hold of the argument count and field Handle
@@ -18238,6 +18269,12 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
             }
 
             addr = (BYTE*)id->idAddr()->iiaAddr;
+            if (id->idIsLocalCall())
+            {
+                insGroup* target = static_cast<insGroup*>(id->idAddr()->iiaBBlabel->bbEmitCookie);
+                assert(target != nullptr);
+                addr = emitOffsetToPtr(target->igOffs);
+            }
             assert(addr != nullptr);
 
             // What kind of a call do we have here?
@@ -18284,7 +18321,7 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
             // Else
             // This is call direct where we know the target, thus we can
             // use a direct call; the target to jump to is in iiaAddr.
-            assert(id->idInsFmt() == IF_METHOD);
+            assert((id->idInsFmt() == IF_METHOD) || id->idIsLocalCall());
 
             // Output the call opcode followed by the target distance
             if (ins == INS_l_jmp)
@@ -18310,7 +18347,7 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
 #ifdef TARGET_AMD64
             // All REL32 on Amd64 go through recordRelocation.  Here we will output zero to advance dst.
             offset = 0;
-            assert(id->idIsDspReloc());
+            assert(id->idIsLocalCall() || id->idIsDspReloc());
 #else
             // Calculate PC relative displacement.
             // Although you think we should be using sizeof(void*), the x86 and x64 instruction set
@@ -18318,6 +18355,15 @@ size_t emitter::emitOutputInstr(insGroup* ig, instrDesc* id, BYTE** dp)
             offset = addr - (dst + sizeof(INT32));
 #endif
 
+            if (id->idIsLocalCall())
+            {
+                LocalCallFixup* fixup = new (m_compiler, CMK_InstDesc) LocalCallFixup;
+                fixup->next           = emitLocalCallFixups;
+                fixup->target         = id->idAddr()->iiaBBlabel;
+                fixup->displacement   = dst;
+                emitLocalCallFixups   = fixup;
+                offset                = 0;
+            }
             dst += emitOutputLong(dst, offset);
 
             if (id->idIsDspReloc())
@@ -20224,6 +20270,7 @@ emitter::insExecutionCharacteristics emitter::getInsExecutionCharacteristics(ins
                     break;
 
                 case IF_METHOD:
+                case IF_METHOD_LBL:
                     insThroughput = PERFSCORE_THROUGHPUT_1C;
                     break;
 

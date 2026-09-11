@@ -697,7 +697,7 @@ bool EECodeManager::IsGcSafe( EECodeInfo     *pCodeInfo,
         GC_NOTRIGGER;
     } CONTRACTL_END;
 
-    GCInfoToken gcInfoToken = pCodeInfo->GetGCInfoToken();
+    GCInfoToken gcInfoToken = pCodeInfo->GetGCInfoToken(dwRelOffset);
 
     GcInfoDecoder gcInfoDecoder(
             gcInfoToken,
@@ -1082,6 +1082,7 @@ bool EECodeManager::EnumGcRefs( PREGDISPLAY     pContext,
     if (relOffsetOverride != NO_OVERRIDE_OFFSET)
     {
         curOffs = relOffsetOverride;
+        gcInfoToken = pCodeInfo->GetGCInfoToken(curOffs);
     }
 
     return ::EnumGcRefsX86(pContext,
@@ -1161,6 +1162,7 @@ bool EECodeManager::EnumGcRefs( PREGDISPLAY     pRD,
 
         LOG((LF_GCINFO, LL_INFO1000, "Adjusted GC reporting offset to provided override offset. Now reporting GC refs for %s at offset %04x.\n",
             methodName, curOffs));
+        gcInfoToken = pCodeInfo->GetGCInfoToken(curOffs);
     }
 
     if (pCodeInfo->GetJitManager()->IsFilterFunclet(pCodeInfo))
