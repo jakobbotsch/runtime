@@ -8249,6 +8249,75 @@ void Lowering::ContainCheckCast(GenTreeCast* node)
 }
 
 //------------------------------------------------------------------------
+// TryNarrowCompare: Narrow a comparison to the width of a small memory operand
+// when the other operand's range fits, enabling memory containment.
+//
+// Arguments:
+//    cmp - the comparison
+//
+void Lowering::TryNarrowCompare(GenTreeOp* cmp)
+{
+    if (!cmp->OperIs(GT_EQ, GT_NE, GT_LT, GT_LE, GT_GT, GT_GE) && !cmp->gtOp2->IsIntegralConst())
+    {
+        return;
+    }
+
+    GenTree*  memoryOp = cmp->gtOp1;
+    GenTree** otherUse = &cmp->gtOp2;
+    if (!varTypeIsSmall(memoryOp) || !IsContainableMemoryOp(memoryOp))
+    {
+        memoryOp = cmp->gtOp2;
+        otherUse = &cmp->gtOp1;
+        if (!varTypeIsSmall(memoryOp) || !IsContainableMemoryOp(memoryOp))
+        {
+            return;
+        }
+    }
+
+    GenTree*  other = *otherUse;
+    var_types type  = memoryOp->TypeGet();
+    if ((other->TypeGet() == type) || !varTypeIsIntegral(other))
+    {
+        return;
+    }
+
+    IntegralRange range = IntegralRange::ForType(type);
+    bool          fits  = other->IsIntegralConst() ? range.Contains(other->AsIntConCommon()->IntegralValue())
+                                                   : range.Contains(IntegralRange::ForNode(other, m_compiler));
+    if (!fits)
+    {
+        return;
+    }
+
+    if (!other->IsIntegralConst() && !IsSafeToContainMem(cmp, memoryOp))
+    {
+        return;
+    }
+
+    JITDUMP("Narrowing comparison [%06u] to %s\n", Compiler::dspTreeID(cmp), varTypeName(type));
+
+    if (other->OperIs(GT_CAST) && !other->gtOverflow() && varTypeIsIntegral(other->AsCast()->CastOp()) &&
+        (genTypeSize(other->AsCast()->CastToType()) >= genTypeSize(type)))
+    {
+        GenTree* cast = other;
+        other         = cast->AsCast()->CastOp();
+        other->ClearContained();
+        *otherUse = other;
+        BlockRange().Remove(cast);
+    }
+
+    if (!other->OperIs(GT_LCL_VAR) && !other->IsIntegralConst() && (other->TypeGet() != type))
+    {
+        // Keep the computation at its original width (notably for right shifts),
+        // and narrow only the value consumed by the comparison.
+        LIR::Use use(BlockRange(), otherUse, cmp);
+        other = ReplaceWithLclVar(use);
+    }
+
+    other->gtType = type;
+}
+
+//------------------------------------------------------------------------
 // ContainCheckCompare: determine whether the sources of a compare node should be contained.
 //
 // Arguments:

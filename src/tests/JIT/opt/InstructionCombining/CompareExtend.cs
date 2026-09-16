@@ -12,6 +12,151 @@ namespace TestCompareExtend
         static int result = 100;
         static int failCtr = 0;
 
+        [Theory]
+        [InlineData(-65537L)]
+        [InlineData(-32769L)]
+        [InlineData(-32768L)]
+        [InlineData(-129L)]
+        [InlineData(-128L)]
+        [InlineData(-1L)]
+        [InlineData(0L)]
+        [InlineData(1L)]
+        [InlineData(127L)]
+        [InlineData(128L)]
+        [InlineData(255L)]
+        [InlineData(256L)]
+        [InlineData(32767L)]
+        [InlineData(32768L)]
+        [InlineData(65535L)]
+        [InlineData(65536L)]
+        [InlineData(long.MinValue)]
+        [InlineData(long.MaxValue)]
+        public static void CheckMemoryCompareRanges(long input)
+        {
+            long[] values = { -65537, -32769, -32768, -129, -128, -1, 0, 1, 127, 128, 255, 256,
+                              32767, 32768, 65535, 65536, long.MinValue, long.MaxValue };
+            long packedByte = unchecked(input << 8) | 0xA5;
+            long packedHighByte = unchecked(input << 40) | 0xA55A;
+            long packedShort = unchecked(input << 16) | 0xA55A;
+            foreach (long value in values)
+            {
+                byte unsignedByte = (byte)value;
+                sbyte signedByte = (sbyte)value;
+                ushort unsignedShort = (ushort)value;
+                short signedShort = (short)value;
+
+                Assert.Equal(unsignedByte == (byte)(packedHighByte >> 40), MemoryByteEquals(ref unsignedByte, packedHighByte));
+                Assert.Equal(signedByte < (sbyte)(packedByte >> 8), MemorySByteLessThan(ref signedByte, packedByte));
+                Assert.Equal(unsignedShort >= (ushort)(packedShort >> 16), MemoryUShortGreaterOrEqual(ref unsignedShort, packedShort));
+                Assert.Equal((short)(packedShort >> 16) > signedShort, MemoryShortLessThan(ref signedShort, packedShort));
+                Assert.Equal((uint)signedByte < (uint)(sbyte)input, MemorySByteUnsignedLessThan(ref signedByte, input));
+                Assert.Equal(unsignedByte == (input < value ? 1 : 0), MemoryByteEqualsBoolean(ref unsignedByte, input, value));
+                Assert.Equal(unsignedByte == (sbyte)input, MemoryByteEqualsSigned(ref unsignedByte, input));
+                Assert.Equal(signedByte == (byte)input, MemorySByteEqualsUnsigned(ref signedByte, input));
+                Assert.Equal(unsignedShort == (short)input, MemoryUShortEqualsSigned(ref unsignedShort, input));
+                Assert.Equal(signedShort == (ushort)input, MemoryShortEqualsUnsigned(ref signedShort, input));
+            }
+
+            byte checkedValue = (byte)input;
+            if (input is >= byte.MinValue and <= byte.MaxValue)
+            {
+                Assert.True(MemoryByteEqualsChecked(ref checkedValue, input));
+            }
+            else
+            {
+                Assert.Throws<OverflowException>(() => MemoryByteEqualsChecked(ref checkedValue, input));
+            }
+
+            byte originalValue = checkedValue;
+            Assert.True(MemoryByteEqualsWithMutation(ref checkedValue));
+            Assert.Equal(unchecked((byte)(originalValue + 1)), checkedValue);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool MemoryByteEquals(ref byte value, long input)
+        {
+            // X64: cmp byte ptr [{{.*}}], {{.*}}
+            return value == (byte)(input >> 40);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool MemorySByteLessThan(ref sbyte value, long input)
+        {
+            // X64: cmp byte ptr [{{.*}}], {{.*}}
+            return value < (sbyte)(input >> 8);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool MemoryUShortGreaterOrEqual(ref ushort value, long input)
+        {
+            // X64: cmp word ptr [{{.*}}], {{.*}}
+            return value >= (ushort)(input >> 16);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool MemoryShortLessThan(ref short value, long input)
+        {
+            // X64: cmp {{.*}}, word ptr [{{.*}}]
+            return (short)(input >> 16) > value;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool MemorySByteUnsignedLessThan(ref sbyte value, long input)
+        {
+            return (uint)value < (uint)(sbyte)input;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool MemoryByteEqualsBoolean(ref byte value, long left, long right)
+        {
+            // X64: cmp {{.*}}, byte ptr [{{.*}}]
+            return value == (left < right ? 1 : 0);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool MemoryByteEqualsChecked(ref byte value, long input)
+        {
+            return value == checked((byte)input);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool MemoryByteEqualsSigned(ref byte value, long input)
+        {
+            return value == (sbyte)input;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool MemorySByteEqualsUnsigned(ref sbyte value, long input)
+        {
+            return value == (byte)input;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool MemoryUShortEqualsSigned(ref ushort value, long input)
+        {
+            return value == (short)input;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool MemoryShortEqualsUnsigned(ref short value, long input)
+        {
+            return value == (ushort)input;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool MemoryByteEqualsWithMutation(ref byte value)
+        {
+            return value == ReadAndIncrement(ref value);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static byte ReadAndIncrement(ref byte value)
+        {
+            byte original = value;
+            value++;
+            return original;
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         [Fact]
         public static int CheckCompareExtend()
