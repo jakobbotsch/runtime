@@ -299,6 +299,75 @@ public class PhysicalPromotion
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public static void ParameterFieldReadsAfterStores(bool takeBranch)
+    {
+        Assert.Equal(takeBranch ? 71 : 59, ReadParameterAcrossStore(11L << 32, 17L << 32, takeBranch));
+        Assert.Equal(155, ReadParameterAcrossBackedge(11L << 32, 17L << 32, 3));
+        Assert.Equal(59, ReadParameterAcrossHandler(11L << 32, 17L << 32, takeBranch));
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int ReadParameterAcrossStore(long value, long unchanged, bool takeBranch)
+    {
+        int before = Unsafe.Add(ref Unsafe.As<long, int>(ref value), 1);
+        value = MakeParameterValue(31);
+        if (takeBranch)
+        {
+            Unsafe.Add(ref Unsafe.As<long, int>(ref value), 1) = 43;
+        }
+
+        return before + Unsafe.Add(ref Unsafe.As<long, int>(ref value), 1) +
+            Unsafe.Add(ref Unsafe.As<long, int>(ref unchanged), 1);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int ReadParameterAcrossBackedge(long value, long unchanged, int count)
+    {
+        int sum = 0;
+        for (int i = 0; i < count; i++)
+        {
+            int current = Unsafe.Add(ref Unsafe.As<long, int>(ref value), 1);
+            sum += current + Unsafe.Add(ref Unsafe.As<long, int>(ref unchanged), 1);
+            value = MakeParameterValue(current + 10);
+        }
+
+        return sum + Unsafe.Add(ref Unsafe.As<long, int>(ref value), 1);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int ReadParameterAcrossHandler(long value, long unchanged, bool shouldThrow)
+    {
+        int before = Unsafe.Add(ref Unsafe.As<long, int>(ref value), 1);
+        try
+        {
+            value = MakeParameterValue(31);
+            ThrowIfRequested(shouldThrow);
+        }
+        catch (InvalidOperationException)
+        {
+            return before + Unsafe.Add(ref Unsafe.As<long, int>(ref value), 1) +
+                Unsafe.Add(ref Unsafe.As<long, int>(ref unchanged), 1);
+        }
+
+        return before + Unsafe.Add(ref Unsafe.As<long, int>(ref value), 1) +
+            Unsafe.Add(ref Unsafe.As<long, int>(ref unchanged), 1);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static long MakeParameterValue(int value) => (long)value << 32;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ThrowIfRequested(bool shouldThrow)
+    {
+        if (shouldThrow)
+        {
+            throw new InvalidOperationException();
+        }
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static ReturnPair MakePair(long a, long b) => new ReturnPair { A = a, B = b };
 

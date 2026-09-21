@@ -13,6 +13,33 @@ private:
     BasicBlock* m_block;
     Statement*  m_statement;
 
+    enum class ParameterUseKind
+    {
+        FieldRead,
+        Kill,
+    };
+
+    struct ParameterUse
+    {
+        GenTree*         Node;
+        BasicBlock*      Block;
+        ParameterUseKind Kind;
+    };
+
+    struct ParameterUses
+    {
+        ArrayStack<ParameterUse> Uses;
+        bool                     HasKills = false;
+        bool                     HasReads = false;
+
+        ParameterUses(CompAllocator allocator)
+            : Uses(allocator)
+        {
+        }
+    };
+
+    ParameterUses** m_parameterUses = nullptr;
+
 public:
     Rationalizer(Compiler* comp);
 
@@ -30,6 +57,12 @@ public:
     virtual PhaseStatus DoPhase() override;
 
 private:
+    bool ShouldRecordParameterUse(unsigned lclNum);
+    void RecordParameterUse(GenTree* node, unsigned lclNum, ParameterUseKind kind);
+    void ForgetParameterUses(const LIR::ReadOnlyRange& range);
+    void RewriteParameterUses();
+    void RewriteParameterField(BasicBlock* block, GenTreeLclFld* field);
+
     inline LIR::Range& BlockRange() const
     {
         return LIR::AsRange(m_block);
