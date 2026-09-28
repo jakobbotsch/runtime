@@ -2207,7 +2207,7 @@ Compiler::fgWalkResult Rationalizer::RewriteNode(GenTree** useEdge, Compiler::Ge
             if (m_parameterUses != nullptr)
             {
                 // RewriteNode runs in postorder: all operand reads precede these definitions.
-                node->VisitLocalDefs(m_compiler, [=](const auto& def) {
+                node->VisitLogicalLocalDefs(m_compiler, [=](const auto& def) {
                     RecordParameterUse(node, def.GetLclNum(), ParameterUseKind::Kill);
                     return GenTree::VisitResult::Continue;
                 });
@@ -2873,7 +2873,8 @@ void Rationalizer::RewriteParameterField(BasicBlock* block, GenTreeLclFld* fld)
         // Insert explicit normalization for small types (the LCL_FLD we
         // are replacing comes with this normalization). This is only required
         // if we didn't get the normalization via a right shift.
-        if (varTypeIsSmall(fld) && (regSegment->Offset + genTypeSize(fld) != genTypeSize(registerType)))
+        if (varTypeIsSmall(fld) &&
+            (fld->GetLclOffs() - regSegment->Offset + genTypeSize(fld) != genTypeSize(registerType)))
         {
             value = m_compiler->gtNewCastNode(TYP_INT, value, false, fld->TypeGet());
         }

@@ -697,7 +697,7 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     {
         if (node->OperIs(GT_STORE_LCL_VARS))
         {
-            bool redefined = node->VisitLocalDefs(this, [=](const auto& def) {
+            bool redefined = node->VisitLogicalLocalDefs(this, [=](const auto& def) {
                 return def.GetLclNum() == lclNum ? GenTree::VisitResult::Abort : GenTree::VisitResult::Continue;
             }) == GenTree::VisitResult::Abort;
             if (redefined)
@@ -1140,7 +1140,7 @@ bool Compiler::fgForwardSubHasStoreInterference(Statement* defStmt, Statement* n
             }
             if (useStmtNode->OperIs(GT_STORE_LCL_VARS))
             {
-                if (useStmtNode->VisitLocalDefs(this, [=](const auto& def) {
+                if (useStmtNode->VisitLogicalLocalDefs(this, [=](const auto& def) {
                     return def.GetLclNum() == defStmtLclNum || def.GetLclNum() == defStmtParentLclNum
                                ? GenTree::VisitResult::Abort
                                : GenTree::VisitResult::Continue;

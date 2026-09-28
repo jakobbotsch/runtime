@@ -122,7 +122,7 @@ public:
             return GenTree::VisitResult::Continue;
         };
 
-        call->VisitLocalDefNodes(m_compiler, moveToEnd);
+        call->VisitPhysicalLocalDefNodes(m_compiler, moveToEnd);
     }
 
     //-------------------------------------------------------------------
@@ -1004,7 +1004,7 @@ public:
         switch (node->OperGet())
         {
             case GT_STORE_LCL_VARS:
-                node->VisitLocalDefs(m_compiler, [=](const auto& def) {
+                node->VisitLogicalLocalDefs(m_compiler, [=](const auto& def) {
                     UpdateEarlyRefCount(def.GetLclNum(), node, user);
                     LclVarDsc* dsc = m_compiler->lvaGetDesc(def.GetLclNum());
                     if (dsc->lvIsStructField)
@@ -1092,7 +1092,7 @@ public:
             case GT_STORE_LCL_VARS:
                 EscapeValue(TopValue(0), node);
                 PopValue();
-                node->VisitLocalDefs(m_compiler, [=](const auto& def) {
+                node->VisitLogicalLocalDefs(m_compiler, [=](const auto& def) {
                     if (m_lclAddrAssertions != nullptr)
                     {
                         m_lclAddrAssertions->Clear(def.GetLclNum());
@@ -2517,7 +2517,7 @@ PhaseStatus Compiler::fgUnpinNonMovableLocals()
                 {
                     if (node->OperIs(GT_STORE_LCL_VARS))
                     {
-                        node->VisitLocalDefs(this, [&](const auto& def) {
+                        node->VisitLogicalLocalDefs(this, [&](const auto& def) {
                             if (BitVecOps::IsMember(&traits, hasNoGcValue, def.GetLclNum()))
                             {
                                 BitVecOps::RemoveElemD(&traits, hasNoGcValue, def.GetLclNum());

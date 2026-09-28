@@ -3397,7 +3397,7 @@ void Compiler::fgDebugCheckFlagsAndTypes(GenTree* tree, BasicBlock* block)
         case GT_STORE_LCL_FLD:
             assert((tree->gtFlags & GTF_VAR_DEF) != 0);
             if (!fgImplicitByRefLclFldsStale || !tree->OperIs(GT_STORE_LCL_FLD) ||
-                !lvaGetDesc(tree->AsLclFld())->TypeIs(TYP_BYREF) ||
+                !lvaGetDesc(tree->AsLclFld())->TypeIs(lvaGetImplicitByRefParamType()) ||
                 !lvaIsImplicitByRefLocal(tree->AsLclFld()->GetLclNum()))
             {
                 assert(((tree->gtFlags & GTF_VAR_USEASG) != 0) == tree->IsPartialLclFld(this));
@@ -3874,7 +3874,7 @@ void Compiler::fgDebugCheckLinkedLocals()
                     return GenTree::VisitResult::Continue;
                 };
 
-                node->VisitLocalDefNodes(m_compiler, linkDefs);
+                node->VisitPhysicalLocalDefNodes(m_compiler, linkDefs);
             }
 
             return WALK_CONTINUE;
@@ -3885,7 +3885,7 @@ void Compiler::fgDebugCheckLinkedLocals()
             auto defIsNode = [=](GenTree* def) {
                 return node == def ? GenTree::VisitResult::Abort : GenTree::VisitResult::Continue;
             };
-            return call->VisitLocalDefNodes(m_compiler, defIsNode) == GenTree::VisitResult::Abort;
+            return call->VisitPhysicalLocalDefNodes(m_compiler, defIsNode) == GenTree::VisitResult::Abort;
         }
     };
 
@@ -4458,7 +4458,7 @@ public:
             return GenTree::VisitResult::Continue;
         };
 
-        tree->VisitLocalDefs(m_compiler, visitDef);
+        tree->VisitLogicalLocalDefs(m_compiler, visitDef);
     }
 
     void ProcessUse(GenTree* tree, unsigned lclNum, unsigned ssaNum)

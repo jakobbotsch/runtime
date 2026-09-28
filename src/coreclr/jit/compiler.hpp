@@ -4184,8 +4184,7 @@ bool Compiler::fgVarIsNeverZeroInitializedInProlog(unsigned varNum)
 {
     LclVarDsc* varDsc = lvaGetDesc(varNum);
     bool       result = varDsc->lvIsParam || varDsc->lvIsParamRegTarget || lvaIsOSRLocal(varNum) ||
-                  (varNum == lvaGSSecurityCookie) || (varNum == lvaInlinedPInvokeFrameVar) ||
-                  (varNum == lvaStubArgumentVar) || (varNum == lvaRetAddrVar);
+                  (varNum == lvaGSSecurityCookie) || (varNum == lvaInlinedPInvokeFrameVar) || (varNum == lvaRetAddrVar);
 
 #ifdef TARGET_ARM64
     result = result || (varNum == lvaFfrRegister);
@@ -4981,7 +4980,7 @@ GenTree::VisitResult GenTree::VisitLocalDef(
 }
 
 //------------------------------------------------------------------------
-// VisitLocalDefs: Visit logical locals being defined by this node.
+// VisitLogicalLocalDefs: Visit logical locals being defined by this node.
 //
 // Arguments:
 //   comp    - the compiler instance
@@ -4996,7 +4995,7 @@ GenTree::VisitResult GenTree::VisitLocalDef(
 //   detect which trees can define tracked locals.
 //
 template <typename TVisitor>
-GenTree::VisitResult GenTree::VisitLocalDefs(Compiler* comp, TVisitor visitor)
+GenTree::VisitResult GenTree::VisitLogicalLocalDefs(Compiler* comp, TVisitor visitor)
 {
     if (OperIs(GT_STORE_LCL_VARS))
     {
@@ -5052,8 +5051,8 @@ GenTree::VisitResult GenTree::VisitLocalDefs(Compiler* comp, TVisitor visitor)
 }
 
 //------------------------------------------------------------------------
-// VisitLocalDefNodes: Visit physical GenTreeLclVarCommon definition nodes.
-//   STORE_LCL_VARS has no such nodes; use VisitLocalDefs for logical definitions.
+// VisitPhysicalLocalDefNodes: Visit physical GenTreeLclVarCommon definition nodes.
+//   STORE_LCL_VARS has no such nodes; use VisitLogicalLocalDefs for logical definitions.
 //
 // Arguments:
 //   comp    - the compiler instance
@@ -5063,7 +5062,7 @@ GenTree::VisitResult GenTree::VisitLocalDefs(Compiler* comp, TVisitor visitor)
 //   VisitResult::Abort if the functor aborted; otherwise VisitResult::Continue.
 //
 template <typename TVisitor>
-GenTree::VisitResult GenTree::VisitLocalDefNodes(Compiler* comp, TVisitor visitor)
+GenTree::VisitResult GenTree::VisitPhysicalLocalDefNodes(Compiler* comp, TVisitor visitor)
 {
     if (OperIs(GT_STORE_LCL_VAR))
     {
@@ -5105,7 +5104,7 @@ GenTree::VisitResult GenTree::VisitLocalDefNodes(Compiler* comp, TVisitor visito
 //
 inline bool GenTree::HasAnyLocalDefs(Compiler* comp)
 {
-    return VisitLocalDefs(comp, [](const auto& def) {
+    return VisitLogicalLocalDefs(comp, [](const auto& def) {
         return GenTree::VisitResult::Abort;
     }) == GenTree::VisitResult::Abort;
 }

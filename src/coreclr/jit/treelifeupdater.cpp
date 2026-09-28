@@ -346,7 +346,7 @@ void TreeLifeUpdater<ForCodeGen>::UpdateLife(GenTree* tree)
             UpdateLifeVar(tree, lcl);
             return GenTree::VisitResult::Continue;
         };
-        tree->VisitLocalDefNodes(m_compiler, visitDef);
+        tree->VisitPhysicalLocalDefNodes(m_compiler, visitDef);
     }
     else if (GeneralLclAddrHandling && tree->OperIs(GT_LCL_ADDR))
     {
