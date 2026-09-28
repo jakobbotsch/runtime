@@ -1987,28 +1987,30 @@ void ReplaceVisitor::InsertPreStatementReadBacks()
     else
     {
         // Otherwise just read back the locals we see uses of.
-        for (GenTreeLclVarCommon* lcl : m_currentStmt->LocalsTreeList())
-        {
+        m_currentStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+            GenTree* lcl = occurrence.GetNode();
             if (lcl->TypeIs(TYP_STRUCT))
             {
-                continue;
+                return GenTree::VisitResult::Continue;
             }
 
-            AggregateInfo* agg = m_aggregates.Lookup(lcl->GetLclNum());
+            AggregateInfo* agg = m_aggregates.Lookup(occurrence.GetLclNum());
             if (agg == nullptr)
             {
-                continue;
+                return GenTree::VisitResult::Continue;
             }
 
             size_t index =
-                Promotion::BinarySearch<Replacement, &Replacement::Offset>(agg->Replacements, lcl->GetLclOffs());
+                Promotion::BinarySearch<Replacement, &Replacement::Offset>(agg->Replacements,
+                                                                           lcl->AsLclVarCommon()->GetLclOffs());
             if ((ssize_t)index < 0)
             {
-                continue;
+                return GenTree::VisitResult::Continue;
             }
 
             InsertPreStatementReadBackIfNecessary(agg->LclNum, agg->Replacements[index]);
-        }
+            return GenTree::VisitResult::Continue;
+        });
     }
 }
 
@@ -2902,14 +2904,14 @@ PhaseStatus Promotion::Run()
 
         for (Statement* stmt : bb->Statements())
         {
-            for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
-            {
-                if (Promotion::IsCandidateForPhysicalPromotion(m_compiler->lvaGetDesc(lcl)))
+            stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                if (Promotion::IsCandidateForPhysicalPromotion(m_compiler->lvaGetDesc(occurrence.GetLclNum())))
                 {
                     localsUse.WalkTree(stmt->GetRootNodePointer(), nullptr);
-                    break;
+                    return GenTree::VisitResult::Abort;
                 }
-            }
+                return GenTree::VisitResult::Continue;
+            });
         }
     }
 

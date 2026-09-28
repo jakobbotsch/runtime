@@ -5022,6 +5022,35 @@ inline bool GenTree::HasAnyLocalDefs(Compiler* comp)
     }) == GenTree::VisitResult::Abort;
 }
 
+//------------------------------------------------------------------------
+// VisitLogicalLocalOccurrencesViaLocalsTreeList:
+//   Visit occurrences in locals-list order without expanding promoted parents.
+//
+// Arguments:
+//   visitor - Functor accepting a LocalOccurrence.
+//
+// Return Value:
+//   VisitResult::Abort if the functor aborted; otherwise VisitResult::Continue.
+//
+// Remarks:
+//   The callback may abort the walk, but must not change the list and continue.
+//
+template <typename TVisitor>
+GenTree::VisitResult Statement::VisitLogicalLocalOccurrencesViaLocalsTreeList(TVisitor visitor)
+{
+    assert(JitTls::GetCompiler()->fgNodeThreading == NodeThreading::AllLocals);
+
+    for (GenTreeLclVarCommon* node : LocalsTreeList())
+    {
+        if (visitor(LocalOccurrence(node)) == GenTree::VisitResult::Abort)
+        {
+            return GenTree::VisitResult::Abort;
+        }
+    }
+
+    return GenTree::VisitResult::Continue;
+}
+
 /*****************************************************************************
  *  operator new
  *

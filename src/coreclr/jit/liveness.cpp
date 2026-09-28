@@ -79,6 +79,7 @@ private:
     void PerNodeLocalVarLiveness(GenTreeHWIntrinsic* hwintrinsic);
 #endif
     void MarkUseDef(GenTreeLclVarCommon* tree);
+    void MarkUseDef(const LocalOccurrence& occurrence);
 
     void                 InterBlockLocalVarLiveness();
     void                 DoLiveVarAnalysis();
@@ -574,10 +575,10 @@ void Liveness<TLiveness>::PerBlockLocalVarLiveness()
                     GenTree* qmark = m_compiler->fgGetTopLevelQmark(stmt->GetRootNode(), &dst);
                     if (qmark == nullptr)
                     {
-                        for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
-                        {
-                            MarkUseDef(lcl);
-                        }
+                        stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                            MarkUseDef(occurrence);
+                            return GenTree::VisitResult::Continue;
+                        });
                     }
                     else
                     {
@@ -591,16 +592,16 @@ void Liveness<TLiveness>::PerBlockLocalVarLiveness()
                         // handle qmarks very precisely here -- last uses may
                         // not be marked as such due to interference with other
                         // qmark arms.
-                        for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
-                        {
-                            bool isUse = (lcl->gtFlags & GTF_VAR_DEF) == 0;
+                        stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                            bool isUse = (occurrence.GetFlags() & GTF_VAR_DEF) == 0;
                             // We can still handle the pure def at the top level.
-                            bool conditional = lcl != dst;
+                            bool conditional = occurrence.GetNode() != dst;
                             if (isUse || !conditional)
                             {
-                                MarkUseDef(lcl);
+                                MarkUseDef(occurrence);
                             }
-                        }
+                            return GenTree::VisitResult::Continue;
+                        });
                     }
                 }
             }
@@ -608,10 +609,10 @@ void Liveness<TLiveness>::PerBlockLocalVarLiveness()
             {
                 for (Statement* stmt : block->Statements())
                 {
-                    for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
-                    {
-                        MarkUseDef(lcl);
-                    }
+                    stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                        MarkUseDef(occurrence);
+                        return GenTree::VisitResult::Continue;
+                    });
                 }
             }
         }
@@ -919,9 +920,16 @@ void Liveness<TLiveness>::PerNodeLocalVarLiveness(GenTreeHWIntrinsic* hwintrinsi
 template <typename TLiveness>
 void Liveness<TLiveness>::MarkUseDef(GenTreeLclVarCommon* tree)
 {
+    MarkUseDef(LocalOccurrence(tree));
+}
+
+template <typename TLiveness>
+void Liveness<TLiveness>::MarkUseDef(const LocalOccurrence& occurrence)
+{
+    GenTree* tree = occurrence.GetNode();
     assert((tree->OperIsLocal() && !tree->OperIs(GT_PHI_ARG)) || tree->OperIs(GT_LCL_ADDR));
 
-    const unsigned   lclNum = tree->GetLclNum();
+    const unsigned   lclNum = occurrence.GetLclNum();
     LclVarDsc* const varDsc = m_compiler->lvaGetDesc(lclNum);
 
     // We should never encounter a reference to a lclVar that has a zero refCnt.
@@ -932,8 +940,8 @@ void Liveness<TLiveness>::MarkUseDef(GenTreeLclVarCommon* tree)
         varDsc->setLvRefCnt(1);
     }
 
-    const bool isDef     = ((tree->gtFlags & GTF_VAR_DEF) != 0);
-    const bool isFullDef = isDef && ((tree->gtFlags & GTF_VAR_USEASG) == 0);
+    const bool isDef     = ((occurrence.GetFlags() & GTF_VAR_DEF) != 0);
+    const bool isFullDef = isDef && ((occurrence.GetFlags() & GTF_VAR_USEASG) == 0);
     const bool isUse     = TLiveness::SsaLiveness ? !isFullDef : !isDef;
 
     if (varDsc->lvTracked)

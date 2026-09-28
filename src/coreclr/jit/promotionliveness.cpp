@@ -119,21 +119,21 @@ void PromotionLiveness::ComputeUseDefSets()
                 GenTree* qmark = m_compiler->fgGetTopLevelQmark(stmt->GetRootNode(), &dst);
                 if (qmark == nullptr)
                 {
-                    for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
-                    {
-                        MarkUseDef(stmt, lcl, bb.VarUse, bb.VarDef);
-                    }
+                    stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                        MarkUseDef(stmt, occurrence, bb.VarUse, bb.VarDef);
+                        return GenTree::VisitResult::Continue;
+                    });
                 }
                 else
                 {
-                    for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
-                    {
+                    stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
                         // Skip liveness updates/marking for defs; they may be conditionally executed.
-                        if ((lcl->gtFlags & GTF_VAR_DEF) == 0)
+                        if ((occurrence.GetFlags() & GTF_VAR_DEF) == 0)
                         {
-                            MarkUseDef(stmt, lcl, bb.VarUse, bb.VarDef);
+                            MarkUseDef(stmt, occurrence, bb.VarUse, bb.VarDef);
                         }
-                    }
+                        return GenTree::VisitResult::Continue;
+                    });
                 }
             }
         }
@@ -141,10 +141,10 @@ void PromotionLiveness::ComputeUseDefSets()
         {
             for (Statement* stmt : block->Statements())
             {
-                for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
-                {
-                    MarkUseDef(stmt, lcl, bb.VarUse, bb.VarDef);
-                }
+                stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                    MarkUseDef(stmt, occurrence, bb.VarUse, bb.VarDef);
+                    return GenTree::VisitResult::Continue;
+                });
             }
         }
 
@@ -167,24 +167,25 @@ void PromotionLiveness::ComputeUseDefSets()
 //   Mark use/def information for a single appearence of a local.
 //
 // Parameters:
-//   stmt   - Statement containing the local
-//   lcl    - The local node
-//   useSet - The use set to mark in.
-//   defSet - The def set to mark in.
+//   stmt       - Statement containing the local
+//   occurrence - The local occurrence
+//   useSet     - The use set to mark in.
+//   defSet     - The def set to mark in.
 //
-void PromotionLiveness::MarkUseDef(Statement* stmt, GenTreeLclVarCommon* lcl, BitVec& useSet, BitVec& defSet)
+void PromotionLiveness::MarkUseDef(Statement* stmt, const LocalOccurrence& occurrence, BitVec& useSet, BitVec& defSet)
 {
-    AggregateInfo* agg = m_aggregates.Lookup(lcl->GetLclNum());
+    AggregateInfo* agg = m_aggregates.Lookup(occurrence.GetLclNum());
     if (agg == nullptr)
     {
         return;
     }
 
+    GenTreeLclVarCommon*         lcl   = occurrence.GetNode()->AsLclVarCommon();
     jitstd::vector<Replacement>& reps  = agg->Replacements;
-    bool                         isDef = (lcl->gtFlags & GTF_VAR_DEF) != 0;
+    bool                         isDef = (occurrence.GetFlags() & GTF_VAR_DEF) != 0;
     bool                         isUse = !isDef;
 
-    unsigned  baseIndex  = m_structLclToTrackedIndex[lcl->GetLclNum()];
+    unsigned  baseIndex  = m_structLclToTrackedIndex[occurrence.GetLclNum()];
     var_types accessType = lcl->TypeGet();
 
     if ((accessType == TYP_STRUCT) || lcl->OperIs(GT_LCL_ADDR))

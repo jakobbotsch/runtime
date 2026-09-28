@@ -2484,11 +2484,11 @@ PhaseStatus Compiler::fgUnpinNonMovableLocals()
         {
             for (Statement* const stmt : block->Statements())
             {
-                for (GenTreeLclVarCommon* const lcl : stmt->LocalsTreeList())
-                {
+                stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                    GenTree* lcl = occurrence.GetNode();
                     if (lcl->OperIs(GT_STORE_LCL_VAR))
                     {
-                        unsigned const   dstLclNum = lcl->GetLclNum();
+                        unsigned const   dstLclNum = occurrence.GetLclNum();
                         LclVarDsc* const dstDsc    = lvaGetDesc(dstLclNum);
                         GenTree* const   value     = lcl->Data();
 
@@ -2550,12 +2550,12 @@ PhaseStatus Compiler::fgUnpinNonMovableLocals()
                                 changed = true;
                             }
 
-                            continue;
+                            return GenTree::VisitResult::Continue;
                         }
 
                         if (!BitVecOps::IsMember(&traits, hasNoGcValue, dstLclNum))
                         {
-                            continue;
+                            return GenTree::VisitResult::Continue;
                         }
 
                         bool isNoGc = value->IsNotGcDef();
@@ -2571,16 +2571,16 @@ PhaseStatus Compiler::fgUnpinNonMovableLocals()
                             changed = true;
                         }
 
-                        continue;
+                        return GenTree::VisitResult::Continue;
                     }
 
                     // Any other def we do not analyze (GT_STORE_LCL_FLD,
                     // retbuf GT_LCL_ADDR, etc.): mark the destination as
                     // has-GC, plus all fields if it is a promoted parent.
                     //
-                    if ((lcl->gtFlags & GTF_VAR_DEF) != 0)
+                    if ((occurrence.GetFlags() & GTF_VAR_DEF) != 0)
                     {
-                        unsigned const   dstLclNum = lcl->GetLclNum();
+                        unsigned const   dstLclNum = occurrence.GetLclNum();
                         LclVarDsc* const dstDsc    = lvaGetDesc(dstLclNum);
 
                         if (BitVecOps::IsMember(&traits, hasNoGcValue, dstLclNum))
@@ -2602,7 +2602,8 @@ PhaseStatus Compiler::fgUnpinNonMovableLocals()
                             }
                         }
                     }
-                }
+                    return GenTree::VisitResult::Continue;
+                });
             }
         }
     }
@@ -2664,25 +2665,26 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
 
         for (Statement* stmt : block->Statements())
         {
-            for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
-            {
-                if (!BitVecOps::IsMember(&localsTraits, unreadLocals, lcl->GetLclNum()))
+            stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                GenTree* lcl = occurrence.GetNode();
+                if (!BitVecOps::IsMember(&localsTraits, unreadLocals, occurrence.GetLclNum()))
                 {
-                    continue;
+                    return GenTree::VisitResult::Continue;
                 }
 
-                if (lcl->OperIs(GT_STORE_LCL_VAR, GT_STORE_LCL_FLD))
+                if (lcl->OperIsStore())
                 {
                     if (lcl->TypeIs(TYP_I_IMPL, TYP_BYREF) && ((lcl->Data()->gtFlags & GTF_SIDE_EFFECT) == 0))
                     {
-                        stores.Push({stmt, lcl});
+                        stores.Push({stmt, lcl->AsLclVarCommon()});
                     }
                 }
                 else
                 {
-                    BitVecOps::RemoveElemD(&localsTraits, unreadLocals, lcl->GetLclNum());
+                    BitVecOps::RemoveElemD(&localsTraits, unreadLocals, occurrence.GetLclNum());
                 }
-            }
+                return GenTree::VisitResult::Continue;
+            });
         }
     }
 
@@ -2724,17 +2726,18 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
 
             for (Statement* stmt : block->Statements())
             {
-                for (GenTreeLclVarCommon* lcl : stmt->LocalsTreeList())
-                {
+                stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                    GenTree* lcl = occurrence.GetNode();
                     if (!lcl->OperIs(GT_LCL_ADDR))
                     {
-                        continue;
+                        return GenTree::VisitResult::Continue;
                     }
 
-                    LclVarDsc* lclDsc        = lvaGetDesc(lcl);
-                    unsigned   exposedLclNum = lclDsc->lvIsStructField ? lclDsc->lvParentLcl : lcl->GetLclNum();
+                    LclVarDsc* lclDsc        = lvaGetDesc(occurrence.GetLclNum());
+                    unsigned   exposedLclNum = lclDsc->lvIsStructField ? lclDsc->lvParentLcl : occurrence.GetLclNum();
                     BitVecOps::AddElemD(&localsTraits, exposedLocals, exposedLclNum);
-                }
+                    return GenTree::VisitResult::Continue;
+                });
             }
         }
 
