@@ -5040,9 +5040,9 @@ GenTree::VisitResult Statement::VisitLogicalLocalOccurrencesViaLocalsTreeList(TV
 {
     assert(JitTls::GetCompiler()->fgNodeThreading == NodeThreading::AllLocals);
 
-    for (GenTreeLclVarCommon* node : LocalsTreeList())
+    for (GenTree* node : LocalsTreeList())
     {
-        if (visitor(LocalOccurrence(node)) == GenTree::VisitResult::Abort)
+        if (visitor(LocalOccurrence(node->AsLclVarCommon())) == GenTree::VisitResult::Abort)
         {
             return GenTree::VisitResult::Abort;
         }

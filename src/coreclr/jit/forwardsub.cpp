@@ -1053,7 +1053,7 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     // replace the use of it with the rest from the statement.
     assert(defNode->gtNext == nullptr);
 
-    GenTreeLclVarCommon* firstLcl = *stmt->LocalsTreeList().begin();
+    GenTree* firstLcl = *stmt->LocalsTreeList().begin();
 
     if (firstLcl == defNode)
     {
@@ -1061,7 +1061,7 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     }
     else
     {
-        nextStmt->LocalsTreeList().Replace(useLcl, useLcl, firstLcl, defNode->gtPrev->AsLclVarCommon());
+        nextStmt->LocalsTreeList().Replace(useLcl, useLcl, firstLcl, defNode->gtPrev);
 
         fgForwardSubUpdateLiveness(firstLcl, defNode->gtPrev);
     }
