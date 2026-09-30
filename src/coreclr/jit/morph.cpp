@@ -13243,7 +13243,17 @@ void Compiler::fgMorphTreeDone(GenTree* tree, bool optAssertionPropDone DEBUGARG
             return GenTree::VisitResult::Continue;
         };
 
-        tree->VisitPhysicalLocalDefNodes(this, visitDef);
+        if (tree->OperIs(GT_STORE_LCL_VARS))
+        {
+            tree->VisitLogicalLocalDefs(this, [=](const auto& def) {
+                fgKillDependentAssertions(def.GetLclNum() DEBUGARG(tree));
+                return GenTree::VisitResult::Continue;
+            });
+        }
+        else
+        {
+            tree->VisitPhysicalLocalDefNodes(this, visitDef);
+        }
     }
 
     // Generate assertions

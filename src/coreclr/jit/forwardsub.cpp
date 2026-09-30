@@ -1053,7 +1053,7 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     // replace the use of it with the rest from the statement.
     assert(defNode->gtNext == nullptr);
 
-    GenTreeLclVarCommon* firstLcl = *stmt->LocalsTreeList().begin();
+    GenTree* firstLcl = *stmt->LocalsTreeList().begin();
 
     if (firstLcl == defNode)
     {
@@ -1061,7 +1061,7 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     }
     else
     {
-        nextStmt->LocalsTreeList().Replace(useLcl, useLcl, firstLcl, defNode->gtPrev->AsLclVarCommon());
+        nextStmt->LocalsTreeList().Replace(useLcl, useLcl, firstLcl, defNode->gtPrev);
 
         fgForwardSubUpdateLiveness(firstLcl, defNode->gtPrev);
     }
@@ -1179,7 +1179,8 @@ void Compiler::fgForwardSubUpdateLiveness(GenTree* newSubListFirst, GenTree* new
         GenTree* candidate = newSubListFirst;
         while (true)
         {
-            unsigned newUseLclNum = candidate->AsLclVarCommon()->GetLclNum();
+            unsigned newUseLclNum =
+                candidate->OperIs(GT_STORE_LCL_VARS) ? BAD_VAR_NUM : candidate->AsLclVarCommon()->GetLclNum();
             if (dsc->lvPromoted)
             {
                 // Is the parent struct being used?

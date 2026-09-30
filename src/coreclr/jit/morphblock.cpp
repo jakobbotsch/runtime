@@ -676,6 +676,41 @@ void MorphCopyBlockHelper::PrepareSrc()
 //
 void MorphCopyBlockHelper::TrySpecialCases()
 {
+#if HAS_FIXED_REGISTER_SET
+    if (m_src->IsCall() && m_src->TypeIs(TYP_STRUCT) && !m_src->AsCall()->CanTailCall() &&
+        m_store->OperIs(GT_STORE_LCL_VAR) && m_dstVarDsc->lvPromoted &&
+        (m_compiler->lvaGetPromotionType(m_dstVarDsc) == Compiler::PROMOTION_TYPE_INDEPENDENT) &&
+        !m_src->AsCall()->ShouldHaveRetBufArg()
+#ifdef SWIFT_SUPPORT
+        && (m_src->AsCall()->GetUnmanagedCallConv() != CorInfoCallConvExtension::Swift)
+#endif
+    )
+    {
+        bool scalarFields = true;
+        for (unsigned i = 0; i < m_dstVarDsc->lvFieldCnt; i++)
+        {
+            LclVarDsc* field = m_compiler->lvaGetDesc(m_dstVarDsc->lvFieldLclStart + i);
+            scalarFields &= !varTypeIsStruct(field) && !varTypeIsSIMD(field) && !field->lvPromoted;
+#ifndef TARGET_64BIT
+            scalarFields &= !varTypeIsLong(field);
+#endif
+        }
+        if (scalarFields)
+        {
+            GenTreeStoreLclVars* result =
+                m_compiler->gtNewStoreLclVarsNode(m_src, m_dstVarDsc->lvFieldCnt, m_blockSize);
+            for (unsigned i = 0; i < m_dstVarDsc->lvFieldCnt; i++)
+            {
+                unsigned field = m_dstVarDsc->lvFieldLclStart + i;
+                m_compiler->gtSetStoreLclVarsDestination(result, i, field, m_compiler->lvaGetDesc(field)->lvFldOffset);
+            }
+            m_result                 = result;
+            m_transformationDecision = BlockTransformation::SkipMultiRegSrc;
+            return;
+        }
+    }
+
+#endif
     if (m_src->IsMultiRegNode())
     {
         assert(m_store->OperIs(GT_STORE_LCL_VAR));

@@ -177,6 +177,7 @@ private:
     void       LowerJmpMethod(GenTree* jmp);
     void       LowerRet(GenTreeOp* ret);
     GenTree*   LowerStoreLocCommon(GenTreeLclVarCommon* lclVar);
+    GenTree*   LowerStoreLclVars(GenTreeStoreLclVars* store);
     void       LowerRetStruct(GenTreeUnOp* ret);
     void       LowerRetSingleRegStructLclVar(GenTreeUnOp* ret);
     GenTree*   LowerAsyncContinuation(GenTree* asyncCont);

@@ -1328,6 +1328,7 @@ protected:
 
     void genMultiRegStoreToSIMDLocal(GenTreeLclVar* lclNode);
     void genMultiRegStoreToLocal(GenTreeLclVar* lclNode);
+    void genStoreLclVars(GenTreeStoreLclVars* store);
 
     // Codegen for multi-register struct returns.
     bool isStructReturn(GenTree* treeNode);

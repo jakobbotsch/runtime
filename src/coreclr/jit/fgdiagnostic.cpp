@@ -3374,6 +3374,25 @@ void Compiler::fgDebugCheckFlagsAndTypes(GenTree* tree, BasicBlock* block)
 
     switch (tree->OperGet())
     {
+        case GT_STORE_LCL_VARS:
+        {
+            GenTreeStoreLclVars* store = tree->AsStoreLclVars();
+            assert(store->TypeIs(TYP_VOID) && (store->gtCount > 0));
+            for (unsigned i = 0; i < store->gtCount; i++)
+            {
+                GenTreeStoreLclVars::Destination& dest = store->GetDestination(i);
+                LclVarDsc*                        dsc  = lvaGetDesc(dest.LclNum);
+                assert(!varTypeIsStruct(dsc) && !dsc->lvPromoted && !dsc->IsAddressExposed());
+                assert((dest.Flags & (GTF_VAR_DEF | GTF_VAR_USEASG)) == GTF_VAR_DEF);
+                assert(dest.Offset <= store->gtSourceSize && genTypeSize(dsc) <= store->gtSourceSize - dest.Offset);
+                for (unsigned j = 0; j < i; j++)
+                {
+                    assert(dest.LclNum != store->GetDestination(j).LclNum);
+                }
+            }
+            break;
+        }
+
         case GT_STORE_LCL_VAR:
         case GT_STORE_LCL_FLD:
             assert((tree->gtFlags & GTF_VAR_DEF) != 0);
@@ -3809,7 +3828,7 @@ void Compiler::fgDebugCheckLinkedLocals()
 
         bool ShouldLink(GenTree* node)
         {
-            return node->OperIsAnyLocal();
+            return node->OperIsAnyLocal() || node->OperIs(GT_STORE_LCL_VARS);
         }
 
     public:
@@ -3896,7 +3915,7 @@ void Compiler::fgDebugCheckLinkedLocals()
             int nodeIndex = 0;
             for (GenTree* cur = first; cur != nullptr; cur = cur->gtNext)
             {
-                success &= cur->OperIsAnyLocal();
+                success &= cur->OperIsAnyLocal() || cur->OperIs(GT_STORE_LCL_VARS);
                 success &= (nodeIndex < expected->Height()) && (cur == expected->Bottom(nodeIndex));
                 nodeIndex++;
             }
@@ -4415,10 +4434,10 @@ public:
     void ProcessDefs(GenTree* tree)
     {
         auto visitDef = [=](const auto& def) {
-            GenTreeLclVarCommon* defNode = def.GetDefNode();
-            const bool           isUse   = (defNode->gtFlags & GTF_VAR_USEASG) != 0;
-            unsigned const       lclNum  = def.GetLclNum();
-            LclVarDsc* const     varDsc  = m_compiler->lvaGetDesc(lclNum);
+            GenTree*         defNode = def.GetDefNode();
+            const bool       isUse   = (defNode->gtFlags & GTF_VAR_USEASG) != 0;
+            unsigned const   lclNum  = def.GetLclNum();
+            LclVarDsc* const varDsc  = m_compiler->lvaGetDesc(lclNum);
 
             assert(def.IsEntire(m_compiler) || isUse);
 
@@ -4442,7 +4461,7 @@ public:
         tree->VisitLogicalLocalDefs(m_compiler, visitDef);
     }
 
-    void ProcessUse(GenTreeLclVarCommon* tree, unsigned lclNum, unsigned ssaNum)
+    void ProcessUse(GenTree* tree, unsigned lclNum, unsigned ssaNum)
     {
         // If the var is not in ssa, the tree should not have an ssa num.
         //

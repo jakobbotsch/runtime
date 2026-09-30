@@ -85,7 +85,11 @@ struct Access
     // Number of times this is stored from the result of a call. This includes
     // being passed as the retbuf. These stores cannot be decomposed and are
     // handled via readback.
-    unsigned CountStoredFromCall = 0;
+    unsigned       CountStoredFromCall         = 0;
+    unsigned       CountStoredFromRegisterCall = 0;
+    ReturnTypeDesc RegisterReturn;
+    bool           HasRegisterReturn          = false;
+    bool           ConflictingRegisterReturns = false;
     // Number of times this is passed as a call arg. We insert writebacks
     // before these.
     unsigned CountCallArgs = 0;
@@ -93,10 +97,11 @@ struct Access
     // avoid the writeback for some overlapping replacements for these.
     unsigned CountRegCallArgs = 0;
 
-    weight_t CountWtd               = 0;
-    weight_t CountStoredFromCallWtd = 0;
-    weight_t CountCallArgsWtd       = 0;
-    weight_t CountRegCallArgsWtd    = 0;
+    weight_t CountWtd                       = 0;
+    weight_t CountStoredFromCallWtd         = 0;
+    weight_t CountStoredFromRegisterCallWtd = 0;
+    weight_t CountCallArgsWtd               = 0;
+    weight_t CountRegCallArgsWtd            = 0;
 
 #ifdef DEBUG
     // Number of times this access is the source of a store.
@@ -347,8 +352,12 @@ public:
     //   flags        - Flags classifying the access
     //   weight       - Weight of the block containing the access
     //
-    void RecordAccess(
-        unsigned offs, var_types accessType, ClassLayout* accessLayout, AccessKindFlags flags, weight_t weight)
+    void RecordAccess(unsigned              offs,
+                      var_types             accessType,
+                      ClassLayout*          accessLayout,
+                      AccessKindFlags       flags,
+                      weight_t              weight,
+                      const ReturnTypeDesc* registerReturn)
     {
         Access* access = nullptr;
 
@@ -400,6 +409,30 @@ public:
         {
             access->CountStoredFromCall++;
             access->CountStoredFromCallWtd += weight;
+        }
+        if (registerReturn != nullptr)
+        {
+            if (access->HasRegisterReturn)
+            {
+                unsigned count = registerReturn->GetReturnRegCount();
+                if (count != access->RegisterReturn.GetReturnRegCount())
+                {
+                    access->ConflictingRegisterReturns = true;
+                }
+                else
+                {
+                    for (unsigned i = 0; i < count; i++)
+                    {
+                        access->ConflictingRegisterReturns |=
+                            (registerReturn->GetReturnRegType(i) != access->RegisterReturn.GetReturnRegType(i)) ||
+                            (registerReturn->GetReturnFieldOffset(i) != access->RegisterReturn.GetReturnFieldOffset(i));
+                    }
+                }
+            }
+            access->RegisterReturn    = *registerReturn;
+            access->HasRegisterReturn = true;
+            access->CountStoredFromRegisterCall++;
+            access->CountStoredFromRegisterCallWtd += weight;
         }
 
 #ifdef DEBUG
@@ -730,6 +763,39 @@ public:
 
             countOverlappedCallArgWtd += otherAccess.CountCallArgsWtd;
             countOverlappedStoredFromCallWtd += otherAccess.CountStoredFromCallWtd;
+            bool canUseRegisterDefinitions = !otherAccess.ConflictingRegisterReturns && otherAccess.HasRegisterReturn;
+            for (const Access& candidate : m_accesses)
+            {
+                if (!canUseRegisterDefinitions)
+                {
+                    break;
+                }
+                if (!candidate.Overlaps(otherAccess.Offset, otherAccess.GetAccessSize()) ||
+                    (candidate.AccessType == TYP_STRUCT))
+                {
+                    continue;
+                }
+                canUseRegisterDefinitions &=
+                    !varTypeIsSIMD(candidate.AccessType) && (candidate.Offset >= otherAccess.Offset) &&
+                    (candidate.Offset + candidate.GetAccessSize() <= otherAccess.Offset + otherAccess.GetAccessSize());
+#ifndef TARGET_64BIT
+                canUseRegisterDefinitions &= !varTypeIsLong(candidate.AccessType);
+#endif
+            }
+            if (canUseRegisterDefinitions)
+            {
+                const ReturnTypeDesc* ret = &otherAccess.RegisterReturn;
+                for (unsigned i = 0; i < ret->GetReturnRegCount(); i++)
+                {
+                    if ((access.Offset == otherAccess.Offset + ret->GetReturnFieldOffset(i)) &&
+                        (access.AccessType == ret->GetReturnRegType(i)))
+                    {
+                        countOverlappedStoredFromCall -= otherAccess.CountStoredFromRegisterCall;
+                        countOverlappedStoredFromCallWtd -= otherAccess.CountStoredFromRegisterCallWtd;
+                        break;
+                    }
+                }
+            }
 
             if (otherAccess.CountRegCallArgs > 0)
             {
@@ -806,12 +872,9 @@ public:
             }
         }
 
-        // If the struct is stored from a call (either due to a multireg
-        // return or by being passed as the retbuffer) then we need a readback
-        // after.
-        //
-        // In the future we could allow multireg returns without a readback by
-        // a sort of forward substitution optimization in the backend.
+        // Retbuf stores and incompatible register slices require readbacks.
+        // Exact register-return slices were excluded above: STORE_LCL_VARS
+        // defines those replacements directly.
         countReadBacksWtd += countOverlappedStoredFromCallWtd;
         countReadBacks += countOverlappedStoredFromCall;
 
@@ -1120,9 +1183,27 @@ public:
                 }
 #endif
 
-                LocalUses* uses = GetOrCreateUses(lcl->GetLclNum());
-                unsigned   offs = lcl->GetLclOffs();
-                uses->RecordAccess(offs, accessType, accessLayout, accessFlags, m_curBB->getBBWeight(m_compiler));
+                LocalUses*            uses           = GetOrCreateUses(lcl->GetLclNum());
+                unsigned              offs           = lcl->GetLclOffs();
+                const ReturnTypeDesc* registerReturn = nullptr;
+#if HAS_FIXED_REGISTER_SET
+                ReturnTypeDesc registerReturnStorage;
+                if (lcl->OperIsLocalStore() && lcl->Data()->gtEffectiveVal()->IsCall())
+                {
+                    GenTreeCall* call = lcl->Data()->gtEffectiveVal()->AsCall();
+                    if (call->TypeIs(TYP_STRUCT) && !call->ShouldHaveRetBufArg() && !call->CanTailCall()
+#ifdef SWIFT_SUPPORT
+                        && (call->GetUnmanagedCallConv() != CorInfoCallConvExtension::Swift)
+#endif
+                    )
+                    {
+                        registerReturnStorage.InitializeStructCallReturnType(m_compiler, call);
+                        registerReturn = &registerReturnStorage;
+                    }
+                }
+#endif // HAS_FIXED_REGISTER_SET
+                uses->RecordAccess(offs, accessType, accessLayout, accessFlags, m_curBB->getBBWeight(m_compiler),
+                                   registerReturn);
             }
 
             if (tree->OperIsLocalStore() && tree->TypeIs(TYP_STRUCT))
