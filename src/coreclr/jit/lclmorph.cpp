@@ -77,7 +77,7 @@ public:
         GenTree* node = *use;
         if (node->OperIsAnyLocal())
         {
-            SequenceLocal(node->AsLclVarCommon());
+            SequenceLocal(node);
         }
 
         if (node->IsCall())
@@ -146,7 +146,7 @@ private:
     // Arguments:
     //     node - The node
     //
-    void MoveNodeToEnd(GenTreeLclVarCommon* node)
+    void MoveNodeToEnd(GenTree* node)
     {
         if ((m_prevNode == node) || (node->gtNext == nullptr))
         {
@@ -1120,7 +1120,7 @@ public:
                 EscapeValue(TopValue(0), node);
                 PopValue();
 
-                SequenceLocal(node->AsLclVarCommon());
+                SequenceLocal(node);
                 break;
             }
 
@@ -1130,18 +1130,18 @@ public:
                     HandleLocalAssertions(node->AsLclVarCommon(), TopValue(0));
                 }
 
-                SequenceLocal(node->AsLclVarCommon());
+                SequenceLocal(node);
                 break;
 
             case GT_LCL_FLD:
-                SequenceLocal(node->AsLclVarCommon());
+                SequenceLocal(node);
                 break;
 
             case GT_LCL_ADDR:
                 assert(TopValue(0).Node() == node);
 
                 TopValue(0).Address(node->AsLclFld());
-                SequenceLocal(node->AsLclVarCommon());
+                SequenceLocal(node);
                 break;
 
             case GT_ADD:
