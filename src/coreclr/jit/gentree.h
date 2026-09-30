@@ -8625,6 +8625,18 @@ public:
     {
         return m_node->gtFlags;
     }
+
+    unsigned GetLclOffs() const
+    {
+        return m_node->GetLclOffs();
+    }
+
+    var_types GetAccessType(Compiler* compiler) const
+    {
+        return m_node->TypeGet();
+    }
+
+    unsigned GetAccessSize(Compiler* compiler, Statement* stmt) const;
 };
 
 class StoreLclVarsOccurrence
@@ -8653,6 +8665,15 @@ public:
     {
         return m_store->GetDestination(m_index).Flags;
     }
+
+    unsigned GetLclOffs() const
+    {
+        return 0;
+    }
+
+    var_types GetAccessType(Compiler* compiler) const;
+
+    unsigned GetAccessSize(Compiler* compiler, Statement* stmt) const;
 };
 
 // Local references and local-definition owners in execution order. A

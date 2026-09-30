@@ -379,7 +379,7 @@ public:
                     isCallTarget = (parentCall->gtCallType == CT_INDIRECT) && (parentCall->gtControlExpr == node);
                 }
 
-                if (!isCallTarget && IsLastUse(node->AsLclVar()))
+                if (!isCallTarget && IsLastUse(node->gtFlags))
                 {
                     m_node          = node;
                     m_use           = use;
@@ -498,22 +498,19 @@ public:
     }
 
     //------------------------------------------------------------------------
-    // IsLastUse: Check if the local node is a last use. The local node is expected
-    // to be a GT_LCL_VAR of the local being forward subbed.
+    // IsLastUse: Check if a read of the candidate local is a last use.
     //
     // Arguments:
-    //    lcl - the GT_LCL_VAR of the current local.
+    //    flags - Flags of the local occurrence.
     //
     // Returns:
     //    true if the expression is a last use of the local; otherwise false.
     //
-    bool IsLastUse(GenTreeLclVar* lcl)
+    bool IsLastUse(GenTreeFlags flags)
     {
-        assert(lcl->OperIs(GT_LCL_VAR) && (lcl->GetLclNum() == m_lclNum));
-
-        LclVarDsc*   dsc        = m_compiler->lvaGetDesc(lcl);
+        LclVarDsc*   dsc        = m_compiler->lvaGetDesc(m_lclNum);
         GenTreeFlags deathFlags = dsc->FullDeathFlags();
-        return (lcl->gtFlags & deathFlags) == deathFlags;
+        return (flags & deathFlags) == deathFlags;
     }
 
 private:
@@ -696,7 +693,7 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
         GenTree* lcl = occurrence.GetNode();
         if (lcl->OperIs(GT_LCL_VAR) && (occurrence.GetLclNum() == lclNum))
         {
-            if (fsv.IsLastUse(lcl->AsLclVar()))
+            if (fsv.IsLastUse(occurrence.GetFlags()))
             {
                 found = true;
                 return GenTree::VisitResult::Abort;

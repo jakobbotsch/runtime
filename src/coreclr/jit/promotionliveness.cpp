@@ -181,13 +181,13 @@ void PromotionLiveness::MarkUseDef(Statement* stmt, const TOccurrence& occurrenc
         return;
     }
 
-    GenTreeLclVarCommon*         lcl   = occurrence.GetNode()->AsLclVarCommon();
+    GenTree*                     lcl   = occurrence.GetNode();
     jitstd::vector<Replacement>& reps  = agg->Replacements;
     bool                         isDef = (occurrence.GetFlags() & GTF_VAR_DEF) != 0;
     bool                         isUse = !isDef;
 
     unsigned  baseIndex  = m_structLclToTrackedIndex[occurrence.GetLclNum()];
-    var_types accessType = lcl->TypeGet();
+    var_types accessType = occurrence.GetAccessType(m_compiler);
 
     if ((accessType == TYP_STRUCT) || lcl->OperIs(GT_LCL_ADDR))
     {
@@ -201,8 +201,8 @@ void PromotionLiveness::MarkUseDef(Statement* stmt, const TOccurrence& occurrenc
         }
         else
         {
-            unsigned offs  = lcl->GetLclOffs();
-            unsigned size  = GetSizeOfStructLocal(stmt, lcl);
+            unsigned offs  = occurrence.GetLclOffs();
+            unsigned size  = occurrence.GetAccessSize(m_compiler, stmt);
             size_t   index = Promotion::BinarySearch<Replacement, &Replacement::Offset>(reps, offs);
 
             if ((ssize_t)index < 0)
@@ -230,7 +230,7 @@ void PromotionLiveness::MarkUseDef(Statement* stmt, const TOccurrence& occurrenc
     }
     else
     {
-        unsigned offs  = lcl->GetLclOffs();
+        unsigned offs  = occurrence.GetLclOffs();
         size_t   index = Promotion::BinarySearch<Replacement, &Replacement::Offset>(reps, offs);
         if ((ssize_t)index < 0)
         {
@@ -244,43 +244,6 @@ void PromotionLiveness::MarkUseDef(Statement* stmt, const TOccurrence& occurrenc
             MarkIndex(baseIndex + 1 + (unsigned)index, isUse, isDef, useSet, defSet);
         }
     }
-}
-
-//------------------------------------------------------------------------
-// GetSizeOfStructLocal:
-//   Get the size of a struct local (either a TYP_STRUCT typed local, or a
-//   GT_LCL_ADDR retbuf definition).
-//
-// Parameters:
-//   stmt   - Statement containing the local
-//   lcl    - The local node
-//
-unsigned PromotionLiveness::GetSizeOfStructLocal(Statement* stmt, GenTreeLclVarCommon* lcl)
-{
-    if (lcl->OperIs(GT_LCL_ADDR))
-    {
-        // LCL_ADDR definition. Currently we only have calls that define via
-        // LCL_ADDRs. Find the definition size from the containing call.
-        Compiler::FindLinkData data = m_compiler->gtFindLink(stmt, lcl);
-        assert((data.parent != nullptr) && data.parent->IsCall());
-
-        unsigned defSize = UINT_MAX;
-        auto     findDef = [&](const auto& def) {
-            if (def.GetDefNode() == lcl)
-            {
-                defSize = def.GetStoreSize(m_compiler).GetExact();
-                return GenTree::VisitResult::Abort;
-            }
-
-            return GenTree::VisitResult::Continue;
-        };
-
-        GenTree::VisitResult result = data.parent->VisitLogicalLocalDefs(m_compiler, findDef);
-        assert(result == GenTree::VisitResult::Abort);
-        return defSize;
-    }
-
-    return lcl->GetLayout(m_compiler)->GetSize();
 }
 
 //------------------------------------------------------------------------
@@ -534,7 +497,7 @@ void PromotionLiveness::FillInLiveness(BitVec& life, BitVec volatileVars, Statem
         else
         {
             unsigned offs  = lcl->GetLclOffs();
-            unsigned size  = GetSizeOfStructLocal(stmt, lcl);
+            unsigned size  = LocalOccurrence(lcl).GetAccessSize(m_compiler, stmt);
             size_t   index = Promotion::BinarySearch<Replacement, &Replacement::Offset>(agg->Replacements, offs);
 
             if ((ssize_t)index < 0)

@@ -2682,8 +2682,9 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
 
     struct Store
     {
-        struct Statement*    Statement;
-        GenTreeLclVarCommon* Tree;
+        struct Statement* Statement;
+        GenTree*          Tree;
+        unsigned          LclNum;
     };
 
     ArrayStack<Store> stores(getAllocator(CMK_LocalAddressVisitor));
@@ -2705,7 +2706,7 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
                 {
                     if (lcl->TypeIs(TYP_I_IMPL, TYP_BYREF) && ((lcl->Data()->gtFlags & GTF_SIDE_EFFECT) == 0))
                     {
-                        stores.Push({stmt, lcl->AsLclVarCommon()});
+                        stores.Push({stmt, lcl, occurrence.GetLclNum()});
                     }
                 }
                 else
@@ -2729,9 +2730,9 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
     {
         assert(store.Tree->TypeIs(TYP_I_IMPL, TYP_BYREF));
 
-        if (BitVecOps::IsMember(&localsTraits, unreadLocals, store.Tree->GetLclNum()))
+        if (BitVecOps::IsMember(&localsTraits, unreadLocals, store.LclNum))
         {
-            JITDUMP("V%02u is unread; removing store data of [%06u]\n", store.Tree->GetLclNum(), dspTreeID(store.Tree));
+            JITDUMP("V%02u is unread; removing store data of [%06u]\n", store.LclNum, dspTreeID(store.Tree));
             DISPTREE(store.Tree);
 
             store.Tree->Data()->BashToConst(0, store.Tree->Data()->TypeGet());

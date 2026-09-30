@@ -2069,8 +2069,7 @@ void ReplaceVisitor::InsertPreStatementReadBacks()
     {
         // Otherwise just read back the locals we see uses of.
         m_currentStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
-            GenTree* lcl = occurrence.GetNode();
-            if (lcl->TypeIs(TYP_STRUCT))
+            if (occurrence.GetAccessType(m_compiler) == TYP_STRUCT)
             {
                 return GenTree::VisitResult::Continue;
             }
@@ -2082,8 +2081,7 @@ void ReplaceVisitor::InsertPreStatementReadBacks()
             }
 
             size_t index =
-                Promotion::BinarySearch<Replacement, &Replacement::Offset>(agg->Replacements,
-                                                                           lcl->AsLclVarCommon()->GetLclOffs());
+                Promotion::BinarySearch<Replacement, &Replacement::Offset>(agg->Replacements, occurrence.GetLclOffs());
             if ((ssize_t)index < 0)
             {
                 return GenTree::VisitResult::Continue;

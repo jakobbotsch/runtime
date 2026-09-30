@@ -15487,7 +15487,7 @@ PhaseStatus Compiler::fgMarkImplicitByRefCopyOmissionCandidates()
             // tree walk if one exists.
             stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                 GenTree* lcl = occurrence.GetNode();
-                if (!varTypeIsStruct(lcl) || !lcl->OperIsLocalRead())
+                if (!varTypeIsStruct(occurrence.GetAccessType(this)) || !lcl->OperIsLocalRead())
                 {
                     return GenTree::VisitResult::Continue;
                 }
