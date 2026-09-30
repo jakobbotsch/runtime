@@ -222,6 +222,8 @@ private:
     template <typename TOccurrence>
     void MarkUseDef(Statement* stmt, const TOccurrence& occurrence, BitVec& useSet, BitVec& defSet);
 
+    unsigned GetSizeOfLocalAddrDef(Statement* stmt, GenTree* lclAddr);
+
     void MarkIndex(unsigned index, bool isUse, bool isDef, BitVec& useSet, BitVec& defSet);
     void ComputeUseDefSets();
     void InterBlockLiveness();

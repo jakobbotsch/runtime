@@ -539,7 +539,7 @@ PhaseStatus Compiler::fgOptimizeMaskConversions()
         {
             // Only check statements where there is a local of type TYP_SIMD/TYP_MASK.
             stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
-                if (varTypeIsSIMDOrMask(occurrence.GetAccessType(this)))
+                if (!occurrence.GetNode()->OperIs(GT_LCL_ADDR) && varTypeIsSIMDOrMask(occurrence.GetAccessType(this)))
                 {
                     // Parse the entire statement.
                     MaskConversionsUpdateVisitor ev(this, stmt, &weightsTable);
