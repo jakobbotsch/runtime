@@ -78,8 +78,9 @@ private:
 #ifdef FEATURE_HW_INTRINSICS
     void PerNodeLocalVarLiveness(GenTreeHWIntrinsic* hwintrinsic);
 #endif
-    void MarkUseDef(GenTree* tree);
-    void MarkUseDef(const LocalOccurrence& occurrence);
+    void MarkUseDef(GenTreeLclVarCommon* tree);
+    template <typename TOccurrence>
+    void MarkUseDef(const TOccurrence& occurrence);
 
     void                 InterBlockLocalVarLiveness();
     void                 DoLiveVarAnalysis();
@@ -581,7 +582,7 @@ void Liveness<TLiveness>::PerBlockLocalVarLiveness()
                     GenTree* qmark = m_compiler->fgGetTopLevelQmark(stmt->GetRootNode(), &dst);
                     if (qmark == nullptr)
                     {
-                        stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                        stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                             MarkUseDef(occurrence);
                             return GenTree::VisitResult::Continue;
                         });
@@ -598,7 +599,7 @@ void Liveness<TLiveness>::PerBlockLocalVarLiveness()
                         // handle qmarks very precisely here -- last uses may
                         // not be marked as such due to interference with other
                         // qmark arms.
-                        stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                        stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                             bool isUse = (occurrence.GetFlags() & GTF_VAR_DEF) == 0;
                             // We can still handle the pure def at the top level.
                             bool conditional = occurrence.GetNode() != dst;
@@ -615,7 +616,7 @@ void Liveness<TLiveness>::PerBlockLocalVarLiveness()
             {
                 for (Statement* stmt : block->Statements())
                 {
-                    stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                    stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                         MarkUseDef(occurrence);
                         return GenTree::VisitResult::Continue;
                     });
@@ -748,8 +749,14 @@ void Liveness<TLiveness>::PerNodeLocalVarLiveness(GenTree* tree)
             break;
 
         case GT_STORE_LCL_VARS:
-            MarkUseDef(tree);
+        {
+            GenTreeStoreLclVars* store = tree->AsStoreLclVars();
+            for (unsigned i = 0; i < store->gtCount; i++)
+            {
+                MarkUseDef(StoreLclVarsOccurrence(store, i));
+            }
             break;
+        }
 
         case GT_LCL_ADDR:
             if (TLiveness::IsLIR)
@@ -928,22 +935,14 @@ void Liveness<TLiveness>::PerNodeLocalVarLiveness(GenTreeHWIntrinsic* hwintrinsi
 //   considered uses. They do not get included in bbVarUse/bbVarDef.
 //
 template <typename TLiveness>
-void Liveness<TLiveness>::MarkUseDef(GenTree* tree)
+void Liveness<TLiveness>::MarkUseDef(GenTreeLclVarCommon* tree)
 {
-    if (tree->OperIs(GT_STORE_LCL_VARS))
-    {
-        GenTreeStoreLclVars* store = tree->AsStoreLclVars();
-        for (unsigned i = 0; i < store->gtCount; i++)
-        {
-            MarkUseDef(LocalOccurrence(store, i));
-        }
-        return;
-    }
-    MarkUseDef(LocalOccurrence(tree->AsLclVarCommon()));
+    MarkUseDef(LocalOccurrence(tree));
 }
 
 template <typename TLiveness>
-void Liveness<TLiveness>::MarkUseDef(const LocalOccurrence& occurrence)
+template <typename TOccurrence>
+void Liveness<TLiveness>::MarkUseDef(const TOccurrence& occurrence)
 {
     GenTree* tree = occurrence.GetNode();
     assert((tree->OperIsLocal() && !tree->OperIs(GT_PHI_ARG)) || tree->OperIs(GT_LCL_ADDR, GT_STORE_LCL_VARS));

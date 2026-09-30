@@ -2068,7 +2068,7 @@ void ReplaceVisitor::InsertPreStatementReadBacks()
     else
     {
         // Otherwise just read back the locals we see uses of.
-        m_currentStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+        m_currentStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
             GenTree* lcl = occurrence.GetNode();
             if (lcl->TypeIs(TYP_STRUCT))
             {
@@ -2985,7 +2985,7 @@ PhaseStatus Promotion::Run()
 
         for (Statement* stmt : bb->Statements())
         {
-            stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+            stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                 if (Promotion::IsCandidateForPhysicalPromotion(m_compiler->lvaGetDesc(occurrence.GetLclNum())))
                 {
                     localsUse.WalkTree(stmt->GetRootNodePointer(), nullptr);

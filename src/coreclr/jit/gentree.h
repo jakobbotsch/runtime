@@ -8603,19 +8603,11 @@ public:
 // A view of a local occurrence backed by an existing IR node.
 class LocalOccurrence
 {
-    GenTree*                          m_node;
-    GenTreeStoreLclVars::Destination* m_destination;
+    GenTreeLclVarCommon* m_node;
 
 public:
     explicit LocalOccurrence(GenTreeLclVarCommon* node)
         : m_node(node)
-        , m_destination(nullptr)
-    {
-    }
-
-    LocalOccurrence(GenTreeStoreLclVars* store, unsigned index)
-        : m_node(store)
-        , m_destination(&store->GetDestination(index))
     {
     }
 
@@ -8626,12 +8618,40 @@ public:
 
     unsigned GetLclNum() const
     {
-        return m_destination != nullptr ? m_destination->LclNum : m_node->AsLclVarCommon()->GetLclNum();
+        return m_node->GetLclNum();
     }
 
     GenTreeFlags GetFlags() const
     {
-        return m_destination != nullptr ? m_destination->Flags : m_node->gtFlags;
+        return m_node->gtFlags;
+    }
+};
+
+class StoreLclVarsOccurrence
+{
+    GenTreeStoreLclVars* m_store;
+    unsigned             m_index;
+
+public:
+    StoreLclVarsOccurrence(GenTreeStoreLclVars* store, unsigned index)
+        : m_store(store)
+        , m_index(index)
+    {
+    }
+
+    GenTree* GetNode() const
+    {
+        return m_store;
+    }
+
+    unsigned GetLclNum() const
+    {
+        return m_store->GetDestination(m_index).LclNum;
+    }
+
+    GenTreeFlags GetFlags() const
+    {
+        return m_store->GetDestination(m_index).Flags;
     }
 };
 

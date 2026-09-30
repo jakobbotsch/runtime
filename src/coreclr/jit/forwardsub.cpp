@@ -692,7 +692,7 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     // Do a quick scan through the linked locals list to see if there is a last use.
     bool found    = false;
     bool multiUse = false;
-    nextStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+    nextStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
         GenTree* lcl = occurrence.GetNode();
         if (lcl->OperIs(GT_LCL_VAR) && (occurrence.GetLclNum() == lclNum))
         {
@@ -1101,7 +1101,7 @@ bool Compiler::fgForwardSubHasStoreInterference(Statement* defStmt, Statement* n
     GenTreeLclVarCommon* defNode = defStmt->GetRootNode()->AsLclVarCommon();
 
     bool interferes = false;
-    defStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& defOccurrence) {
+    defStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& defOccurrence) {
         if (defOccurrence.GetNode() == defNode)
         {
             return GenTree::VisitResult::Abort;
@@ -1115,7 +1115,7 @@ bool Compiler::fgForwardSubHasStoreInterference(Statement* defStmt, Statement* n
             defStmtParentLclNum = defStmtLclDsc->lvParentLcl;
         }
 
-        nextStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& useOccurrence) {
+        nextStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& useOccurrence) {
             if (useOccurrence.GetNode() == nextStmtUse)
             {
                 return GenTree::VisitResult::Abort;

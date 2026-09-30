@@ -15485,7 +15485,7 @@ PhaseStatus Compiler::fgMarkImplicitByRefCopyOmissionCandidates()
 
             // If so, check for any struct last use and only do the expensive
             // tree walk if one exists.
-            stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+            stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                 GenTree* lcl = occurrence.GetNode();
                 if (!varTypeIsStruct(lcl) || !lcl->OperIsLocalRead())
                 {

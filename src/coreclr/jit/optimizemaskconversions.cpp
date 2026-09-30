@@ -510,7 +510,7 @@ PhaseStatus Compiler::fgOptimizeMaskConversions()
         for (Statement* const stmt : block->Statements())
         {
             // Only check statements where there is a local of type TYP_SIMD/TYP_MASK.
-            stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+            stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                 if (varTypeIsSIMDOrMask(lvaGetDesc(occurrence.GetLclNum())))
                 {
                     // Parse the entire statement.
@@ -538,7 +538,7 @@ PhaseStatus Compiler::fgOptimizeMaskConversions()
         for (Statement* const stmt : block->Statements())
         {
             // Only check statements where there is a local of type TYP_SIMD/TYP_MASK.
-            stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+            stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                 if (varTypeIsSIMDOrMask(occurrence.GetNode()))
                 {
                     // Parse the entire statement.

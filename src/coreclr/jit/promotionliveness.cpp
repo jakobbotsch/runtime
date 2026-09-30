@@ -119,14 +119,14 @@ void PromotionLiveness::ComputeUseDefSets()
                 GenTree* qmark = m_compiler->fgGetTopLevelQmark(stmt->GetRootNode(), &dst);
                 if (qmark == nullptr)
                 {
-                    stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                    stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                         MarkUseDef(stmt, occurrence, bb.VarUse, bb.VarDef);
                         return GenTree::VisitResult::Continue;
                     });
                 }
                 else
                 {
-                    stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                    stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                         // Skip liveness updates/marking for defs; they may be conditionally executed.
                         if ((occurrence.GetFlags() & GTF_VAR_DEF) == 0)
                         {
@@ -141,7 +141,7 @@ void PromotionLiveness::ComputeUseDefSets()
         {
             for (Statement* stmt : block->Statements())
             {
-                stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                     MarkUseDef(stmt, occurrence, bb.VarUse, bb.VarDef);
                     return GenTree::VisitResult::Continue;
                 });
@@ -172,7 +172,8 @@ void PromotionLiveness::ComputeUseDefSets()
 //   useSet     - The use set to mark in.
 //   defSet     - The def set to mark in.
 //
-void PromotionLiveness::MarkUseDef(Statement* stmt, const LocalOccurrence& occurrence, BitVec& useSet, BitVec& defSet)
+template <typename TOccurrence>
+void PromotionLiveness::MarkUseDef(Statement* stmt, const TOccurrence& occurrence, BitVec& useSet, BitVec& defSet)
 {
     AggregateInfo* agg = m_aggregates.Lookup(occurrence.GetLclNum());
     if (agg == nullptr)
