@@ -5027,7 +5027,7 @@ inline bool GenTree::HasAnyLocalDefs(Compiler* comp)
 //   Visit occurrences in locals-list order without expanding promoted parents.
 //
 // Arguments:
-//   visitor - Functor accepting a LocalOccurrence.
+//   visitor - Generic functor accepting a local occurrence provider.
 //
 // Return Value:
 //   VisitResult::Abort if the functor aborted; otherwise VisitResult::Continue.

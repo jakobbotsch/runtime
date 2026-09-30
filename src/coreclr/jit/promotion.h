@@ -219,7 +219,9 @@ public:
     StructDeaths GetDeathsForStructLocal(GenTreeLclVarCommon* use);
 
 private:
-    void     MarkUseDef(Statement* stmt, const LocalOccurrence& occurrence, BitVec& useSet, BitVec& defSet);
+    template <typename TOccurrence>
+    void MarkUseDef(Statement* stmt, const TOccurrence& occurrence, BitVec& useSet, BitVec& defSet);
+
     unsigned GetSizeOfStructLocal(Statement* stmt, GenTreeLclVarCommon* lcl);
     void     MarkIndex(unsigned index, bool isUse, bool isDef, BitVec& useSet, BitVec& defSet);
     void     ComputeUseDefSets();

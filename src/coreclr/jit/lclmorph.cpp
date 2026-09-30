@@ -2484,7 +2484,7 @@ PhaseStatus Compiler::fgUnpinNonMovableLocals()
         {
             for (Statement* const stmt : block->Statements())
             {
-                stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                     GenTree* lcl = occurrence.GetNode();
                     if (lcl->OperIs(GT_STORE_LCL_VAR))
                     {
@@ -2665,7 +2665,7 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
 
         for (Statement* stmt : block->Statements())
         {
-            stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+            stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                 GenTree* lcl = occurrence.GetNode();
                 if (!BitVecOps::IsMember(&localsTraits, unreadLocals, occurrence.GetLclNum()))
                 {
@@ -2726,7 +2726,7 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
 
             for (Statement* stmt : block->Statements())
             {
-                stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const LocalOccurrence& occurrence) {
+                stmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
                     GenTree* lcl = occurrence.GetNode();
                     if (!lcl->OperIs(GT_LCL_ADDR))
                     {
