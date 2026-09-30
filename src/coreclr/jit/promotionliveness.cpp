@@ -186,10 +186,9 @@ void PromotionLiveness::MarkUseDef(Statement* stmt, const TOccurrence& occurrenc
     bool                         isDef = (occurrence.GetFlags() & GTF_VAR_DEF) != 0;
     bool                         isUse = !isDef;
 
-    unsigned  baseIndex  = m_structLclToTrackedIndex[occurrence.GetLclNum()];
-    var_types accessType = occurrence.GetAccessType(m_compiler);
+    unsigned baseIndex = m_structLclToTrackedIndex[occurrence.GetLclNum()];
 
-    if ((accessType == TYP_STRUCT) || lcl->OperIs(GT_LCL_ADDR))
+    if (lcl->OperIs(GT_LCL_ADDR) || (occurrence.GetAccessType(m_compiler) == TYP_STRUCT))
     {
         if (lcl->OperIsScalarLocal())
         {
@@ -201,9 +200,10 @@ void PromotionLiveness::MarkUseDef(Statement* stmt, const TOccurrence& occurrenc
         }
         else
         {
-            unsigned offs  = occurrence.GetLclOffs();
-            unsigned size  = occurrence.GetAccessSize(m_compiler, stmt);
-            size_t   index = Promotion::BinarySearch<Replacement, &Replacement::Offset>(reps, offs);
+            unsigned offs = occurrence.GetLclOffs();
+            unsigned size =
+                lcl->OperIs(GT_LCL_ADDR) ? GetSizeOfLocalAddrDef(stmt, lcl) : occurrence.GetAccessSize(m_compiler);
+            size_t index = Promotion::BinarySearch<Replacement, &Replacement::Offset>(reps, offs);
 
             if ((ssize_t)index < 0)
             {
@@ -234,7 +234,7 @@ void PromotionLiveness::MarkUseDef(Statement* stmt, const TOccurrence& occurrenc
         size_t   index = Promotion::BinarySearch<Replacement, &Replacement::Offset>(reps, offs);
         if ((ssize_t)index < 0)
         {
-            unsigned size             = genTypeSize(accessType);
+            unsigned size             = occurrence.GetAccessSize(m_compiler);
             bool isFullDefOfRemainder = isDef && (agg->UnpromotedMin >= offs) && (agg->UnpromotedMax <= (offs + size));
             MarkIndex(baseIndex, isUse, isFullDefOfRemainder, useSet, defSet);
         }
@@ -244,6 +244,39 @@ void PromotionLiveness::MarkUseDef(Statement* stmt, const TOccurrence& occurrenc
             MarkIndex(baseIndex + 1 + (unsigned)index, isUse, isDef, useSet, defSet);
         }
     }
+}
+
+//------------------------------------------------------------------------
+// GetSizeOfLocalAddrDef:
+//   Get the size written through a call-defined local address.
+//
+// Parameters:
+//   stmt    - Statement containing the address.
+//   lclAddr - The local address node.
+//
+// Return Value:
+//   The definition size in bytes.
+//
+unsigned PromotionLiveness::GetSizeOfLocalAddrDef(Statement* stmt, GenTree* lclAddr)
+{
+    assert(lclAddr->OperIs(GT_LCL_ADDR));
+    Compiler::FindLinkData data = m_compiler->gtFindLink(stmt, lclAddr);
+    assert((data.parent != nullptr) && data.parent->IsCall());
+
+    unsigned defSize = UINT_MAX;
+    auto     findDef = [&](const auto& def) {
+        if (def.GetDefNode() == lclAddr)
+        {
+            defSize = def.GetStoreSize(m_compiler).GetExact();
+            return GenTree::VisitResult::Abort;
+        }
+
+        return GenTree::VisitResult::Continue;
+    };
+
+    GenTree::VisitResult result = data.parent->VisitLogicalLocalDefs(m_compiler, findDef);
+    assert(result == GenTree::VisitResult::Abort);
+    return defSize;
 }
 
 //------------------------------------------------------------------------
@@ -493,7 +526,8 @@ void PromotionLiveness::FillInLiveness(BitVec& life, BitVec volatileVars, Statem
         else
         {
             unsigned offs  = lcl->GetLclOffs();
-            unsigned size  = LocalOccurrence(lcl).GetAccessSize(m_compiler, stmt);
+            unsigned size  = lcl->OperIs(GT_LCL_ADDR) ? GetSizeOfLocalAddrDef(stmt, lcl)
+                                                      : LocalOccurrence(lcl).GetAccessSize(m_compiler);
             size_t   index = Promotion::BinarySearch<Replacement, &Replacement::Offset>(agg->Replacements, offs);
 
             if ((ssize_t)index < 0)

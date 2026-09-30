@@ -8590,10 +8590,11 @@ public:
 
     var_types GetAccessType(Compiler* compiler) const
     {
+        assert(!m_node->OperIs(GT_LCL_ADDR));
         return m_node->TypeGet();
     }
 
-    unsigned GetAccessSize(Compiler* compiler, Statement* stmt) const;
+    unsigned GetAccessSize(Compiler* compiler) const;
 };
 
 class LocalsGenTreeList

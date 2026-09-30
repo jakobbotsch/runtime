@@ -1988,7 +1988,7 @@ void ReplaceVisitor::InsertPreStatementReadBacks()
     {
         // Otherwise just read back the locals we see uses of.
         m_currentStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
-            if (occurrence.GetAccessType(m_compiler) == TYP_STRUCT)
+            if (!occurrence.GetNode()->OperIs(GT_LCL_ADDR) && (occurrence.GetAccessType(m_compiler) == TYP_STRUCT))
             {
                 return GenTree::VisitResult::Continue;
             }
