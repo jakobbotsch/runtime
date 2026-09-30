@@ -8582,6 +8582,18 @@ public:
     {
         return m_node->gtFlags;
     }
+
+    unsigned GetLclOffs() const
+    {
+        return m_node->GetLclOffs();
+    }
+
+    var_types GetAccessType(Compiler* compiler) const
+    {
+        return m_node->TypeGet();
+    }
+
+    unsigned GetAccessSize(Compiler* compiler, Statement* stmt) const;
 };
 
 class LocalsGenTreeList

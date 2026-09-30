@@ -5023,6 +5023,43 @@ inline bool GenTree::HasAnyLocalDefs(Compiler* comp)
 }
 
 //------------------------------------------------------------------------
+// LocalOccurrence::GetAccessSize:
+//   Get the accessed size, including the buffer size for call-defined LCL_ADDRs.
+//
+// Arguments:
+//   compiler - The compiler instance.
+//   stmt     - Statement containing the occurrence.
+//
+// Return Value:
+//   The access size in bytes.
+//
+inline unsigned LocalOccurrence::GetAccessSize(Compiler* compiler, Statement* stmt) const
+{
+    if (m_node->OperIs(GT_LCL_ADDR))
+    {
+        Compiler::FindLinkData data = compiler->gtFindLink(stmt, m_node);
+        assert((data.parent != nullptr) && data.parent->IsCall());
+
+        unsigned defSize = UINT_MAX;
+        auto     findDef = [&](const auto& def) {
+            if (def.GetDefNode() == m_node)
+            {
+                defSize = def.GetStoreSize(compiler).GetExact();
+                return GenTree::VisitResult::Abort;
+            }
+
+            return GenTree::VisitResult::Continue;
+        };
+
+        GenTree::VisitResult result = data.parent->VisitLogicalLocalDefs(compiler, findDef);
+        assert(result == GenTree::VisitResult::Abort);
+        return defSize;
+    }
+
+    return m_node->TypeIs(TYP_STRUCT) ? m_node->GetLayout(compiler)->GetSize() : genTypeSize(m_node->TypeGet());
+}
+
+//------------------------------------------------------------------------
 // VisitLogicalLocalOccurrencesViaLocalsTreeList:
 //   Visit occurrences in locals-list order without expanding promoted parents.
 //
