@@ -5110,22 +5110,6 @@ inline bool GenTree::HasAnyLocalDefs(Compiler* comp)
 }
 
 //------------------------------------------------------------------------
-// LocalOccurrence::GetAccessSize:
-//   Get the size of a direct local access.
-//
-// Arguments:
-//   compiler - The compiler instance.
-//
-// Return Value:
-//   The access size in bytes.
-//
-inline unsigned LocalOccurrence::GetAccessSize(Compiler* compiler) const
-{
-    assert(!m_node->OperIs(GT_LCL_ADDR));
-    return m_node->TypeIs(TYP_STRUCT) ? m_node->GetLayout(compiler)->GetSize() : genTypeSize(m_node->TypeGet());
-}
-
-//------------------------------------------------------------------------
 // StoreLclVarsOccurrence::GetAccessType:
 //   Get the type of the destination local defined by this occurrence.
 //

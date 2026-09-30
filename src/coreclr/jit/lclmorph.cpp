@@ -2683,7 +2683,7 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
     struct Store
     {
         struct Statement* Statement;
-        GenTree*          Tree;
+        GenTree**         DataUse;
         unsigned          LclNum;
     };
 
@@ -2702,11 +2702,13 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
                     return GenTree::VisitResult::Continue;
                 }
 
-                if (lcl->OperIsStore())
+                if (((occurrence.GetFlags() & GTF_VAR_DEF) != 0) && !lcl->OperIs(GT_LCL_ADDR))
                 {
-                    if (lcl->TypeIs(TYP_I_IMPL, TYP_BYREF) && ((lcl->Data()->gtFlags & GTF_SIDE_EFFECT) == 0))
+                    var_types accessType = occurrence.GetAccessType(this);
+                    if (((accessType == TYP_I_IMPL) || (accessType == TYP_BYREF)) &&
+                        ((lcl->Data()->gtFlags & GTF_SIDE_EFFECT) == 0))
                     {
-                        stores.Push({stmt, lcl, occurrence.GetLclNum()});
+                        stores.Push({stmt, &lcl->Data(), occurrence.GetLclNum()});
                     }
                 }
                 else
@@ -2728,18 +2730,17 @@ bool Compiler::fgExposeUnpropagatedLocals(bool propagatedAny, LocalEqualsLocalAd
     bool changed = false;
     for (const Store& store : stores.BottomUpOrder())
     {
-        assert(store.Tree->TypeIs(TYP_I_IMPL, TYP_BYREF));
-
         if (BitVecOps::IsMember(&localsTraits, unreadLocals, store.LclNum))
         {
-            JITDUMP("V%02u is unread; removing store data of [%06u]\n", store.LclNum, dspTreeID(store.Tree));
-            DISPTREE(store.Tree);
+            JITDUMP("V%02u is unread; removing store data in " FMT_STMT "\n", store.LclNum, store.Statement->GetID());
+            DISPSTMT(store.Statement);
 
-            store.Tree->Data()->BashToConst(0, store.Tree->Data()->TypeGet());
+            GenTree* data = *store.DataUse;
+            data->BashToConst(0, data->TypeGet());
             fgSequenceLocals(store.Statement);
 
             JITDUMP("\nResult:\n");
-            DISPTREE(store.Tree);
+            DISPSTMT(store.Statement);
             JITDUMP("\n");
             changed = true;
         }
