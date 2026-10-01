@@ -122,7 +122,7 @@ public:
             return GenTree::VisitResult::Continue;
         };
 
-        call->VisitPhysicalLocalDefNodes(m_compiler, moveToEnd);
+        call->VisitCallLocalDefNodes(m_compiler, moveToEnd);
     }
 
     //-------------------------------------------------------------------

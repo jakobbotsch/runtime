@@ -880,7 +880,7 @@ void Liveness<TLiveness>::PerNodeLocalVarLiveness(GenTree* tree)
                 MarkUseDef(lcl);
                 return GenTree::VisitResult::Continue;
             };
-            call->VisitPhysicalLocalDefNodes(m_compiler, visitDef);
+            call->VisitCallLocalDefNodes(m_compiler, visitDef);
             break;
         }
 
@@ -1805,7 +1805,7 @@ GenTreeLclVarCommon* Liveness<TLiveness>::ComputeLifeCall(VARSET_TP&       life,
         return GenTree::VisitResult::Continue;
     };
 
-    call->VisitPhysicalLocalDefNodes(m_compiler, visitDef);
+    call->VisitCallLocalDefNodes(m_compiler, visitDef);
 
     return partialDef;
 }
@@ -2685,7 +2685,7 @@ bool Liveness<TLiveness>::IsTrackedCallDefinition(LIR::Range& range, GenTree* no
                 return node == callDef ? GenTree::VisitResult::Abort : GenTree::VisitResult::Continue;
             };
 
-            return curNode->VisitPhysicalLocalDefNodes(m_compiler, visit) == GenTree::VisitResult::Abort;
+            return curNode->AsCall()->VisitCallLocalDefNodes(m_compiler, visit) == GenTree::VisitResult::Abort;
         }
     } while (curNode->OperIs(GT_FIELD_LIST) || curNode->OperIsPutArg());
 
