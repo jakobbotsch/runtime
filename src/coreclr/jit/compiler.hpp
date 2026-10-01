@@ -4452,7 +4452,7 @@ GenTree::VisitResult GenTree::VisitOperandUses(TVisitor visitor)
 template <typename TDerived>
 struct LocalDefProvider
 {
-    GenTreeFlags& GetFlags() const
+    GenTreeFlags& FlagsRef() const
     {
         return static_cast<const TDerived*>(this)->GetDefNode()->gtFlags;
     }
@@ -4611,7 +4611,7 @@ struct StoreLclVarsDef
         return m_store->GetDestination(m_index);
     }
 
-    GenTreeFlags& GetFlags() const
+    GenTreeFlags& FlagsRef() const
     {
         return GetDestination().Flags;
     }

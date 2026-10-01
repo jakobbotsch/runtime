@@ -4085,6 +4085,11 @@ struct GenTreeStoreLclVars : public GenTreeUnOp
         gtFlags |= GTF_ASG;
     }
 
+    GenTree*& Data()
+    {
+        return gtOp1;
+    }
+
     Destination& GetDestination(unsigned index) const
     {
         assert(index < gtCount);
@@ -10232,7 +10237,7 @@ inline GenTree*& GenTree::Data()
     assert(OperIsStore());
     if (OperIs(GT_STORE_LCL_VARS))
     {
-        return AsUnOp()->gtOp1;
+        return AsStoreLclVars()->Data();
     }
     return OperIsLocalStore() ? AsLclVarCommon()->Data() : AsIndir()->Data();
 }

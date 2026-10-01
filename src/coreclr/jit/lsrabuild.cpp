@@ -4012,7 +4012,7 @@ void LinearScan::BuildStoreLocDef(GenTree* storeLoc, LclVarDsc* varDsc, RefPosit
 //
 int LinearScan::BuildStoreLclVars(GenTreeStoreLclVars* store)
 {
-    GenTree* source = store->gtOp1;
+    GenTree* source = store->Data();
     assert(store->gtCount == (source->IsMultiRegNode() ? source->GetMultiRegCount(m_compiler) : 1));
     for (unsigned i = 0; i < store->gtCount; i++)
     {

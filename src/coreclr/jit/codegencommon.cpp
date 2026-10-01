@@ -8009,7 +8009,7 @@ void CodeGen::genJmpPlaceArgs(GenTree* jmp)
 //
 void CodeGen::genStoreLclVars(GenTreeStoreLclVars* store)
 {
-    GenTree* source = store->gtOp1;
+    GenTree* source = store->Data();
     for (unsigned i = 0; i < store->gtCount; i++)
     {
         regNumber sourceReg = source->IsMultiRegNode() ? genConsumeReg(source, i) : genConsumeReg(source);

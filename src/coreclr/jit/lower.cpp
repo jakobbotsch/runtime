@@ -6217,7 +6217,7 @@ void Lowering::LowerCallStruct(GenTreeCall* call)
 //
 GenTree* Lowering::LowerStoreLclVars(GenTreeStoreLclVars* store)
 {
-    GenTree*       source = store->gtOp1;
+    GenTree*       source = store->Data();
     GenTree*       next   = store->gtNext;
     GenTreeCall*   call   = source->IsCall() ? source->AsCall() : nullptr;
     ReturnTypeDesc retStorage;
@@ -9377,7 +9377,7 @@ void Lowering::CheckNode(Compiler* compiler, GenTree* node)
         case GT_STORE_LCL_VARS:
         {
             GenTreeStoreLclVars* store  = node->AsStoreLclVars();
-            GenTree*             source = store->gtOp1->gtSkipReloadOrCopy();
+            GenTree*             source = store->Data()->gtSkipReloadOrCopy();
             assert(source->IsCall() && !source->AsCall()->ShouldHaveRetBufArg());
             ReturnTypeDesc retStorage;
             retStorage.InitializeStructCallReturnType(compiler, source->AsCall());

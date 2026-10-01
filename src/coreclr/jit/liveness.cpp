@@ -1833,11 +1833,11 @@ bool Liveness<TLiveness>::ComputeLifeLocal(VARSET_TP& life, VARSET_VALARG_TP kee
             LclVarDsc* dsc = m_compiler->lvaGetDesc(def.GetLclNum());
             bool       dead =
                 dsc->lvTracked
-                          ? ComputeLifeTrackedLocalDef(life, keepAliveVars, *dsc, lclVarNode, def.GetFlags(), def.GetLclNum())
+                          ? ComputeLifeTrackedLocalDef(life, keepAliveVars, *dsc, lclVarNode, def.FlagsRef(), def.GetLclNum())
                           : TLiveness::EliminateDeadCode && TLiveness::IsLIR && dsc->lvRefCnt() == 1 && !dsc->lvPinned;
             if (dead)
             {
-                def.GetFlags() |= GTF_VAR_DEATH;
+                def.FlagsRef() |= GTF_VAR_DEATH;
             }
             allDead &= dead;
             return GenTree::VisitResult::Continue;

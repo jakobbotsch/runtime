@@ -11495,7 +11495,7 @@ GenTree* Compiler::gtCloneExpr(GenTree* tree)
             case GT_STORE_LCL_VARS:
             {
                 GenTreeStoreLclVars* store = tree->AsStoreLclVars();
-                GenTreeStoreLclVars* clone = gtNewStoreLclVarsNode(store->gtOp1, store->gtCount, store->gtSourceSize);
+                GenTreeStoreLclVars* clone = gtNewStoreLclVarsNode(store->Data(), store->gtCount, store->gtSourceSize);
                 for (unsigned i = 0; i < store->gtCount; i++)
                 {
                     GenTreeStoreLclVars::Destination& dest = store->GetDestination(i);
