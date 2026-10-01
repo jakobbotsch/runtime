@@ -6207,13 +6207,13 @@ void Lowering::LowerCallStruct(GenTreeCall* call)
 }
 
 //----------------------------------------------------------------------------------------------
-// LowerStoreLclVars: Normalize byte-slice definitions to source-register definitions.
+// LowerStoreLclVars: Keep direct register definitions or expand stores through a stack local.
 //
 // Arguments:
 //     store - The multiple-definition store
 //
 // Returns:
-//     The next node to lower. Newly introduced extracts are lowered here.
+//     The next node to lower, including any newly inserted stores.
 //
 GenTree* Lowering::LowerStoreLclVars(GenTreeStoreLclVars* store)
 {
@@ -6230,182 +6230,38 @@ GenTree* Lowering::LowerStoreLclVars(GenTreeStoreLclVars* store)
     bool                  direct = (count == store->gtCount);
     for (unsigned i = 0; direct && i < count; i++)
     {
-        GenTreeStoreLclVars::Destination& dest = store->GetDestination(i);
-        var_types                         type = m_compiler->lvaGetDesc(dest.LclNum)->TypeGet();
-        // Small locals require normalization, not just a register transfer.
-        direct = !varTypeIsSmall(type) && (dest.Offset == ret->GetReturnFieldOffset(i)) &&
-                 (genTypeSize(type) == genTypeSize(ret->GetReturnRegType(i))) &&
-                 (genActualType(type) == genActualType(ret->GetReturnRegType(i)));
+        GenTreeStoreLclVars::Destination& dest    = store->GetDestination(i);
+        var_types                         type    = m_compiler->lvaGetDesc(dest.LclNum)->TypeGet();
+        var_types                         regType = ret->GetReturnRegType(i);
+        direct                                    = (dest.Offset == ret->GetReturnFieldOffset(i)) &&
+                 (((genTypeSize(type) == genTypeSize(regType)) && (genActualType(type) == genActualType(regType))) ||
+                  (varTypeIsSmall(type) && varTypeIsIntegral(regType) && (genTypeSize(type) <= genTypeSize(regType))));
     }
     if (direct)
     {
         return next;
     }
 
-    // Normalize byte slices into direct register definitions, leaving all
-    // extraction and reinterpretation outside the multiple-definition node.
-    GenTreeStoreLclVars::Destination* destinations     = store->gtDestinations;
-    unsigned                          destinationCount = store->gtCount;
-    bool*                             mapped           = new (m_compiler, CMK_ASTNode) bool[destinationCount]{};
-    unsigned*                         sourceRegisters  = new (m_compiler, CMK_ASTNode) unsigned[destinationCount];
-    bool                              needsImage       = false;
-    for (unsigned d = 0; d < destinationCount; d++)
-    {
-        sourceRegisters[d] = BAD_VAR_NUM;
-        var_types type     = m_compiler->lvaGetDesc(destinations[d].LclNum)->TypeGet();
-        for (unsigned r = 0; r < count; r++)
-        {
-            unsigned  offset  = ret->GetReturnFieldOffset(r);
-            var_types regType = ret->GetReturnRegType(r);
-            if ((destinations[d].Offset >= offset) &&
-                (destinations[d].Offset + genTypeSize(type) <= offset + genTypeSize(regType)) &&
-                ((!varTypeIsGC(type) && !varTypeIsGC(regType)) ||
-                 ((type == regType) && (destinations[d].Offset == offset))))
-            {
-                sourceRegisters[d] = r;
-                mapped[d]          = !varTypeIsSmall(type) && (destinations[d].Offset == offset) && (type == regType);
-                for (unsigned previous = 0; previous < d; previous++)
-                {
-                    if (mapped[previous] && (sourceRegisters[previous] == r))
-                    {
-                        mapped[d] = false;
-                        break;
-                    }
-                }
-                break;
-            }
-        }
-        needsImage |= sourceRegisters[d] == BAD_VAR_NUM;
-    }
-    unsigned temp = BAD_VAR_NUM;
-    if (needsImage)
-    {
-        // Cross-register slices and non-register sources require an image.
-        // GC slots retain their actual types while constructing it.
-        temp = m_compiler->lvaGrabTemp(true DEBUGARG("STORE_LCL_VARS source image"));
-        if (call != nullptr)
-        {
-            m_compiler->lvaSetStruct(temp, call->gtRetClsHnd, false);
-        }
-        else
-        {
-            m_compiler->lvaSetStruct(temp, source->GetLayout(m_compiler), false);
-        }
-        m_compiler->lvaSetVarDoNotEnregister(temp DEBUGARG(DoNotEnregisterReason::LocalField));
-    }
-    GenTree* insertion = store;
-    GenTree* firstNew  = nullptr;
-    if (count != 0)
-    {
-        store->gtDestinations = new (m_compiler, CMK_ASTNode) GenTreeStoreLclVars::Destination[count]{};
-        store->gtCount        = count;
-        for (unsigned i = 0; i < count; i++)
-        {
-            var_types type = ret->GetReturnRegType(i);
-            // Capture the register without interpreting its upper bits. Explicit
-            // casts below normalize one- and two-byte aggregate returns.
-            var_types tempType = genActualType(type);
-            unsigned  offset   = ret->GetReturnFieldOffset(i);
-            unsigned  regTemp  = BAD_VAR_NUM;
-            for (unsigned d = 0; d < destinationCount; d++)
-            {
-                if (mapped[d] && (destinations[d].Offset == offset) &&
-                    (m_compiler->lvaGetDesc(destinations[d].LclNum)->TypeGet() == type))
-                {
-                    regTemp                  = destinations[d].LclNum;
-                    store->GetDestination(i) = destinations[d];
-                    break;
-                }
-            }
-            if (regTemp == BAD_VAR_NUM)
-            {
-                regTemp = m_compiler->lvaGrabTemp(true DEBUGARG("STORE_LCL_VARS return register"));
-                m_compiler->lvaGetDesc(regTemp)->lvType = tempType;
-                store->gtSourceSize                     = max(store->gtSourceSize, offset + genTypeSize(tempType));
-                m_compiler->gtSetStoreLclVarsDestination(store, i, regTemp, offset);
-            }
-            if (!needsImage)
-            {
-                continue;
-            }
-            GenTree* load  = m_compiler->gtNewLclvNode(regTemp, tempType);
-            GenTree* spill = m_compiler->gtNewStoreLclFldNode(temp, type, offset, load);
-            BlockRange().InsertAfter(insertion, LIR::SeqTree(m_compiler, spill));
-            if (firstNew == nullptr)
-            {
-                firstNew = load;
-            }
-            insertion = spill;
-        }
-    }
-    else
-    {
-        GenTree* spill = m_compiler->gtNewStoreLclVarNode(temp, source);
-        BlockRange().InsertBefore(store, spill);
-        BlockRange().Remove(store);
-        firstNew  = spill;
-        insertion = spill;
-    }
+    // Preserve the source's layout, including GC slots, when fields do not map
+    // directly to return registers.
+    unsigned     temp = m_compiler->lvaGrabTemp(true DEBUGARG("Spilled local for multi-local store"));
+    ClassLayout* layout =
+        call != nullptr ? m_compiler->typGetObjLayout(call->gtRetClsHnd) : source->GetLayout(m_compiler);
+    m_compiler->lvaSetStruct(temp, layout, false);
+    m_compiler->lvaSetVarDoNotEnregister(temp DEBUGARG(DoNotEnregisterReason::LocalField));
 
-    for (unsigned i = 0; i < destinationCount; i++)
+    GenTree* spill = m_compiler->gtNewStoreLclVarNode(temp, source);
+    BlockRange().InsertBefore(store, spill);
+    for (unsigned i = 0; i < store->gtCount; i++)
     {
-        if (mapped[i])
-        {
-            continue;
-        }
-        GenTreeStoreLclVars::Destination& dest           = destinations[i];
-        var_types                         type           = m_compiler->lvaGetDesc(dest.LclNum)->TypeGet();
-        unsigned                          sourceRegister = sourceRegisters[i];
-        GenTree*                          load;
-        if (sourceRegister == BAD_VAR_NUM)
-        {
-            load = m_compiler->gtNewLclFldNode(temp, type, dest.Offset);
-        }
-        else
-        {
-            GenTreeStoreLclVars::Destination& reg     = store->GetDestination(sourceRegister);
-            var_types                         regType = m_compiler->lvaGetDesc(reg.LclNum)->TypeGet();
-            load                                      = m_compiler->gtNewLclvNode(reg.LclNum, genActualType(regType));
-            if (type != regType || dest.Offset != reg.Offset)
-            {
-                assert(!varTypeIsGC(type) && !varTypeIsGC(regType));
-                var_types bitsType = genTypeSize(regType) == 8 ? TYP_LONG : TYP_INT;
-                if (varTypeIsFloating(regType))
-                {
-                    load = m_compiler->gtNewBitCastNode(bitsType, load);
-                }
-                unsigned shift = (dest.Offset - reg.Offset) * BITS_PER_BYTE;
-                if (shift != 0)
-                {
-                    load = m_compiler->gtNewOperNode(GT_RSZ, bitsType, load, m_compiler->gtNewIconNode(shift));
-                }
-                var_types castType = varTypeIsFloating(type) ? (genTypeSize(type) == 8 ? TYP_LONG : TYP_INT) : type;
-                if (genTypeSize(type) < genTypeSize(regType) || varTypeIsSmall(type))
-                {
-                    load = m_compiler->gtNewCastNode(genActualType(castType), load, true, castType);
-                }
-                if (varTypeIsFloating(type))
-                {
-                    load = m_compiler->gtNewBitCastNode(type, load);
-                }
-            }
-        }
-        GenTree*   def   = m_compiler->gtNewStoreLclVarNode(dest.LclNum, load);
-        LIR::Range range = LIR::SeqTree(m_compiler, def);
-        if (firstNew == nullptr)
-        {
-            firstNew = range.FirstNode();
-        }
-        BlockRange().InsertAfter(insertion, std::move(range));
-        insertion = def;
+        GenTreeStoreLclVars::Destination& dest = store->GetDestination(i);
+        var_types                         type = m_compiler->lvaGetDesc(dest.LclNum)->TypeGet();
+        GenTree*                          load = m_compiler->gtNewLclFldNode(temp, type, dest.Offset);
+        GenTree*                          def  = m_compiler->gtNewStoreLclVarNode(dest.LclNum, load);
+        BlockRange().InsertBefore(store, LIR::SeqTree(m_compiler, def));
     }
-    // Only the freshly inserted image/extraction nodes need lowering. The
-    // producer and normalized STORE_LCL_VARS have already been processed.
-    if (firstNew != nullptr)
-    {
-        LowerRange(firstNew, insertion);
-    }
-    return next;
+    BlockRange().Remove(store);
+    return spill;
 }
 
 //------------------------------------------------------------------------
@@ -9387,10 +9243,12 @@ void Lowering::CheckNode(Compiler* compiler, GenTree* node)
             {
                 GenTreeStoreLclVars::Destination& dest = store->GetDestination(i);
                 assert(dest.Offset == ret->GetReturnFieldOffset(i));
-                var_types type = compiler->lvaGetDesc(dest.LclNum)->TypeGet();
-                assert(!varTypeIsSmall(type));
-                assert(genTypeSize(type) == genTypeSize(genActualType(ret->GetReturnRegType(i))));
-                assert(genActualType(type) == genActualType(ret->GetReturnRegType(i)));
+                var_types type    = compiler->lvaGetDesc(dest.LclNum)->TypeGet();
+                var_types regType = ret->GetReturnRegType(i);
+                assert(
+                    ((genTypeSize(type) == genTypeSize(regType)) && (genActualType(type) == genActualType(regType))) ||
+                    (varTypeIsSmall(type) && varTypeIsIntegral(regType) &&
+                     (genTypeSize(type) <= genTypeSize(regType))));
             }
             break;
         }

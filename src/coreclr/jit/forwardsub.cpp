@@ -1176,8 +1176,7 @@ void Compiler::fgForwardSubUpdateLiveness(GenTree* newSubListFirst, GenTree* new
         GenTree* candidate = newSubListFirst;
         while (true)
         {
-            unsigned newUseLclNum =
-                candidate->OperIs(GT_STORE_LCL_VARS) ? BAD_VAR_NUM : candidate->AsLclVarCommon()->GetLclNum();
+            unsigned newUseLclNum = candidate->AsLclVarCommon()->GetLclNum();
             if (dsc->lvPromoted)
             {
                 // Is the parent struct being used?

@@ -427,7 +427,7 @@ void SsaBuilder::RenameDef(GenTree* defNode, BasicBlock* block)
         anyDefs               = true;
         GenTree* localDefNode = def.GetDefNode();
         // This should have been marked as definition.
-        assert(localDefNode->OperIs(GT_STORE_LCL_VARS) || (localDefNode->gtFlags & GTF_VAR_DEF) != 0);
+        assert((localDefNode->gtFlags & GTF_VAR_DEF) != 0);
         assert(def.IsEntire(m_compiler) || ((localDefNode->gtFlags & GTF_VAR_USEASG) != 0));
 
         unsigned   lclNum = def.GetLclNum();

@@ -1746,16 +1746,7 @@ void LinearScan::buildRefPositionsForNode(GenTree* tree, LsraLocation currentLoc
     currBuildNode                       = tree;
 #endif // DEBUG
 
-    int consume;
-    if (tree->OperIs(GT_STORE_LCL_VARS))
-    {
-        clearBuildState();
-        consume = BuildStoreLclVars(tree->AsStoreLclVars());
-    }
-    else
-    {
-        consume = BuildNode(tree);
-    }
+    int consume = BuildNode(tree);
 
 #ifdef DEBUG
     int newDefListCount = defList.Count();

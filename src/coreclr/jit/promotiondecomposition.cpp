@@ -1512,7 +1512,7 @@ void ReplaceVisitor::HandleStructStore(GenTree** use, GenTree* user)
             DecompositionStatementList result;
             EliminateCommasInBlockOp(store, &result);
             unsigned             count = static_cast<unsigned>(dstEndRep - dstFirstRep + remainder.size());
-            GenTreeStoreLclVars* defs  = m_compiler->gtNewStoreLclVarsNode(src, count, size);
+            GenTreeStoreLclVars* defs  = m_compiler->gtNewStoreLclVarsNode(src, count);
             unsigned             index = 0;
             for (Replacement* rep = dstFirstRep; rep != dstEndRep; rep++)
             {

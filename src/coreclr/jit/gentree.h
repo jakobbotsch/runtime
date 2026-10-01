@@ -419,7 +419,7 @@ enum GenTreeFlags : unsigned
 //  well to make sure it's the right operator for the particular flag.
 //---------------------------------------------------------------------
 
-    GTF_VAR_DEF             = 0x80000000, // GT_STORE_LCL_VAR/GT_STORE_LCL_FLD/GT_LCL_ADDR -- this is a definition
+    GTF_VAR_DEF             = 0x80000000, // GT_STORE_LCL_VAR/GT_STORE_LCL_FLD/GT_STORE_LCL_VARS/GT_LCL_ADDR -- definition
     GTF_VAR_USEASG          = 0x40000000, // GT_STORE_LCL_FLD/GT_STORE_LCL_FLD/GT_LCL_ADDR -- this is a partial definition, a use of
                                           // the previous definition is implied. A partial definition usually occurs when a struct
                                           // field is assigned to (s.f = ...) or when a scalar typed variable is assigned to via a
@@ -4067,16 +4067,14 @@ struct GenTreeStoreLclVars : public GenTreeUnOp
 
     Destination* gtDestinations;
     unsigned     gtCount;
-    unsigned     gtSourceSize;
 
-    GenTreeStoreLclVars(GenTree* source, Destination* destinations, unsigned count, unsigned sourceSize)
+    GenTreeStoreLclVars(GenTree* source, Destination* destinations, unsigned count)
         : GenTreeUnOp(GT_STORE_LCL_VARS, TYP_VOID, source)
         , gtDestinations(destinations)
         , gtCount(count)
-        , gtSourceSize(sourceSize)
     {
         assert(count > 0);
-        gtFlags |= GTF_ASG;
+        gtFlags |= GTF_ASG | GTF_VAR_DEF;
     }
 
     GenTree*& Data()

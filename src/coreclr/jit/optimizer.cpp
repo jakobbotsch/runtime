@@ -5338,8 +5338,15 @@ void Compiler::optComputeLoopSideEffectsOfBlock(BasicBlock* blk, FlowGraphNatura
             switch (oper)
             {
                 case GT_STORE_LCL_VARS:
-                    // These definitions cannot alias memory, and a source VN
-                    // cannot be propagated without selecting the individual slice.
+                    tree->VisitLogicalLocalDefs(this, [&](const auto& def) {
+                        if (lvaVarAddrExposed(def.GetLclNum()))
+                        {
+                            memoryHavoc |= memoryKindSet(ByrefExposed);
+                            return GenTree::VisitResult::Abort;
+                        }
+                        return GenTree::VisitResult::Continue;
+                    });
+                    // A source VN cannot be propagated without selecting the individual slice.
                     break;
 
                 case GT_STORE_LCL_VAR:

@@ -82,14 +82,8 @@ struct Access
 
     // Number of times we saw the access.
     unsigned Count = 0;
-    // Number of times this is stored from the result of a call. This includes
-    // being passed as the retbuf. These stores cannot be decomposed and are
-    // handled via readback.
-    unsigned       CountStoredFromCall         = 0;
-    unsigned       CountStoredFromRegisterCall = 0;
-    ReturnTypeDesc RegisterReturn;
-    bool           HasRegisterReturn          = false;
-    bool           ConflictingRegisterReturns = false;
+    // Number of times this is passed as the retbuf. These stores need a readback.
+    unsigned CountPassedAsRetbuf = 0;
     // Number of times this is passed as a call arg. We insert writebacks
     // before these.
     unsigned CountCallArgs = 0;
@@ -97,11 +91,10 @@ struct Access
     // avoid the writeback for some overlapping replacements for these.
     unsigned CountRegCallArgs = 0;
 
-    weight_t CountWtd                       = 0;
-    weight_t CountStoredFromCallWtd         = 0;
-    weight_t CountStoredFromRegisterCallWtd = 0;
-    weight_t CountCallArgsWtd               = 0;
-    weight_t CountRegCallArgsWtd            = 0;
+    weight_t CountWtd               = 0;
+    weight_t CountPassedAsRetbufWtd = 0;
+    weight_t CountCallArgsWtd       = 0;
+    weight_t CountRegCallArgsWtd    = 0;
 
 #ifdef DEBUG
     // Number of times this access is the source of a store.
@@ -109,14 +102,10 @@ struct Access
     // Number of times this access is the destination of a store.
     unsigned CountStoreDestination = 0;
     unsigned CountReturns          = 0;
-    // Number of times this is stored by being passed as the retbuf.
-    // These stores need a readback
-    unsigned CountPassedAsRetbuf = 0;
 
     weight_t CountStoreSourceWtd      = 0;
     weight_t CountStoreDestinationWtd = 0;
     weight_t CountReturnsWtd          = 0;
-    weight_t CountPassedAsRetbufWtd   = 0;
 #endif
 
     Access(unsigned offset, var_types accessType, ClassLayout* layout)
@@ -151,11 +140,10 @@ struct Access
 
 enum class AccessKindFlags : uint32_t
 {
-    None             = 0,
-    IsCallArg        = 1,
-    IsRegCallArg     = 2,
-    IsStoredFromCall = 4,
-    IsCallRetBuf     = 8,
+    None         = 0,
+    IsCallArg    = 1,
+    IsRegCallArg = 2,
+    IsCallRetBuf = 8,
 #ifdef DEBUG
     IsStoreSource      = 16,
     IsStoreDestination = 32,
@@ -352,12 +340,8 @@ public:
     //   flags        - Flags classifying the access
     //   weight       - Weight of the block containing the access
     //
-    void RecordAccess(unsigned              offs,
-                      var_types             accessType,
-                      ClassLayout*          accessLayout,
-                      AccessKindFlags       flags,
-                      weight_t              weight,
-                      const ReturnTypeDesc* registerReturn)
+    void RecordAccess(
+        unsigned offs, var_types accessType, ClassLayout* accessLayout, AccessKindFlags flags, weight_t weight)
     {
         Access* access = nullptr;
 
@@ -405,43 +389,13 @@ public:
             }
         }
 
-        if ((flags & (AccessKindFlags::IsStoredFromCall | AccessKindFlags::IsCallRetBuf)) != AccessKindFlags::None)
-        {
-            access->CountStoredFromCall++;
-            access->CountStoredFromCallWtd += weight;
-        }
-        if (registerReturn != nullptr)
-        {
-            if (access->HasRegisterReturn)
-            {
-                unsigned count = registerReturn->GetReturnRegCount();
-                if (count != access->RegisterReturn.GetReturnRegCount())
-                {
-                    access->ConflictingRegisterReturns = true;
-                }
-                else
-                {
-                    for (unsigned i = 0; i < count; i++)
-                    {
-                        access->ConflictingRegisterReturns |=
-                            (registerReturn->GetReturnRegType(i) != access->RegisterReturn.GetReturnRegType(i)) ||
-                            (registerReturn->GetReturnFieldOffset(i) != access->RegisterReturn.GetReturnFieldOffset(i));
-                    }
-                }
-            }
-            access->RegisterReturn    = *registerReturn;
-            access->HasRegisterReturn = true;
-            access->CountStoredFromRegisterCall++;
-            access->CountStoredFromRegisterCallWtd += weight;
-        }
-
-#ifdef DEBUG
         if ((flags & AccessKindFlags::IsCallRetBuf) != AccessKindFlags::None)
         {
             access->CountPassedAsRetbuf++;
             access->CountPassedAsRetbufWtd += weight;
         }
 
+#ifdef DEBUG
         if ((flags & AccessKindFlags::IsStoreSource) != AccessKindFlags::None)
         {
             access->CountStoreSource++;
@@ -734,11 +688,11 @@ public:
             }
         }
 
-        unsigned countOverlappedCallArg        = 0;
-        unsigned countOverlappedStoredFromCall = 0;
+        unsigned countOverlappedCallArg = 0;
+        unsigned countOverlappedRetbuf  = 0;
 
-        weight_t countOverlappedCallArgWtd        = 0;
-        weight_t countOverlappedStoredFromCallWtd = 0;
+        weight_t countOverlappedCallArgWtd = 0;
+        weight_t countOverlappedRetbufWtd  = 0;
 
         bool overlap = false;
         for (const Access& otherAccess : m_accesses)
@@ -759,43 +713,10 @@ public:
             }
 
             countOverlappedCallArg += otherAccess.CountCallArgs;
-            countOverlappedStoredFromCall += otherAccess.CountStoredFromCall;
+            countOverlappedRetbuf += otherAccess.CountPassedAsRetbuf;
 
             countOverlappedCallArgWtd += otherAccess.CountCallArgsWtd;
-            countOverlappedStoredFromCallWtd += otherAccess.CountStoredFromCallWtd;
-            bool canUseRegisterDefinitions = !otherAccess.ConflictingRegisterReturns && otherAccess.HasRegisterReturn;
-            for (const Access& candidate : m_accesses)
-            {
-                if (!canUseRegisterDefinitions)
-                {
-                    break;
-                }
-                if (!candidate.Overlaps(otherAccess.Offset, otherAccess.GetAccessSize()) ||
-                    (candidate.AccessType == TYP_STRUCT))
-                {
-                    continue;
-                }
-                canUseRegisterDefinitions &=
-                    !varTypeIsSIMD(candidate.AccessType) && (candidate.Offset >= otherAccess.Offset) &&
-                    (candidate.Offset + candidate.GetAccessSize() <= otherAccess.Offset + otherAccess.GetAccessSize());
-#ifndef TARGET_64BIT
-                canUseRegisterDefinitions &= !varTypeIsLong(candidate.AccessType);
-#endif
-            }
-            if (canUseRegisterDefinitions)
-            {
-                const ReturnTypeDesc* ret = &otherAccess.RegisterReturn;
-                for (unsigned i = 0; i < ret->GetReturnRegCount(); i++)
-                {
-                    if ((access.Offset == otherAccess.Offset + ret->GetReturnFieldOffset(i)) &&
-                        (access.AccessType == ret->GetReturnRegType(i)))
-                    {
-                        countOverlappedStoredFromCall -= otherAccess.CountStoredFromRegisterCall;
-                        countOverlappedStoredFromCallWtd -= otherAccess.CountStoredFromRegisterCallWtd;
-                        break;
-                    }
-                }
-            }
+            countOverlappedRetbufWtd += otherAccess.CountPassedAsRetbufWtd;
 
             if (otherAccess.CountRegCallArgs > 0)
             {
@@ -863,11 +784,10 @@ public:
             }
         }
 
-        // Retbuf stores and incompatible register slices require readbacks.
-        // Exact register-return slices were excluded above: STORE_LCL_VARS
-        // defines those replacements directly.
-        countReadBacksWtd += countOverlappedStoredFromCallWtd;
-        countReadBacks += countOverlappedStoredFromCall;
+        // Retbuf stores require readbacks. For register returns, optimistically
+        // assume no spill to the stack and negligible field extraction cost.
+        countReadBacksWtd += countOverlappedRetbufWtd;
+        countReadBacks += countOverlappedRetbuf;
 
         // A readback turns into a stack load.
         costWith += countReadBacksWtd * COST_STRUCT_ACCESS_CYCLES;
@@ -1174,27 +1094,9 @@ public:
                 }
 #endif
 
-                LocalUses*            uses           = GetOrCreateUses(lcl->GetLclNum());
-                unsigned              offs           = lcl->GetLclOffs();
-                const ReturnTypeDesc* registerReturn = nullptr;
-#if HAS_FIXED_REGISTER_SET
-                ReturnTypeDesc registerReturnStorage;
-                if (lcl->OperIsLocalStore() && lcl->Data()->gtEffectiveVal()->IsCall())
-                {
-                    GenTreeCall* call = lcl->Data()->gtEffectiveVal()->AsCall();
-                    if (call->TypeIs(TYP_STRUCT) && !call->ShouldHaveRetBufArg() && !call->CanTailCall()
-#ifdef SWIFT_SUPPORT
-                        && (call->GetUnmanagedCallConv() != CorInfoCallConvExtension::Swift)
-#endif
-                    )
-                    {
-                        registerReturnStorage.InitializeStructCallReturnType(m_compiler, call);
-                        registerReturn = &registerReturnStorage;
-                    }
-                }
-#endif // HAS_FIXED_REGISTER_SET
-                uses->RecordAccess(offs, accessType, accessLayout, accessFlags, m_curBB->getBBWeight(m_compiler),
-                                   registerReturn);
+                LocalUses* uses = GetOrCreateUses(lcl->GetLclNum());
+                unsigned   offs = lcl->GetLclOffs();
+                uses->RecordAccess(offs, accessType, accessLayout, accessFlags, m_curBB->getBBWeight(m_compiler));
             }
 
             if (tree->OperIsLocalStore() && tree->TypeIs(TYP_STRUCT))
@@ -1591,15 +1493,12 @@ private:
         assert(lcl->OperIsLocalRead() || lcl->OperIsLocalStore());
 
         AccessKindFlags flags = AccessKindFlags::None;
+#ifdef DEBUG
         if (lcl->OperIsLocalStore())
         {
-            INDEBUG(flags |= AccessKindFlags::IsStoreDestination);
-
-            if (lcl->AsLclVarCommon()->Data()->gtEffectiveVal()->IsCall())
-            {
-                flags |= AccessKindFlags::IsStoredFromCall;
-            }
+            flags |= AccessKindFlags::IsStoreDestination;
         }
+#endif
 
         if (user == nullptr)
         {

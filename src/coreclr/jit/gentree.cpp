@@ -2919,7 +2919,7 @@ AGAIN:
                 {
                     GenTreeStoreLclVars* left  = op1->AsStoreLclVars();
                     GenTreeStoreLclVars* right = op2->AsStoreLclVars();
-                    if ((left->gtCount != right->gtCount) || (left->gtSourceSize != right->gtSourceSize))
+                    if (left->gtCount != right->gtCount)
                     {
                         return false;
                     }
@@ -10191,17 +10191,16 @@ GenTree* Compiler::gtNewConWithPattern(var_types type, uint8_t pattern)
 // gtNewStoreLclVarsNode: Create a simultaneous scalar-local store.
 //
 // Arguments:
-//    source     - The sole evaluated operand
-//    count      - Number of destination records to initialize
-//    sourceSize - Size of the source byte image
+//    source - The sole evaluated operand
+//    count  - Number of destination records to initialize
 //
 // Return Value:
 //    The created node; initialize every destination before using it.
 //
-GenTreeStoreLclVars* Compiler::gtNewStoreLclVarsNode(GenTree* source, unsigned count, unsigned sourceSize)
+GenTreeStoreLclVars* Compiler::gtNewStoreLclVarsNode(GenTree* source, unsigned count)
 {
     GenTreeStoreLclVars::Destination* destinations = new (this, CMK_ASTNode) GenTreeStoreLclVars::Destination[count]{};
-    return new (this, GT_STORE_LCL_VARS) GenTreeStoreLclVars(source, destinations, count, sourceSize);
+    return new (this, GT_STORE_LCL_VARS) GenTreeStoreLclVars(source, destinations, count);
 }
 
 // Each definition record owns ordinary scalar SSA/liveness/register state.
@@ -10212,7 +10211,8 @@ void Compiler::gtSetStoreLclVarsDestination(GenTreeStoreLclVars* store,
 {
     LclVarDsc* dsc = lvaGetDesc(lclNum);
     assert(!varTypeIsStruct(dsc) && !dsc->lvPromoted && !dsc->IsAddressExposed());
-    assert(offset <= store->gtSourceSize && genTypeSize(dsc) <= store->gtSourceSize - offset);
+    assert(offset <= store->Data()->GetLayout(this)->GetSize() &&
+           genTypeSize(dsc) <= store->Data()->GetLayout(this)->GetSize() - offset);
     GenTreeStoreLclVars::Destination& destination = store->GetDestination(index);
     destination.LclNum                            = lclNum;
     destination.Offset                            = offset;
@@ -11503,7 +11503,7 @@ GenTree* Compiler::gtCloneExpr(GenTree* tree)
             case GT_STORE_LCL_VARS:
             {
                 GenTreeStoreLclVars* store = tree->AsStoreLclVars();
-                GenTreeStoreLclVars* clone = gtNewStoreLclVarsNode(store->Data(), store->gtCount, store->gtSourceSize);
+                GenTreeStoreLclVars* clone = gtNewStoreLclVarsNode(store->Data(), store->gtCount);
                 for (unsigned i = 0; i < store->gtCount; i++)
                 {
                     GenTreeStoreLclVars::Destination& dest = store->GetDestination(i);

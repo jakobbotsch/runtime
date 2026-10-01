@@ -4658,7 +4658,7 @@ struct StoreLclVarsDef
 
     ValueSize GetStoreSize(Compiler* compiler) const
     {
-        return ValueSize(m_store->gtSourceSize);
+        return ValueSize(m_store->Data()->GetLayout(compiler)->GetSize());
     }
 };
 

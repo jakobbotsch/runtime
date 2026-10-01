@@ -3401,7 +3401,7 @@ public:
     GenTree* gtNewConWithPattern(var_types type, uint8_t pattern);
 
     GenTreeLclVar* gtNewStoreLclVarNode(unsigned lclNum, GenTree* value);
-    GenTreeStoreLclVars* gtNewStoreLclVarsNode(GenTree* source, unsigned count, unsigned sourceSize);
+    GenTreeStoreLclVars* gtNewStoreLclVarsNode(GenTree* source, unsigned count);
     void gtSetStoreLclVarsDestination(GenTreeStoreLclVars* store, unsigned index, unsigned lclNum, unsigned offset);
 
     GenTreeLclFld* gtNewStoreLclFldNode(

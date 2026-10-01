@@ -136,6 +136,12 @@ public class PhysicalPromotion
     [InlineData(-17)]
     public static void StorePackedCallResult(int value)
     {
+        PackedSingleRegisterReturn singleRegister = MakePackedSingleRegister(value);
+        Assert.Equal((byte)value, singleRegister.A);
+        Assert.Equal((short)(value + 1), singleRegister.B);
+        Assert.Equal(value + 2, singleRegister.C);
+        Consume(singleRegister);
+
         PackedRegisterReturn registers = MakePackedRegisters(value);
         Assert.Equal(value, registers.A);
         Assert.Equal(value + 1, registers.B);
@@ -253,6 +259,10 @@ public class PhysicalPromotion
     [InlineData(127)]
     [InlineData(128)]
     [InlineData(32768)]
+    [InlineData(255)]
+    [InlineData(256)]
+    [InlineData(65535)]
+    [InlineData(65536)]
     public static void StoreSmallCallResult(int value)
     {
         SignedByteReturn signedByte = MakeSignedByte(value);
@@ -268,6 +278,31 @@ public class PhysicalPromotion
         Consume(signedShort);
         Consume(unsignedByte);
         Consume(unsignedShort);
+    }
+
+    [Theory]
+    [InlineData(-1, false)]
+    [InlineData(128, true)]
+    [InlineData(32768, true)]
+    [InlineData(65535, false)]
+    public static void StoreSmallCallResultAcrossHandlers(int value, bool shouldThrow)
+    {
+        SignedByteReturn signedByte = default;
+        UnsignedShortReturn unsignedShort = default;
+        try
+        {
+            signedByte = MakeSignedByte(value);
+            unsignedShort = MakeUnsignedShort(value);
+            ThrowIfRequested(shouldThrow);
+        }
+        catch (InvalidOperationException) when (shouldThrow)
+        {
+            Assert.Equal((int)(sbyte)value, (int)signedByte.Value);
+            Assert.Equal((int)(ushort)value, (int)unsignedShort.Value);
+        }
+
+        Assert.Equal((int)(sbyte)value, (int)signedByte.Value);
+        Assert.Equal((int)(ushort)value, (int)unsignedShort.Value);
     }
 
     [Theory]
@@ -379,6 +414,10 @@ public class PhysicalPromotion
         new FloatingReturn { A = value + 0.25, B = value + 0.5, C = value + 0.75, D = value + 1.0 };
 
     [MethodImpl(MethodImplOptions.NoInlining)]
+    private static PackedSingleRegisterReturn MakePackedSingleRegister(int value) =>
+        new PackedSingleRegisterReturn { A = (byte)value, B = (short)(value + 1), C = value + 2 };
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
     private static PackedRegisterReturn MakePackedRegisters(int value) =>
         new PackedRegisterReturn { A = value, B = value + 1, C = value + 2, D = value + 3 };
 
@@ -440,6 +479,13 @@ public class PhysicalPromotion
     private struct FloatingReturn
     {
         public double A, B, C, D;
+    }
+
+    private struct PackedSingleRegisterReturn
+    {
+        public byte A;
+        public short B;
+        public int C;
     }
 
     private struct PackedRegisterReturn

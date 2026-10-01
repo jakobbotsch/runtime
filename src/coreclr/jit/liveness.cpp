@@ -1215,7 +1215,7 @@ void Liveness<TLiveness>::InterBlockLocalVarLiveness()
                     for (GenTree* cur = stmt->GetTreeListEnd(); cur != nullptr;)
                     {
                         assert(cur->OperIsAnyLocal() || cur->OperIs(GT_STORE_LCL_VARS));
-                        bool isDef       = (cur->gtFlags & GTF_VAR_DEF) != 0 || cur->OperIs(GT_STORE_LCL_VARS);
+                        bool isDef       = (cur->gtFlags & GTF_VAR_DEF) != 0;
                         bool conditional = cur != dst;
                         // Ignore conditional defs that would otherwise
                         // (incorrectly) interfere with liveness in other

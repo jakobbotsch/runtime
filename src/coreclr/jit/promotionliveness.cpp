@@ -457,7 +457,7 @@ void PromotionLiveness::FillInLiveness()
                 for (GenTree* cur = stmt->GetTreeListEnd(); cur != nullptr; cur = cur->gtPrev)
                 {
                     // Skip liveness updates/marking for defs; they may be conditionally executed.
-                    if (((cur->gtFlags & GTF_VAR_DEF) == 0) && !cur->OperIs(GT_STORE_LCL_VARS))
+                    if ((cur->gtFlags & GTF_VAR_DEF) == 0)
                     {
                         FillInLiveness(life, volatileVars, stmt, cur->AsLclVarCommon());
                     }
