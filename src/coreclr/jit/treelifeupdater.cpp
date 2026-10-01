@@ -113,10 +113,7 @@ bool TreeLifeUpdater<ForCodeGen>::UpdateLifeFieldVar(GenTreeLclVar* lclNode, uns
 // representation of its defining node.
 //
 template <bool ForCodeGen>
-void TreeLifeUpdater<ForCodeGen>::UpdateLifeScalar(GenTree*     tree,
-                                                   unsigned     lclNum,
-                                                   GenTreeFlags flags,
-                                                   unsigned     regIndex)
+void TreeLifeUpdater<ForCodeGen>::UpdateLifeScalar(GenTree* tree, unsigned lclNum, GenTreeFlags flags, regNumber reg)
 {
     LclVarDsc* varDsc           = m_compiler->lvaGetDesc(lclNum);
     m_compiler->compCurLifeTree = tree;
@@ -135,17 +132,9 @@ void TreeLifeUpdater<ForCodeGen>::UpdateLifeScalar(GenTree*     tree,
         UpdateLifeBit(m_compiler->compCurLife, varDsc, isBorn, isDying);
         if (ForCodeGen)
         {
-            regNumber reg = tree->GetRegByIndex(regIndex);
             if (isBorn && varDsc->lvIsRegCandidate() && reg != REG_NA)
             {
-                if (tree->OperIs(GT_STORE_LCL_VARS))
-                {
-                    m_compiler->codeGen->genUpdateVarReg(varDsc, tree, regIndex);
-                }
-                else
-                {
-                    m_compiler->codeGen->genUpdateVarReg(varDsc, tree);
-                }
+                varDsc->SetRegNum(reg);
             }
             bool isInReg    = varDsc->lvIsInReg() && reg != REG_NA;
             bool isInMemory = !isInReg || varDsc->IsAlwaysAliveInMemory();
@@ -218,7 +207,7 @@ void TreeLifeUpdater<ForCodeGen>::UpdateLifeVar(GenTree* tree, GenTreeLclVarComm
     if (varDsc->lvTracked)
     {
         assert(!varDsc->lvPromoted && !lclVarTree->IsMultiRegLclVar());
-        UpdateLifeScalar(tree, lclNum, lclVarTree->gtFlags);
+        UpdateLifeScalar(tree, lclNum, lclVarTree->gtFlags, ForCodeGen ? tree->GetRegNum() : REG_NA);
     }
     else if (varDsc->lvPromoted)
     {
@@ -329,7 +318,7 @@ void TreeLifeUpdater<ForCodeGen>::UpdateLife(GenTree* tree)
         for (unsigned i = 0; i < store->gtCount; i++)
         {
             GenTreeStoreLclVars::Destination& def = store->GetDestination(i);
-            UpdateLifeScalar(tree, def.LclNum, def.Flags, i);
+            UpdateLifeScalar(tree, def.LclNum, def.Flags, REG_NA);
         }
     }
     else if (tree->OperIsNonPhiLocal())

@@ -1092,13 +1092,13 @@ public:
             case GT_STORE_LCL_VARS:
                 EscapeValue(TopValue(0), node);
                 PopValue();
-                node->VisitLogicalLocalDefs(m_compiler, [=](const auto& def) {
-                    if (m_lclAddrAssertions != nullptr)
-                    {
+                if (m_lclAddrAssertions != nullptr)
+                {
+                    node->VisitLogicalLocalDefs(m_compiler, [=](const auto& def) {
                         m_lclAddrAssertions->Clear(def.GetLclNum());
-                    }
-                    return GenTree::VisitResult::Continue;
-                });
+                        return GenTree::VisitResult::Continue;
+                    });
+                }
                 SequenceLocal(node);
                 break;
 

@@ -795,9 +795,9 @@ void CodeGenInterface::genUpdateLife(VARSET_VALARG_TP newLife)
 // inline
 void CodeGenInterface::genUpdateVarReg(LclVarDsc* varDsc, GenTree* tree, int regIndex)
 {
-    // The index identifies either a promoted field or an explicit destination.
-    assert(tree->OperIs(GT_STORE_LCL_VARS) || m_compiler->lvaEnregMultiRegVars);
-    assert(tree->IsMultiRegLclVar() || tree->OperIs(GT_COPY, GT_STORE_LCL_VARS));
+    // This should only be called for multireg lclVars.
+    assert(m_compiler->lvaEnregMultiRegVars);
+    assert(tree->IsMultiRegLclVar() || tree->OperIs(GT_COPY));
     varDsc->SetRegNum(tree->GetRegByIndex(regIndex));
 }
 
@@ -8030,7 +8030,7 @@ void CodeGen::genStoreLclVars(GenTreeStoreLclVars* store)
                                       def.LclNum, 0);
         }
         dsc->SetRegNum(targetReg == REG_NA ? REG_STK : targetReg);
-        treeLifeUpdater->UpdateLifeScalar(store, def.LclNum, def.Flags, i);
+        treeLifeUpdater->UpdateLifeScalar(store, def.LclNum, def.Flags, targetReg);
     }
 }
 

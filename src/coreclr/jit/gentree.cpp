@@ -9035,9 +9035,17 @@ bool GenTree::OperRequiresGlobRefFlag(Compiler* comp) const
     switch (OperGet())
     {
         case GT_STORE_LCL_VARS:
-            // Destinations are non-address-exposed scalar locals. The source
-            // contributes its own memory effects through the normal operand walk.
+        {
+            const GenTreeStoreLclVars* store = AsStoreLclVars();
+            for (unsigned i = 0; i < store->gtCount; i++)
+            {
+                if (comp->lvaGetDesc(store->GetDestination(i).LclNum)->IsAddressExposed())
+                {
+                    return true;
+                }
+            }
             return false;
+        }
 
         case GT_LCL_VAR:
         case GT_LCL_FLD:
@@ -13553,7 +13561,7 @@ void Compiler::gtDispNode(GenTree* tree, IndentStack* indentStack, _In_ _In_opt_
                     }
                     if ((dest.Flags & GTF_VAR_DEATH) != 0)
                     {
-                        printf(" (dead)");
+                        printf(" (last use)");
                     }
                     if (dest.RegNum != REG_NA)
                     {

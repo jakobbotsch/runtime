@@ -320,11 +320,10 @@ void Compiler::optCopyPropPushDef(GenTree* lclNode, unsigned lclNum, unsigned ss
 {
     // Shadowed parameters are special: they will (at most) have one use, as values in a store
     // to their shadow, and we must not substitute them anywhere. So we'll not push any defs.
-    unsigned nodeLclNum = lclNum;
-    if ((gsShadowVarInfo != nullptr) && lvaGetDesc(nodeLclNum)->lvIsParam &&
-        (gsShadowVarInfo[nodeLclNum].shadowCopy != BAD_VAR_NUM))
+    if ((gsShadowVarInfo != nullptr) && lvaGetDesc(lclNum)->lvIsParam &&
+        (gsShadowVarInfo[lclNum].shadowCopy != BAD_VAR_NUM))
     {
-        assert(!curSsaName->Lookup(nodeLclNum));
+        assert(!curSsaName->Lookup(lclNum));
         return;
     }
 

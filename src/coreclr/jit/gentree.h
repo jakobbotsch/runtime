@@ -4053,10 +4053,7 @@ public:
 #endif
 };
 
-// The source is the sole evaluated operand. Destinations are plain records,
-// not nodes, operands, or independently executable stores.
-// Before lowering offsets select source bytes; afterwards entry i receives
-// exactly source register i. Destinations need not have a promoted parent.
+// Represents a definition of multiple scalar locals from a single source
 struct GenTreeStoreLclVars : public GenTreeUnOp
 {
     struct Destination
@@ -10350,10 +10347,7 @@ inline bool GenTree::IsMultiRegLclVar() const
 //
 inline regNumber GenTree::GetRegByIndex(int regIndex) const
 {
-    if (OperIs(GT_STORE_LCL_VARS))
-    {
-        return static_cast<regNumber>(AsStoreLclVars()->GetDestination(regIndex).RegNum);
-    }
+    assert(!OperIs(GT_STORE_LCL_VARS));
     if (regIndex == 0)
     {
         return GetRegNum();
