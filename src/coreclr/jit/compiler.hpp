@@ -1364,7 +1364,6 @@ inline GenTree::GenTree(genTreeOps oper, var_types type DEBUGARG(bool largeNode)
     gtLIRFlags = 0;
 #ifdef DEBUG
     gtDebugFlags = GTF_DEBUG_NONE;
-    gtMorphCount = 0;
 #endif // DEBUG
     gtCSEnum = NO_CSE;
     ClearAssertion();
@@ -2773,7 +2772,7 @@ inline
     bool fConservative = false;
     if (varNum >= 0)
     {
-        assert(!lvaIsUnknownSizeLocal(varNum));
+        assert(!lvaLocalIsOnUnknownSizeFrame(varNum));
         LclVarDsc* varDsc          = lvaGetDesc(varNum);
         bool       isPrespilledArg = false;
 #if defined(TARGET_ARM) && defined(PROFILING_SUPPORTED)
@@ -5107,6 +5106,76 @@ inline bool GenTree::HasAnyLocalDefs(Compiler* comp)
     return VisitLogicalLocalDefs(comp, [](const auto& def) {
         return GenTree::VisitResult::Abort;
     }) == GenTree::VisitResult::Abort;
+}
+
+//------------------------------------------------------------------------
+// StoreLclVarsOccurrence::GetAccessType:
+//   Get the type of the destination local defined by this occurrence.
+//
+// Arguments:
+//   compiler - The compiler instance.
+//
+// Return Value:
+//   The destination local's type.
+//
+inline var_types StoreLclVarsOccurrence::GetAccessType(Compiler* compiler) const
+{
+    return compiler->lvaGetDesc(GetLclNum())->TypeGet();
+}
+
+//------------------------------------------------------------------------
+// StoreLclVarsOccurrence::GetAccessSize:
+//   Get the size of the destination local defined by this occurrence.
+//
+// Arguments:
+//   compiler - The compiler instance.
+//
+// Return Value:
+//   The destination size in bytes.
+//
+inline unsigned StoreLclVarsOccurrence::GetAccessSize(Compiler* compiler) const
+{
+    return compiler->lvaLclValueSize(GetLclNum()).GetExact();
+}
+
+//------------------------------------------------------------------------
+// VisitLogicalLocalOccurrencesViaLocalsTreeList:
+//   Visit occurrences in locals-list order without expanding promoted parents.
+//
+// Arguments:
+//   visitor - Generic functor accepting a local occurrence provider.
+//
+// Return Value:
+//   VisitResult::Abort if the functor aborted; otherwise VisitResult::Continue.
+//
+// Remarks:
+//   The callback may abort the walk, but must not change the list and continue.
+//
+template <typename TVisitor>
+GenTree::VisitResult Statement::VisitLogicalLocalOccurrencesViaLocalsTreeList(TVisitor visitor)
+{
+    assert(JitTls::GetCompiler()->fgNodeThreading == NodeThreading::AllLocals);
+
+    for (GenTree* node : LocalsTreeList())
+    {
+        if (node->OperIs(GT_STORE_LCL_VARS))
+        {
+            GenTreeStoreLclVars* store = node->AsStoreLclVars();
+            for (unsigned i = 0; i < store->gtCount; i++)
+            {
+                if (visitor(StoreLclVarsOccurrence(store, i)) == GenTree::VisitResult::Abort)
+                {
+                    return GenTree::VisitResult::Abort;
+                }
+            }
+        }
+        else if (visitor(LocalOccurrence(node->AsLclVarCommon())) == GenTree::VisitResult::Abort)
+        {
+            return GenTree::VisitResult::Abort;
+        }
+    }
+
+    return GenTree::VisitResult::Continue;
 }
 
 /*****************************************************************************

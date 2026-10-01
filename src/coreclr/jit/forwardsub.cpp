@@ -379,7 +379,7 @@ public:
                     isCallTarget = (parentCall->gtCallType == CT_INDIRECT) && (parentCall->gtControlExpr == node);
                 }
 
-                if (!isCallTarget && IsLastUse(node->AsLclVar()))
+                if (!isCallTarget && IsLastUse(node->gtFlags))
                 {
                     m_node          = node;
                     m_use           = use;
@@ -395,7 +395,7 @@ public:
         if (node->OperIsLocal())
         {
 #ifdef DEBUG
-            if (IsUse(node->AsLclVarCommon()))
+            if (IsUse(node->AsLclVarCommon()->GetLclNum()))
             {
                 m_useCount++;
             }
@@ -481,14 +481,13 @@ public:
     // while taking promotion into account.
     //
     // Arguments:
-    //    lcl - the local
+    //    lclNum - the local number
     //
     // Returns:
     //    true if the node is a use of the local candidate or any of its fields.
     //
-    bool IsUse(GenTreeLclVarCommon* lcl)
+    bool IsUse(unsigned lclNum)
     {
-        unsigned lclNum = lcl->GetLclNum();
         if ((lclNum == m_lclNum) || (lclNum == m_parentLclNum))
         {
             return true;
@@ -499,22 +498,19 @@ public:
     }
 
     //------------------------------------------------------------------------
-    // IsLastUse: Check if the local node is a last use. The local node is expected
-    // to be a GT_LCL_VAR of the local being forward subbed.
+    // IsLastUse: Check if a read of the candidate local is a last use.
     //
     // Arguments:
-    //    lcl - the GT_LCL_VAR of the current local.
+    //    flags - Flags of the local occurrence.
     //
     // Returns:
     //    true if the expression is a last use of the local; otherwise false.
     //
-    bool IsLastUse(GenTreeLclVar* lcl)
+    bool IsLastUse(GenTreeFlags flags)
     {
-        assert(lcl->OperIs(GT_LCL_VAR) && (lcl->GetLclNum() == m_lclNum));
-
-        LclVarDsc*   dsc        = m_compiler->lvaGetDesc(lcl);
+        LclVarDsc*   dsc        = m_compiler->lvaGetDesc(m_lclNum);
         GenTreeFlags deathFlags = dsc->FullDeathFlags();
-        return (lcl->gtFlags & deathFlags) == deathFlags;
+        return (flags & deathFlags) == deathFlags;
     }
 
 private:
@@ -693,26 +689,14 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
     // Do a quick scan through the linked locals list to see if there is a last use.
     bool found    = false;
     bool multiUse = false;
-    for (GenTree* node : nextStmt->LocalsTreeList())
-    {
-        if (node->OperIs(GT_STORE_LCL_VARS))
+    nextStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& occurrence) {
+        GenTree* lcl = occurrence.GetNode();
+        if (lcl->OperIs(GT_LCL_VAR) && (occurrence.GetLclNum() == lclNum))
         {
-            bool redefined = node->VisitLogicalLocalDefs(this, [=](const auto& def) {
-                return def.GetLclNum() == lclNum ? GenTree::VisitResult::Abort : GenTree::VisitResult::Continue;
-            }) == GenTree::VisitResult::Abort;
-            if (redefined)
-            {
-                return false;
-            }
-            continue;
-        }
-        GenTreeLclVarCommon* lcl = node->AsLclVarCommon();
-        if (lcl->OperIs(GT_LCL_VAR) && (lcl->GetLclNum() == lclNum))
-        {
-            if (fsv.IsLastUse(lcl->AsLclVar()))
+            if (fsv.IsLastUse(occurrence.GetFlags()))
             {
                 found = true;
-                break;
+                return GenTree::VisitResult::Abort;
             }
 
             // Non-last direct use of the candidate local. Tolerate it only when we
@@ -720,16 +704,17 @@ bool Compiler::fgForwardSubStatement(Statement* stmt)
             if (isCheapAddressTree)
             {
                 multiUse = true;
-                continue;
+                return GenTree::VisitResult::Continue;
             }
         }
 
-        if (fsv.IsUse(lcl))
+        if (fsv.IsUse(occurrence.GetLclNum()))
         {
             JITDUMP(" next stmt has non-last use\n");
-            return false;
+            return GenTree::VisitResult::Abort;
         }
-    }
+        return GenTree::VisitResult::Continue;
+    });
 
     if (!found)
     {
@@ -1112,19 +1097,14 @@ bool Compiler::fgForwardSubHasStoreInterference(Statement* defStmt, Statement* n
 
     GenTreeLclVarCommon* defNode = defStmt->GetRootNode()->AsLclVarCommon();
 
-    for (GenTree* defStmtNode : defStmt->LocalsTreeList())
-    {
-        if (defStmtNode->OperIs(GT_STORE_LCL_VARS))
+    bool interferes = false;
+    defStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& defOccurrence) {
+        if (defOccurrence.GetNode() == defNode)
         {
-            return true;
-        }
-        GenTreeLclVarCommon* defStmtLcl = defStmtNode->AsLclVarCommon();
-        if (defStmtLcl == defNode)
-        {
-            break;
+            return GenTree::VisitResult::Abort;
         }
 
-        unsigned   defStmtLclNum       = defStmtLcl->GetLclNum();
+        unsigned   defStmtLclNum       = defOccurrence.GetLclNum();
         LclVarDsc* defStmtLclDsc       = lvaGetDesc(defStmtLclNum);
         unsigned   defStmtParentLclNum = BAD_VAR_NUM;
         if (defStmtLclDsc->lvIsStructField)
@@ -1132,42 +1112,31 @@ bool Compiler::fgForwardSubHasStoreInterference(Statement* defStmt, Statement* n
             defStmtParentLclNum = defStmtLclDsc->lvParentLcl;
         }
 
-        for (GenTree* useStmtNode : nextStmt->LocalsTreeList())
-        {
-            if (useStmtNode == nextStmtUse)
+        nextStmt->VisitLogicalLocalOccurrencesViaLocalsTreeList([&](const auto& useOccurrence) {
+            if (useOccurrence.GetNode() == nextStmtUse)
             {
-                break;
+                return GenTree::VisitResult::Abort;
             }
-            if (useStmtNode->OperIs(GT_STORE_LCL_VARS))
-            {
-                if (useStmtNode->VisitLogicalLocalDefs(this, [=](const auto& def) {
-                    return def.GetLclNum() == defStmtLclNum || def.GetLclNum() == defStmtParentLclNum
-                               ? GenTree::VisitResult::Abort
-                               : GenTree::VisitResult::Continue;
-                }) == GenTree::VisitResult::Abort)
-                {
-                    return true;
-                }
-                continue;
-            }
-            GenTreeLclVarCommon* useStmtLcl = useStmtNode->AsLclVarCommon();
 
-            if (!useStmtLcl->OperIsLocalStore())
+            if (!useOccurrence.GetNode()->OperIsStore())
             {
-                continue;
+                return GenTree::VisitResult::Continue;
             }
 
             // If the next statement has a store earlier than the use and that
             // store affects a local on the RHS of the forward sub candidate,
             // then we have interference.
-            if ((useStmtLcl->GetLclNum() == defStmtLclNum) || (useStmtLcl->GetLclNum() == defStmtParentLclNum))
+            if ((useOccurrence.GetLclNum() == defStmtLclNum) || (useOccurrence.GetLclNum() == defStmtParentLclNum))
             {
-                return true;
+                interferes = true;
+                return GenTree::VisitResult::Abort;
             }
-        }
-    }
+            return GenTree::VisitResult::Continue;
+        });
+        return interferes ? GenTree::VisitResult::Abort : GenTree::VisitResult::Continue;
+    });
 
-    return false;
+    return interferes;
 }
 
 //------------------------------------------------------------------------

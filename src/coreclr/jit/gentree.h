@@ -601,14 +601,13 @@ enum GenTreeDebugFlags : unsigned short
 {
     GTF_DEBUG_NONE              = 0x0000, // No debug flags.
 
-    GTF_DEBUG_NODE_MORPHED      = 0x0001, // the node has been morphed (in the global morphing phase)
     GTF_DEBUG_NODE_SMALL        = 0x0002,
     GTF_DEBUG_NODE_LARGE        = 0x0004,
     GTF_DEBUG_NODE_CG_PRODUCED  = 0x0008, // genProduceReg has been called on this node
     GTF_DEBUG_NODE_CG_CONSUMED  = 0x0010, // genConsumeReg has been called on this node
     GTF_DEBUG_NODE_LSRA_ADDED   = 0x0020, // This node was added by LSRA
 
-    GTF_DEBUG_NODE_MASK         = 0x003F, // These flags are all node (rather than operation) properties.
+    GTF_DEBUG_NODE_MASK         = 0x003E, // These flags are all node (rather than operation) properties.
 
     GTF_DEBUG_VAR_CSE_REF       = 0x8000, // GT_LCL_VAR -- This is a CSE LCL_VAR node
     GTF_DEBUG_CAST_DONT_FOLD    = 0x4000, // GT_CAST    -- Try to prevent this cast from being folded
@@ -1093,25 +1092,6 @@ public:
 
 #if defined(DEBUG)
     GenTreeDebugFlags gtDebugFlags;
-    unsigned short    gtMorphCount;
-    void              SetMorphed(Compiler* compiler, bool doChilren = false);
-
-    bool WasMorphed() const
-    {
-        return (gtDebugFlags & GTF_DEBUG_NODE_MORPHED) != 0;
-    }
-
-    void ClearMorphed()
-    {
-        gtDebugFlags &= ~GTF_DEBUG_NODE_MORPHED;
-    }
-#else
-    void SetMorphed(Compiler* compiler, bool doChildren = false)
-    {
-    }
-    void ClearMorphed()
-    {
-    }
 #endif
 
     ValueNumPair gtVNPair;
@@ -2462,7 +2442,7 @@ public:
     bool gtSetFlags() const;
 
 #ifdef DEBUG
-    static int         gtDispFlags(GenTreeFlags flags, GenTreeDebugFlags debugFlags);
+    static int         gtDispFlags(GenTreeFlags flags);
     static const char* gtGetHandleKindString(GenTreeFlags flags);
 #endif
 
@@ -8600,6 +8580,83 @@ public:
     }
 };
 
+// A view of a local occurrence backed by an existing IR node.
+class LocalOccurrence
+{
+    GenTreeLclVarCommon* m_node;
+
+public:
+    explicit LocalOccurrence(GenTreeLclVarCommon* node)
+        : m_node(node)
+    {
+    }
+
+    GenTree* GetNode() const
+    {
+        return m_node;
+    }
+
+    unsigned GetLclNum() const
+    {
+        return m_node->GetLclNum();
+    }
+
+    GenTreeFlags GetFlags() const
+    {
+        return m_node->gtFlags;
+    }
+
+    unsigned GetLclOffs() const
+    {
+        return m_node->GetLclOffs();
+    }
+
+    var_types GetAccessType(Compiler* compiler) const
+    {
+        assert(!m_node->OperIs(GT_LCL_ADDR));
+        return m_node->TypeGet();
+    }
+
+    unsigned GetAccessSize(Compiler* compiler) const;
+};
+
+class StoreLclVarsOccurrence
+{
+    GenTreeStoreLclVars* m_store;
+    unsigned             m_index;
+
+public:
+    StoreLclVarsOccurrence(GenTreeStoreLclVars* store, unsigned index)
+        : m_store(store)
+        , m_index(index)
+    {
+    }
+
+    GenTree* GetNode() const
+    {
+        return m_store;
+    }
+
+    unsigned GetLclNum() const
+    {
+        return m_store->GetDestination(m_index).LclNum;
+    }
+
+    GenTreeFlags GetFlags() const
+    {
+        return m_store->GetDestination(m_index).Flags;
+    }
+
+    unsigned GetLclOffs() const
+    {
+        return 0;
+    }
+
+    var_types GetAccessType(Compiler* compiler) const;
+
+    unsigned GetAccessSize(Compiler* compiler) const;
+};
+
 // Local references and local-definition owners in execution order. A
 // STORE_LCL_VARS occupies one position, after all references in its source.
 class LocalsGenTreeList
@@ -8731,6 +8788,9 @@ public:
 
     GenTreeList       TreeList() const;
     LocalsGenTreeList LocalsTreeList();
+
+    template <typename TVisitor>
+    GenTree::VisitResult VisitLogicalLocalOccurrencesViaLocalsTreeList(TVisitor visitor);
 
     const DebugInfo& GetDebugInfo() const
     {
