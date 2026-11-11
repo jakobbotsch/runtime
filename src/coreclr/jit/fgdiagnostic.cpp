@@ -3365,6 +3365,12 @@ void Compiler::fgDebugCheckFlagsAndTypes(GenTree* tree, BasicBlock* block)
         expectedFlags |= GTF_CALL;
     }
 
+    // Global morph establishes GTF_GLOB_REF for address-exposed locals and their accesses.
+    if (fgGlobalMorphDone && tree->OperRequiresGlobRefFlag(this))
+    {
+        expectedFlags |= GTF_GLOB_REF;
+    }
+
     if ((tree->gtFlags & GTF_REVERSE_OPS) != 0)
     {
         assert(tree->OperSupportsReverseOpEvalOrder(this));
@@ -3497,6 +3503,12 @@ void Compiler::fgDebugCheckFlagsAndTypes(GenTree* tree, BasicBlock* block)
                     case NI_Vector_op_Division:
                     {
                         assert((simdSize == 16) || (simdSize == 32));
+                        break;
+                    }
+
+                    case NI_X86Base_DivRem:
+                    case NI_X86Base_X64_DivRem:
+                    {
                         break;
                     }
 #endif // TARGET_XARCH
